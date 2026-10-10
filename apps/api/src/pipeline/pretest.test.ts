@@ -16,6 +16,23 @@ test("pickUpcomingWeek: dated weeks pick this week (started within 6 days) or th
   assert.equal(pickUpcomingWeek(s, 5, new Date("2026-11-01T12:00:00Z")), null, "course over");
 });
 
+test("pickUpcomingWeek: a dated week that has had its usual lectures is done, so the next one is upcoming", () => {
+  const s = weeks([[1, ["Intro"], "2026-09-28"], [2, ["Regression"], "2026-10-05"], [3, ["GLMs"], "2026-10-12"]]);
+  const wed = new Date("2026-10-07T12:00:00Z");
+  // Once-a-week course (one lecture in week 1): this week's lecture was held on Monday, so week 3 is next.
+  assert.equal(pickUpcomingWeek(s, 2, wed, ["2026-09-29", "2026-10-05"])?.week, 3);
+  // Twice-a-week course (two lectures in week 1): only one held so far this week, so week 2 is still upcoming…
+  assert.equal(pickUpcomingWeek(s, 3, wed, ["2026-09-28", "2026-09-30", "2026-10-05"])?.week, 2);
+  // …and after the second one, week 3.
+  assert.equal(pickUpcomingWeek(s, 4, new Date("2026-10-08T12:00:00Z"), ["2026-09-28", "2026-09-30", "2026-10-05", "2026-10-07"])?.week, 3);
+  // First week of a course with one lecture held: nothing earlier to compare with, one lecture counts as done.
+  assert.equal(pickUpcomingWeek(s, 1, new Date("2026-09-30T12:00:00Z"), ["2026-09-29"])?.week, 2);
+  // The last week stays the answer even after its lecture (there is nothing after it).
+  assert.equal(pickUpcomingWeek(s, 3, new Date("2026-10-13T12:00:00Z"), ["2026-09-29", "2026-10-05", "2026-10-12"])?.week, 3);
+  // A week that has not started yet is never skipped.
+  assert.equal(pickUpcomingWeek(s, 2, new Date("2026-10-11T12:00:00Z"), ["2026-09-29", "2026-10-05"])?.week, 3);
+});
+
 test("pickUpcomingWeek: undated weeks go by lectures held; empty topics and missing syllabus give null", () => {
   const s = weeks([[1, ["Intro"], null], [2, ["Regression"], null], [4, ["GLMs"], null]]);
   assert.equal(pickUpcomingWeek(s, 0)?.week, 1);
