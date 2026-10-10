@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Slap screen lab</title>
 <style>
-  :root { --bg: #0e0f12; --panel: #16181d; --line: #272a33; --text: #e8eaf0; --dim: #8d94a5; --accent: #ff7a1a; }
+  :root { --mm: 3.78px; --bg: #0e0f12; --panel: #16181d; --line: #272a33; --text: #e8eaf0; --dim: #8d94a5; --accent: #ff7a1a; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
   button, input, select, textarea { font: inherit; color: inherit; }
@@ -50,7 +50,23 @@
   .about p { margin: 4px 0 0; color: var(--dim); }
   .about #stats { font-size: 12px; }
   .real { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--dim); font-size: 12px; }
-  .real canvas { width: 55mm; height: auto; border: 2.5mm solid #000; border-radius: 3px; outline: 1px solid var(--line); }
+  .real canvas { width: calc(55 * var(--mm)); height: auto; border: calc(2.5 * var(--mm)) solid #000; border-radius: 3px; outline: 1px solid var(--line); }
+
+  /* Real size: every length is millimetres times --mm (screen pixels per real millimetre, set on the page). */
+  #life { display: flex; flex-direction: column; gap: 22px; overflow-x: auto; padding-bottom: 8px; }
+  #life > * { flex: none; margin-inline: auto; }
+  .body { position: relative; width: calc(104.5 * var(--mm)); height: calc(56 * var(--mm)); border-radius: calc(3 * var(--mm)); background: #1b1c20; box-shadow: inset 0 1px 0 #30323a, 0 14px 34px #0009; }
+  .body > * { position: absolute; }
+  .win { left: calc(9.5 * var(--mm)); top: calc(7.8 * var(--mm)); width: calc(63.4 * var(--mm)); height: calc(40.4 * var(--mm)); display: grid; place-items: center; background: #000; box-shadow: inset 0 0 0 1px #2a2c33; }
+  .win canvas { display: block; width: calc(55 * var(--mm)); height: calc(27.5 * var(--mm)); }
+  .lgrille { left: calc(79.5 * var(--mm)); top: calc(6.3 * var(--mm)); width: calc(17.6 * var(--mm)); height: calc(15.4 * var(--mm)); background: radial-gradient(circle, #050506 calc(0.6 * var(--mm)), transparent calc(0.75 * var(--mm))) 0 0 / calc(2.2 * var(--mm)) calc(2.2 * var(--mm)); }
+  .lled { left: calc(87 * var(--mm)); top: calc(24 * var(--mm)); width: calc(3 * var(--mm)); height: calc(3 * var(--mm)); border-radius: 50%; background: #3a1512; }
+  .lled.on { background: #ff3b30; box-shadow: 0 0 8px #ff3b30; }
+  .lbtn { left: calc(82.5 * var(--mm)); top: calc(31 * var(--mm)); width: calc(12 * var(--mm)); height: calc(12 * var(--mm)); border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ff9c52, #f26a0f 60%, #c8530a); box-shadow: 0 0 0 1px #121316; }
+  .cal { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 10px 14px; max-width: 100%; }
+  .cal summary { cursor: pointer; font-weight: 600; }
+  .cal p { margin: 10px 0; color: var(--dim); max-width: 460px; }
+  .card { display: grid; place-items: center; width: calc(85.6 * var(--mm)); height: calc(53.98 * var(--mm)); margin: 14px 0; border: 2px dashed var(--accent); border-radius: calc(3.2 * var(--mm)); color: var(--dim); font-size: 12px; }
 
   #cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); gap: 16px; }
   .cell { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); cursor: pointer; text-align: left; }
@@ -69,6 +85,9 @@
   .row > * { flex: 1; min-width: 0; }
   .file, .plain { display: block; width: 100%; margin: 0 0 10px; padding: 6px 8px; text-align: center; border: 1px dashed #3c4150; border-radius: 6px; background: none; color: var(--text); font-size: 13px; cursor: pointer; }
   .plain { border-style: solid; background: var(--panel); }
+  .plain.on { border-color: var(--accent); color: var(--accent); }
+  .hint.bad { color: #ff9a8f; }
+  label.check.off { color: var(--dim); }
   .file:hover, .plain:hover { border-color: var(--accent); }
   label.file input { display: none; }
   #imgOut textarea { font: 9px/1 ui-monospace, Menlo, monospace; height: 110px; white-space: pre; }
@@ -94,6 +113,7 @@
     <button data-view="one">One screen</button>
     <button data-view="screens">All screens</button>
     <button data-view="langs">All languages</button>
+    <button data-view="life">Real size</button>
   </nav>
   <button id="play" title="Run the clock, the sound level and the caption">▶ Play</button>
   <span id="live">Opened as a file: refresh the page after a change</span>
@@ -127,13 +147,38 @@
       </div>
       <div class="real">
         <canvas id="real" width="384" height="192"></canvas>
-        <span>About the real size (55 × 27 mm). Lean back to see what a student sees.</span>
+        <span id="realNote">About the real size (55 × 27 mm). Lean back to see what a student sees.</span>
       </div>
+    </div>
+    <div id="life" hidden>
+      <div class="body">
+        <div class="win"><canvas id="lifeScreen" width="768" height="384"></canvas></div>
+        <div class="lgrille"></div>
+        <span class="lled" id="lifeLed"></span>
+        <span class="lbtn"></span>
+      </div>
+      <div class="about">
+        <strong id="lifeName"></strong>
+        <p id="lifeNote"></p>
+      </div>
+      <details class="cal" id="calBox">
+        <summary>Make the size exact on this laptop screen</summary>
+        <p>Hold a bank card (any card of that size) flat against the dashed outline. Drag the slider until the outline is exactly as big as the card. The arrow keys move it in small steps.</p>
+        <div class="card">a bank card: 85.6 × 54 mm</div>
+        <label>Size of the outline <input type="range" min="2.5" max="9" step="0.01" data-key="pxPerMm"></label>
+        <p class="hint" id="calNote"></p>
+      </details>
     </div>
     <div id="cells" hidden></div>
   </section>
 
   <aside id="controls">
+    <h2>Live sound</h2>
+    <button class="plain" id="mic">Use this laptop's microphone</button>
+    <p class="hint" id="micNote"></p>
+    <label class="check" id="speechRow"><input type="checkbox" id="speech"> Write what I say as the caption</label>
+    <p class="hint" id="speechNote" style="margin-top:6px"></p>
+
     <h2>Made-up data</h2>
     <label>Language <select id="lang" data-key="lang"></select></label>
     <label>Caption <textarea data-key="caption" placeholder="Empty = the sample sentence for the language"></textarea></label>
@@ -165,6 +210,9 @@
       <label>Paste this into sprites.js to keep it <textarea id="imgCode" readonly></textarea></label>
       <button class="plain" id="imgCopy">Copy</button>
     </div>
+
+    <h2>Mascot</h2>
+    <label>Mascot face <select id="mascot" data-key="mascot"></select></label>
 
     <h2>Display</h2>
     <div class="row">
