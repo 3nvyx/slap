@@ -3,7 +3,7 @@
 One small device per classroom. Slap it on the lecturer's desk and the whole room gets live captions in their language; afterwards the lecture becomes a knowledge graph, flashcards, practice questions, a recall check, exam topics and a study plan.
 
 - `PLAN.md` — the full plan, decisions and measurements.
-- `docs/api.md` — REST + WebSocket API. `docs/architecture.md` — local vs cloud, Docker, hosting.
+- `docs/api.md` — REST + WebSocket API. `docs/architecture.md` — local vs cloud, Docker, hosting. `docs/device-screen-remote.md` — testing the device's screen from a machine the board is not plugged into.
 - `packages/contracts` — shared TypeScript types (device protocol, caption events, DTOs).
 - `apps/api` — Node 22+/TypeScript server (Hono + ws): device ingest, Deepgram captions, translation, study pipeline, serves the web app.
 - `apps/web` — Vite + React: captions page, classes, lectures, graph, review, practice, recall, exam topics, today.
