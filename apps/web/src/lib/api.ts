@@ -28,6 +28,7 @@ import type {
   Me,
   PairResult,
   PublicLecture,
+  ReplayOpts,
   ReviewResult,
   Today,
   UploadResult,
@@ -114,7 +115,10 @@ export const api = {
   announcements: (classId: string) => get<ClassAnnouncement[]>(`/api/classes/${enc(classId)}/announcements`),
   startSession: (classId: string, title?: string) =>
     post<LectureSummary>(`/api/classes/${enc(classId)}/sessions/start`, title ? { title } : {}),
+  /** Stops a live lecture or a running replay (the replay's own id). */
   stopLecture: (lectureId: string) => post<LectureSummary>(`/api/lectures/${enc(lectureId)}/stop`),
+  /** Plays a saved lecture back through the caption page; returns the new (in-memory) lecture to open at /live/:id. */
+  replay: (lectureId: string, opts: ReplayOpts = {}) => post<LectureSummary>(`/api/lectures/${enc(lectureId)}/replay`, opts),
   importLecture: (classId: string, input: { title: string; date: string; transcript: string }) =>
     post<LectureSummary>(`/api/classes/${enc(classId)}/lectures/import`, input),
   /** Pairs to the caller. `classId` becomes the active class (omitted: the caller's only class, if exactly one). */

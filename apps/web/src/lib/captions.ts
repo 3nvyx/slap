@@ -33,7 +33,8 @@ export function initialCaptions(lang: string): CaptionState {
 function upsertFinal(finals: LiveFinal[], f: LiveFinal): LiveFinal[] {
   const i = finals.findIndex((x) => x.segmentId === f.segmentId)
   const next = i >= 0 ? finals.map((x, j) => (j === i ? { ...x, ...f, words: f.words ?? x.words } : x)) : [...finals, f]
-  next.sort((a, b) => a.segmentId - b.segmentId)
+  // Time order, not id order: ids are negative and decreasing for replays and unpersisted lectures.
+  next.sort((a, b) => a.start - b.start || a.segmentId - b.segmentId)
   return next.length > MAX_FINALS ? next.slice(-MAX_FINALS) : next
 }
 

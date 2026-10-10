@@ -69,6 +69,7 @@ export function Dot({ live, className }: { live?: boolean; className?: string })
 const PILL: Record<string, string> = {
   live: 'bg-accent text-accent-ink',
   recording: 'bg-accent text-accent-ink',
+  replay: 'bg-yellow-400 text-black',
   processing: 'bg-panel-2 text-ink',
   running: 'bg-panel-2 text-ink',
   queued: 'bg-panel-2 text-muted',
@@ -84,7 +85,7 @@ const PILL: Record<string, string> = {
 export function Pill({ status, children }: { status: string; children?: ReactNode }) {
   return (
     <span className={cx('inline-flex h-5 items-center gap-1.5 rounded-sm px-1.5 font-mono text-[10px] uppercase tracking-wider', PILL[status] ?? 'bg-panel-2 text-ink')}>
-      {(status === 'live' || status === 'recording') && <span className="pulse inline-block size-1.5 rounded-full bg-white" />}
+      {(status === 'live' || status === 'recording' || status === 'replay') && <span className="pulse inline-block size-1.5 rounded-full bg-white mix-blend-difference" />}
       {children ?? status}
     </span>
   )

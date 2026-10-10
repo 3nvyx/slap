@@ -431,6 +431,13 @@ const routes: Array<[string, RegExp, Handler]> = [
     const cls = classes.find((c) => c.id === lec.classId)!
     return { title: lec.title, className: cls.name, classId: cls.id, guestAccess: !!cls.guestAccess, status: lec.status, finals: [] }
   }],
+  ['POST', /^\/api\/lectures\/([^/]+)\/replay$/, (m): LectureSummary => {
+    const lec = lectures.find((l) => l.id === m[1])
+    if (!lec) throw new ApiError(404, 'lecture not found')
+    if (lec.status === 'live') throw new ApiError(409, `"${lec.title}" is live in this class; stop it first`)
+    // The mock caption stream is the same for every id; point at the live fixture lecture.
+    return { ...lectures.find((l) => l.status === 'live')!, title: `Replay · ${lec.title}` }
+  }],
   ['POST', /^\/api\/classes\/([^/]+)\/guest-access$/, (m, body): ClassSummary => {
     const cls = classes.find((c) => c.id === m[1])
     if (!cls) throw new ApiError(404, 'class not found')
@@ -468,7 +475,10 @@ const routes: Array<[string, RegExp, Handler]> = [
         const d = deviceIn(cls.id)
         return d ? { paired: true, state: d.state, name: d.name } : { paired: false, state: 'offline', name: null }
       })(),
-      live: ls.some((l) => l.status === 'live') ? { lectureId: ls.find((l) => l.status === 'live')!.id, viewers: 23, languages: ['en', 'es', 'zh'] } : null,
+      live: (() => {
+        const live = ls.find((l) => l.status === 'live')
+        return live ? { lectureId: live.id, title: live.title, replay: false, viewers: 23, languages: ['en', 'es', 'zh'] } : null
+      })(),
       nextExam: cls.id === CLASS_ID ? { name: 'Midterm', date: EXAM_DATE } : null,
       documents: cls.id === CLASS_ID ? documents : [],
     }

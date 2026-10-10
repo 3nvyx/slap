@@ -12,7 +12,7 @@ import { unpackAnnouncements } from "../pipeline/outline.ts";
 import { isSourceLang, normalizeLang } from "../pipeline/translate.ts";
 import {
   DeviceBusyError, deviceForWebStart, effectiveOwner, findLiveLecture, getDevice, getDeviceRow, getLecture, importLecture, isUuid,
-  listUserDevices, liveLectureInMemory, pairDevice, setActiveClass, startSession, stopSession, toSummary, unpairDevice, viewerLanguages,
+  listUserDevices, liveLectureInMemory, pairDevice, ReplayError, setActiveClass, startReplay, startSession, stopSession, toSummary, unpairDevice, viewerLanguages,
 } from "../sessions.ts";
 
 const { classes, enrollments, lectures, segments, translations, concepts, conceptLinks, conceptMentions, outlines, documents, cards, cardState, questions, devices } = schema;
@@ -128,6 +128,18 @@ coreRoutes.get("/join/:code", async (c) => {
 coreRoutes.get("/lectures/:id/public", async (c) => {
   const id = uuidParam(c, "id");
   const lang = normalizeLang(c.req.query("lang"));
+  // A replay has no database row: answer from memory.
+  const mem = getLecture(id);
+  if (mem && !mem.persistent) {
+    const [cls] = await db.select({ name: classes.name, guestAccess: classes.guestAccess }).from(classes).where(eq(classes.id, mem.classId)).limit(1);
+    return c.json({
+      title: mem.title, className: cls?.name ?? "", classId: mem.classId, guestAccess: cls?.guestAccess ?? false, status: mem.status, replay: !!mem.replay,
+      finals: mem.finals.map(f => {
+        const tr = lang && !isSourceLang(lang) ? f.tr.get(lang)?.text : undefined;
+        return { segmentId: f.segmentId, text: f.text, start: f.start, end: f.end, ...(tr !== undefined ? { translation: tr } : {}) };
+      }),
+    });
+  }
   const [row] = await db.select({ l: lectures, className: classes.name, guestAccess: classes.guestAccess }).from(lectures)
     .innerJoin(classes, eq(classes.id, lectures.classId)).where(eq(lectures.id, id)).limit(1);
   if (!row) return c.json({ error: "lecture not found" }, 404);
@@ -250,7 +262,7 @@ coreRoutes.get("/classes/:classId", optionalUser, async (c) => {
     class: summary,
     lectures: lectureRows.map(r => lectureSummary(r)),
     device: { paired: !!dev, state: link ? link.state : "offline", name: dev?.name ?? null },
-    live: liveMem ? { lectureId: liveMem.id, viewers: liveMem.viewers.size, languages: viewerLanguages(liveMem) } : null,
+    live: liveMem ? { lectureId: liveMem.id, title: liveMem.title, replay: !!liveMem.replay, viewers: liveMem.viewers.size, languages: viewerLanguages(liveMem) } : null,
     nextExam,
     documents: docRows.map(d => ({ id: d.id, kind: d.kind, title: d.title })),
   });
@@ -291,10 +303,35 @@ coreRoutes.post("/classes/:classId/sessions/start", requireUser, async (c) => {
 });
 
 coreRoutes.post("/lectures/:id/stop", requireUser, async (c) => {
-  const row = await lectureOr404(uuidParam(c, "id"));
+  const id = uuidParam(c, "id");
+  const mem = getLecture(id);
+  if (mem && !mem.persistent) {   // a replay: in memory only
+    await requireClassRole(c.var.user.id, mem.classId, "owner");
+    return c.json(await stopSession(id));
+  }
+  const row = await lectureOr404(id);
   await requireClassRole(c.var.user.id, row.classId, "owner");
   const s = await stopSession(row.id);
   return s ? c.json(s) : c.json({ error: "lecture not found" }, 404);
+});
+
+// Demo replay: plays a saved lecture's captions back through the live path as a new, in-memory lecture of the class.
+// Viewers join it like any live lecture (/j/:code finds it); status events and the public lecture say `replay`.
+coreRoutes.post("/lectures/:id/replay", requireUser, async (c) => {
+  const row = await lectureOr404(uuidParam(c, "id"));
+  await requireClassRole(c.var.user.id, row.classId, "owner");
+  const opts = c.req.header("content-type")?.includes("json")
+    ? await body(c, z.object({ from: z.number().min(0).optional(), to: z.number().min(0).optional(), speed: z.number().min(0.25).max(10).optional() }))
+    : {};
+  return busy409(c, async () => {
+    try {
+      const s = await startReplay(row.id, opts);
+      return s ? c.json(s, 201) : c.json({ error: "lecture not found" }, 404);
+    } catch (e) {
+      if (e instanceof ReplayError) return c.json({ error: e.message }, 400);
+      throw e;
+    }
+  });
 });
 
 coreRoutes.post("/classes/:classId/lectures/import", requireUser, async (c) => {
