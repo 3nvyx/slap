@@ -19,16 +19,26 @@ export const PRETEST_COUNT = 3;
 
 export interface UpcomingWeek { week: number; topics: string[]; date: string | null }
 
-/** The syllabus week the next lecture falls in: with dated weeks, the first one starting in the last 6 days or later
- *  (this week, else next); without dates, the week after the lectures held so far. Null when nothing is left. */
-export function pickUpcomingWeek(s: Pick<Syllabus, "weeks"> | null | undefined, lectureCount: number, today = new Date()): UpcomingWeek | null {
+/** The syllabus week the next lecture falls in. With dated weeks: the first one starting in the last 6 days or later
+ *  (this week, else next), but a week that has already had its usual number of lectures (`lectureDates`; the most any
+ *  earlier week had, at least 1) is done, so the one after it is picked. Without dates: the week after the lectures
+ *  held so far. Null when nothing is left. */
+export function pickUpcomingWeek(s: Pick<Syllabus, "weeks"> | null | undefined, lectureCount: number, today = new Date(), lectureDates: string[] = []): UpcomingWeek | null {
   const weeks = (s?.weeks ?? []).filter(w => w.topics.length);
   if (!weeks.length) return null;
   const dated = weeks.filter(w => w.date).sort((a, b) => a.date!.localeCompare(b.date!));
   if (dated.length) {
     const floor = isoDate(new Date(today.getTime() - 6 * 86_400_000));
-    const w = dated.find(w => w.date! >= floor);
-    return w ? { week: w.week, topics: w.topics, date: w.date ?? null } : null;
+    let i = dated.findIndex(w => w.date! >= floor);
+    if (i < 0) return null;
+    const heldIn = (k: number) => lectureDates.filter(d => d >= dated[k]!.date! && (k + 1 >= dated.length || d < dated[k + 1]!.date!)).length;
+    const next = dated[i + 1];
+    if (next && dated[i]!.date! <= isoDate(today)) {
+      const usual = Math.max(1, ...dated.slice(0, i).map((_, k) => heldIn(k)));
+      if (heldIn(i) >= usual) i++;
+    }
+    const w = dated[i]!;
+    return { week: w.week, topics: w.topics, date: w.date ?? null };
   }
   const ordered = [...weeks].sort((a, b) => a.week - b.week);
   const w = ordered.find(w => w.week === lectureCount + 1) ?? ordered.find(w => w.week > lectureCount);
@@ -63,11 +73,11 @@ const toDto = (q: StoredQuestion): PretestQuestion => ({ id: q.id, topic: q.topi
 export async function getPretest(classId: string, opts: { fresh?: boolean; now?: Date } = {}): Promise<Pretest> {
   const now = opts.now ?? new Date();
   const { db, schema } = await getDb();
-  const [syllabus, [{ n: lectureCount } = { n: 0 }]] = await Promise.all([
+  const [syllabus, lectureRows] = await Promise.all([
     getSyllabus(classId),
-    db.select({ n: schema.lectures.id }).from(schema.lectures).where(eq(schema.lectures.classId, classId)).then(rows => [{ n: rows.length }]),
+    db.select({ date: schema.lectures.date }).from(schema.lectures).where(eq(schema.lectures.classId, classId)),
   ]);
-  const week = pickUpcomingWeek(syllabus, lectureCount, now);
+  const week = pickUpcomingWeek(syllabus, lectureRows.length, now, lectureRows.map(r => r.date));
   if (!week) { cache.delete(classId); return { week: null, questions: [] }; }
   const key = `${isoDate(now)}|${week.week}|${week.topics.join("|")}`;
   const hit = cache.get(classId);
