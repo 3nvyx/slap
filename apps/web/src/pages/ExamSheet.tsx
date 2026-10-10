@@ -12,7 +12,7 @@ const SHEET_SIZE = 14
 /** One-page exam sheet: the top exam topics with their definitions and the lecturer's own words, weak spots first.
  *  Built from exam topics + concept notes + graph links; a re-reading aid, printable. */
 export function ExamSheetPage() {
-  const { classId, detail, guest } = useClass()
+  const { classId, detail } = useClass()
   const topics = useApi(() => api.examTopics(classId), [classId])
   const concepts = useApi(() => api.concepts(classId), [classId])
   const graph = useApi(() => api.graph(classId), [classId])
@@ -47,7 +47,7 @@ export function ExamSheetPage() {
           </div>
         </PageTitle>
         <p className="mb-6 max-w-2xl text-sm text-ink-2">
-          The {SHEET_SIZE} topics the lecturer stressed most, {guest ? 'in emphasis order' : 'your weakest first'}, each with its definition, the lecturer’s own words and what it connects to. Read it the night before; it is not a substitute for practice.
+          The {SHEET_SIZE} topics the lecturer stressed most, your weakest first, each with its definition, the lecturer’s own words and what it connects to. Read it the night before; it is not a substitute for practice.
         </p>
       </div>
 
@@ -75,7 +75,7 @@ export function ExamSheetPage() {
                           {t.name}
                         </Link>
                         {t.examFlag && <ExamBadge />}
-                        {!guest && <span className="ml-auto size-2 shrink-0 rounded-full print:hidden" style={{ background: masteryColor(t.mastery) }} title={`Mastery ${pct(t.mastery)}`} />}
+                        <span className="ml-auto size-2 shrink-0 rounded-full print:hidden" style={{ background: masteryColor(t.mastery) }} title={`Mastery ${pct(t.mastery)}`} />
                       </div>
                       {c?.definition && <p className="mt-1 text-sm leading-relaxed">{c.definition}</p>}
                       {c?.examQuote && <p className="mt-1 border-l-2 border-accent pl-2 text-sm italic text-ink-2">“{c.examQuote}”</p>}
