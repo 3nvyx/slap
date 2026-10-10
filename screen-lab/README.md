@@ -23,7 +23,26 @@ then open http://localhost:4173.
 - **Left:** the list of screens. "On the device today" are the five the real device shows. "Ideas to play with" are examples to change or replace.
 - **Middle:** the screen, enlarged, and below it a copy at about the real size (55 × 27 mm).
 - **Right:** the made-up data (language, caption, class code, sound level…), the font, the avatar, and the display colour.
-- **Top:** "All screens" shows every screen at once. "All languages" shows the current screen in all twelve languages. "Play" runs the clock, the sound level and the caption.
+- **Top:** "All screens" shows every screen at once. "All languages" shows the current screen in all twelve languages. "Real size" shows the device as large as the real one. "Play" runs the clock, the sound level and the caption.
+
+## Try it with real sound
+
+No device needed: the laptop's microphone stands in for it.
+
+1. Open the lab in Chrome or Safari at http://localhost:4173 (the browser inside the Claude app has no microphone).
+2. Under "Live sound" on the right, press "Use this laptop's microphone" and allow it when the browser asks.
+3. Talk. The sound level on the screen now follows your voice, and so does anything that reacts to sound (the level bar, the face's mouth, the hopping avatar).
+4. Tick "Write what I say as the caption" to see your own words on the screen. Speak the language chosen under "Language". For this the browser sends the sound to its own speech service (Google in Chrome, Apple in Safari).
+
+The laptop's microphone is not the device's, so how loud "loud" is will differ on the real thing. The bar uses the same scale as the server.
+
+## See it at its real size
+
+"Real size" at the top shows the whole device (104.5 × 56 mm) with its 55 × 27 mm screen. A laptop does not know how large its own screen is, so set it once: open "Make the size exact on this laptop screen", hold a bank card against the dashed outline, and drag the slider until they match. No card: the outline should measure 85.6 mm across with a ruler. Redo it if you zoom the page or move the window to another monitor.
+
+After that the small copy under the enlarged screen is exact too. Put the laptop where the device would sit and step back to a student's distance. The microphone keeps working in this view.
+
+Where the lit area sits inside the glass is not measured yet; the lab centres it.
 
 ## What the real screen can and cannot do
 
@@ -54,7 +73,36 @@ Or edit the files yourself:
 
 ### Avatars
 
-Draw one in `sprites.js` with `#` and `.`, or use "Turn a picture into an avatar" on the page. Simple shapes with strong contrast work; photos mostly do not. A picture you convert is only kept until you refresh: press Copy and paste the result into `sprites.js` (or give it to the AI) to keep it.
+Draw one in `sprites.js` with `#` and `.`, or use "Turn a picture into an avatar" on the page. Simple shapes with strong contrast work; photos mostly do not. The converted picture is remembered by this browser only (it comes back after a refresh, as the avatar called "imported"). To keep it for good and for teammates, press Copy and paste the result into `sprites.js`, or give it to the AI.
+
+To watch an avatar live, pick the "Avatar + caption" screen, turn on the microphone and open "Real size".
+
+### The mascot
+
+The mascot comes from the designer's pencil sketches: a box for a head with a face in it. The eyes blink and the mouth grows with the sound. See it on the "Mascot face", "Mascot + caption", "Mascot ready" and "Mascot asleep" screens. "Mascot: both sketches" shows two faces side by side.
+
+There are three faces. Choose one under "Mascot" on the right:
+
+| Face | What it looks like |
+| --- | --- |
+| `round` | Round eyes, wide flat mouth |
+| `odd` | One big eye, one small eye, triangle mouth |
+| `tall` | Tall rounded eyes with a band across the top, small square mouth |
+ Drag "Sound level" to move its mouth, or turn on the microphone and talk.
+
+It is drawn in `sprites.js` as layers on one grid, 26 pixels wide and 20 tall, like sheets of tracing paper:
+
+| Layer | What it is |
+| --- | --- |
+| `mascot/head` | The box around the face, shared by every face |
+| `mascot/NAME/eyes`, `mascot/NAME/blink` | Eyes open, eyes shut |
+| `mascot/NAME/quiet`, `mascot/NAME/half`, `mascot/NAME/open` | The mouth when it is quiet, for soft sound, for loud sound |
+
+`NAME` is the face (`round`, `odd`, `tall`). A new face is five more layers under a new name; it then appears in the menu by itself. The face layers are lit pixels inside the box. Keep every layer the same size, or the parts slide out of place. A screen can show the head at 2 or 3 times that size; at 3 times it is as tall as the display.
+
+The face can show anything that fits: hearts for eyes, a sound wave for a mouth, a wink. To change it, ask the AI in plain words ("bigger eyes", "add a surprised mouth for very loud sound", "make it wink"), send it a sketch, or change the `#` and `.` yourself.
+
+The character is the team's own drawing. Pictures by other artists can inspire it, but should not be copied into the product.
 
 ### Fonts
 
@@ -82,12 +130,13 @@ Two differences from the server:
 | `d.classCode` | Class code, e.g. `CS229` |
 | `d.pairCode` | Six-character pairing code |
 | `d.joinUrl` | The link the QR code points to |
-| `d.caption` | The caption so far, in the chosen language (grows word by word while playing) |
+| `d.caption` | The caption so far, in the chosen language (grows word by word while playing; your own words when "Write what I say" is on) |
 | `d.fullCaption` | The whole caption |
 | `d.lang` | `{ code, name, native, rtl }` of the chosen language |
 | `d.seconds` | Seconds recorded |
-| `d.level` | Sound level, 0 to 1 |
+| `d.level` | Sound level, 0 to 1 (the microphone's when it is on) |
 | `d.wifiOk` | Whether Wi-Fi is connected |
 | `d.message` | Error message |
 | `d.avatar` | Name of the avatar chosen on the page |
+| `d.mascot` | Name of the mascot face chosen on the page |
 | `d.t` | Seconds since Play was pressed (0 when stopped); use it for animation |

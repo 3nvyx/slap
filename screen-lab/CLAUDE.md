@@ -15,6 +15,8 @@ Start the `screen-lab` launch configuration (`.claude/launch.json`: `python3 -m 
 
 A broken file shows a red bar at the top of the page with the error text. Check for it after every edit.
 
+The browser pane inside the Claude app blocks the microphone. Anything that needs real sound has to be tried by the designer in Chrome or Safari; to check the code yourself, feed `navigator.mediaDevices.getUserMedia` a generated tone from the page console.
+
 ## Files
 
 | File | Role |
@@ -53,7 +55,7 @@ Leave the five `TODAY` screens as they are: they mirror `apps/api/src/oled.ts`, 
 
 `ctx` is a Canvas 2D context, already set to white fill and stroke with `textBaseline = "top"`. `d` is the mock data:
 
-`d.classCode`, `d.pairCode`, `d.joinUrl`, `d.caption` (grows while Play runs), `d.fullCaption`, `d.lang` (`{ code, name, native, rtl }`), `d.seconds`, `d.level` (0–1), `d.wifiOk`, `d.message`, `d.avatar` (name of the chosen sprite), `d.t` (seconds since Play, 0 when stopped; drive animation from it).
+`d.classCode`, `d.pairCode`, `d.joinUrl`, `d.caption` (grows while Play runs), `d.fullCaption`, `d.lang` (`{ code, name, native, rtl }`), `d.seconds`, `d.level` (0–1), `d.wifiOk`, `d.message`, `d.avatar` (name of the chosen sprite), `d.mascot` (name of the chosen mascot face), `d.t` (seconds since Play, 0 when stopped; drive animation from it).
 
 Helpers (globals from `lab.js`):
 
@@ -70,6 +72,14 @@ Helpers (globals from `lab.js`):
 | `W`, `H` | 128, 64. |
 
 Keep `draw` portable: synchronous, Canvas 2D calls and these helpers only. No DOM, no images loaded by URL, no reading the clock (use `d.t` and `d.seconds`). The same function later runs on the server under `@napi-rs/canvas`.
+
+## Live sound and real size (`lab.js`)
+
+- "Use this laptop's microphone" replaces `d.level` with the microphone's level: loudest 85 ms of each 200 ms frame, on the server's scale (`micMeter`, the same formula as `meter` in `apps/api/src/ws/device.ts`). It also starts Play. Stopping Play stops the microphone.
+- "Write what I say as the caption" replaces `d.caption` with the browser's speech-to-text (Web Speech API; Chrome and Safari only; the sound goes to the browser vendor's service). `"Listening..."` until something is heard, as on the server.
+- A `draw` needs nothing special for either: it reads `d.level` and `d.caption` as before.
+- The "Real size" view draws the housing from `hardware/housing` (v2.3: 104.5 × 56 mm body, 63.4 × 40.4 mm glass window, 55 × 27.5 mm lit area, 12 mm button, 3 mm LED, 8 × 7 grille). Every length is `calc(mm * var(--mm))`; `--mm` is `state.pxPerMm`, set by the card outline. The lit area is centred in the glass because its real offset is not measured. Button, LED and grille positions are read off the housing preview, good to about a millimetre.
+- The last converted picture is kept in this browser's storage and comes back as the avatar `imported`. It is still not in the files.
 
 A new field of mock data needs three edits: a default in `MOCK` (`data.js`), the key added to `DATA_KEYS` and `mockData()` in `lab.js`, and a control with `data-key="…"` in `index.html`.
 
@@ -88,7 +98,15 @@ sprite("cat", `
 
 One row of text per pixel row; `#` is lit, `.` is off; every row the same length; at most 64 rows and 128 columns. Whole-number `scale` only. For an avatar that moves, draw it with canvas shapes in `screens.js` and animate from `d.t` and `d.level` (see `drawFace`).
 
-The page's "Turn a picture into an avatar" converts an image and shows the `sprite(…)` text. It is lost on refresh; paste it into `sprites.js` under a proper name to keep it.
+### The mascot
+
+The mascot follows the designer's own pencil sketches: a box head (drawn 1.3 to 1.5 times as wide as tall) with a face in it, no body. There are three faces, one per sketch: `round` (outlined round eyes, wide outlined flat mouth), `odd` (a big outlined rectangle for the left eye, a small outlined square for the right, an outlined triangle mouth), `tall` (tall rounded outlined eyes with a band across the top, small filled square mouth). `sprites.js` holds `mascot/head` (the box outline) and, per face, `mascot/NAME/eyes`, `/blink`, `/quiet`, `/half`, `/open`, all on the same 26 × 20 grid. `drawMascot(ctx, x, y, scale, d, asleep, face)` in `screens.js` draws the box, then one eye layer (blink from `d.t`) and one mouth layer (from `d.level`); `face` defaults to `d.mascot`, the "Mascot face" menu, which lists every NAME that has an `eyes` layer. Scale 3 (78 × 60) is as tall as the display, scale 2 (52 × 40) sits beside a caption. Stay close to the sketches' proportions unless the designer asks otherwise. Any sprite whose name contains `/` is a part and is hidden from the Avatar menu.
+
+When the designer asks to change the mascot, redraw the layers and keep them the same size. A new expression is a new layer plus a line in `drawMascot`. Shapes are solid on purpose: a line one pixel thick is hard to see at real size. Show the result on the "Mascot face" screen and in "Real size".
+
+An earlier reference was another artist's illustration of a monitor-headed character. Do not trace or reproduce a reference picture that is not the team's own; say so if asked to.
+
+The page's "Turn a picture into an avatar" converts an image and shows the `sprite(…)` text. This browser remembers the last one across refreshes, but it is not in the files; paste it into `sprites.js` under a proper name to keep it.
 
 ## Fonts
 
