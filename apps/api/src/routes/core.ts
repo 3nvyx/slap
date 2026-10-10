@@ -5,19 +5,24 @@ import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
-import { requireClassRole, requireUser } from "../auth.ts";
+import { optionalUser, requireClassRole, requireUser, type ClassRole } from "../auth.ts";
 import { db, schema } from "../db/index.ts";
 import { getMastery } from "../pipeline/mastery.ts";
 import { unpackAnnouncements } from "../pipeline/outline.ts";
 import { isSourceLang, normalizeLang } from "../pipeline/translate.ts";
 import {
   DeviceBusyError, deviceForWebStart, effectiveOwner, findLiveLecture, getDevice, getDeviceRow, getLecture, importLecture, isUuid,
-  listUserDevices, pairDevice, setActiveClass, startSession, stopSession, toSummary, unpairDevice,
+  listUserDevices, liveLectureInMemory, pairDevice, setActiveClass, startSession, stopSession, toSummary, unpairDevice, viewerLanguages,
 } from "../sessions.ts";
 
 const { classes, enrollments, lectures, segments, translations, concepts, conceptLinks, conceptMentions, outlines, documents, cards, cardState, questions, devices } = schema;
 
 export const coreRoutes = new Hono();
+
+/** Mastery for the caller: members get theirs, guests none (read-only, nothing is tracked for them). */
+function masteryFor(role: ClassRole, userId: string | undefined, classId: string): Promise<Record<string, number>> {
+  return role === "guest" || !userId ? Promise.resolve({}) : getMastery(userId, classId);
+}
 
 // ---------- helpers ----------
 
@@ -88,7 +93,7 @@ async function nextExams(classIds: string[]): Promise<Map<string, { name: string
 }
 
 async function classSummaries(userId: string, classIds?: string[]): Promise<ClassSummary[]> {
-  const rows = await db.selectDistinct({ id: classes.id, name: classes.name, code: classes.code, owner: classes.ownerUserId, role: enrollments.role })
+  const rows = await db.selectDistinct({ id: classes.id, name: classes.name, code: classes.code, owner: classes.ownerUserId, guestAccess: classes.guestAccess, role: enrollments.role })
     .from(classes).leftJoin(enrollments, and(eq(enrollments.classId, classes.id), eq(enrollments.userId, userId)))
     .where(and(or(eq(classes.ownerUserId, userId), eq(enrollments.userId, userId)), classIds ? inArray(classes.id, classIds) : undefined))
     .orderBy(asc(classes.name));
@@ -100,7 +105,7 @@ async function classSummaries(userId: string, classIds?: string[]): Promise<Clas
   return rows.map(r => ({
     id: r.id, name: r.name, code: r.code,
     role: r.owner === userId || r.role === "owner" ? "owner" : "student",
-    lectureCount: n.get(r.id) ?? 0, nextExam: exams.get(r.id)?.date ?? null,
+    lectureCount: n.get(r.id) ?? 0, nextExam: exams.get(r.id)?.date ?? null, guestAccess: r.guestAccess,
   }));
 }
 
@@ -117,13 +122,13 @@ coreRoutes.get("/join/:code", async (c) => {
   const [cls] = await db.select().from(classes).where(sql`upper(${classes.code}) = ${code}`).limit(1);
   if (!cls) return c.json({ error: "no class with that code" }, 404);
   const live = await findLiveLecture(cls.id);
-  return c.json({ classId: cls.id, className: cls.name, lectureId: live?.id ?? null, live: !!live });
+  return c.json({ classId: cls.id, className: cls.name, lectureId: live?.id ?? null, live: !!live, guestAccess: cls.guestAccess });
 });
 
 coreRoutes.get("/lectures/:id/public", async (c) => {
   const id = uuidParam(c, "id");
   const lang = normalizeLang(c.req.query("lang"));
-  const [row] = await db.select({ l: lectures, className: classes.name }).from(lectures)
+  const [row] = await db.select({ l: lectures, className: classes.name, guestAccess: classes.guestAccess }).from(lectures)
     .innerJoin(classes, eq(classes.id, lectures.classId)).where(eq(lectures.id, id)).limit(1);
   if (!row) return c.json({ error: "lecture not found" }, 404);
   const segs = await db.select({ id: segments.id, text: segments.text, start: segments.startS, end: segments.endS })
@@ -136,7 +141,7 @@ coreRoutes.get("/lectures/:id/public", async (c) => {
     for (const r of rows) tr.set(r.segmentId, r.text);
   }
   return c.json({
-    title: row.l.title, className: row.className, status: row.l.status,
+    title: row.l.title, className: row.className, classId: row.l.classId, guestAccess: row.guestAccess, status: row.l.status,
     finals: segs.map(s => ({ segmentId: s.id, text: s.text, start: s.start, end: s.end, ...(tr.has(s.id) ? { translation: tr.get(s.id) } : {}) })),
   });
 });
@@ -221,12 +226,13 @@ coreRoutes.post("/classes/join", requireUser, async (c) => {
 });
 
 // Polled by the web app every ~8 s for the device chip: keep it to a role check plus three parallel queries.
-coreRoutes.get("/classes/:classId", requireUser, async (c) => {
+// Guests of a guest-access class may read it (role "guest").
+coreRoutes.get("/classes/:classId", optionalUser, async (c) => {
   const classId = uuidParam(c, "classId");
   const u = c.var.user;
-  const role = await requireClassRole(u.id, classId, "member");
+  const role = await requireClassRole(u?.id ?? null, classId, "read");
   const [[cls], lectureRows, deviceRows, docRows] = await Promise.all([
-    db.select({ name: classes.name, code: classes.code, owner: classes.ownerUserId }).from(classes).where(eq(classes.id, classId)).limit(1),
+    db.select({ name: classes.name, code: classes.code, owner: classes.ownerUserId, guestAccess: classes.guestAccess }).from(classes).where(eq(classes.id, classId)).limit(1),
     db.select().from(lectures).where(eq(lectures.classId, classId)).orderBy(desc(lectures.date), desc(lectures.startedAt)),
     db.select({ id: devices.id, name: devices.name, ownerUserId: devices.ownerUserId }).from(devices).where(eq(devices.classId, classId)).orderBy(asc(devices.name), asc(devices.id)),
     db.select({ id: documents.id, kind: documents.kind, title: documents.title, parsed: documents.parsed }).from(documents)
@@ -235,16 +241,40 @@ coreRoutes.get("/classes/:classId", requireUser, async (c) => {
   if (!cls) return c.json({ error: "class not found" }, 404);
   const nextExam = earliestExam(docRows.filter(d => d.kind === "syllabus").map(d => d.parsed));
   // "The device" of a class: one whose active class is this class; the caller's own first, then a connected one.
-  const dev = deviceRows.find(d => effectiveOwner(d, cls.owner) === u.id) ?? deviceRows.find(d => getDevice(d.id)) ?? deviceRows[0];
+  const dev = deviceRows.find(d => u && effectiveOwner(d, cls.owner) === u.id) ?? deviceRows.find(d => getDevice(d.id)) ?? deviceRows[0];
   const link = dev ? getDevice(dev.id) : undefined;
-  const summary: ClassSummary = { id: classId, name: cls.name, code: cls.code, role, lectureCount: lectureRows.length, nextExam: nextExam?.date ?? null };
+  const summary: ClassSummary = { id: classId, name: cls.name, code: cls.code, role, lectureCount: lectureRows.length, nextExam: nextExam?.date ?? null, guestAccess: cls.guestAccess };
+  // Who is watching right now (in-memory only; absent when nothing is live in this process).
+  const liveMem = liveLectureInMemory(classId);
   return c.json({
     class: summary,
     lectures: lectureRows.map(r => lectureSummary(r)),
     device: { paired: !!dev, state: link ? link.state : "offline", name: dev?.name ?? null },
+    live: liveMem ? { lectureId: liveMem.id, viewers: liveMem.viewers.size, languages: viewerLanguages(liveMem) } : null,
     nextExam,
     documents: docRows.map(d => ({ id: d.id, kind: d.kind, title: d.title })),
   });
+});
+
+// Owner switch: lets anyone read the class's notes, graph and exam topics without signing in (the demo class for judges).
+coreRoutes.post("/classes/:classId/guest-access", requireUser, async (c) => {
+  const classId = uuidParam(c, "classId");
+  const u = c.var.user;
+  await requireClassRole(u.id, classId, "owner");
+  const b = await body(c, z.object({ enabled: z.boolean() }));
+  await db.update(classes).set({ guestAccess: b.enabled }).where(eq(classes.id, classId));
+  return c.json(await oneSummary(u.id, classId));
+});
+
+// Announcements across the class's lectures (from each study bundle's outline), dated ones first.
+coreRoutes.get("/classes/:classId/announcements", optionalUser, async (c) => {
+  const classId = uuidParam(c, "classId");
+  await requireClassRole(c.var.user?.id ?? null, classId, "read");
+  const rows = await db.select({ lectureId: lectures.id, lectureTitle: lectures.title, lectureDate: lectures.date, raw: outlines.announcements })
+    .from(outlines).innerJoin(lectures, eq(lectures.id, outlines.lectureId)).where(eq(lectures.classId, classId));
+  const out = rows.flatMap(r => unpackAnnouncements(r.raw).announcements.map(a => ({ ...a, lectureId: r.lectureId, lectureTitle: r.lectureTitle, lectureDate: r.lectureDate })));
+  out.sort((a, b) => (a.when && b.when ? a.when.localeCompare(b.when) : a.when ? -1 : b.when ? 1 : b.lectureDate.localeCompare(a.lectureDate)));
+  return c.json(out);
 });
 
 // Records with the caller's device: one pointed at this class, else the caller's device is switched here first.
@@ -283,13 +313,14 @@ coreRoutes.post("/classes/:classId/lectures/import", requireUser, async (c) => {
   }
 });
 
-coreRoutes.get("/lectures/:id", requireUser, async (c) => {
+coreRoutes.get("/lectures/:id", optionalUser, async (c) => {
   const row = await lectureOr404(uuidParam(c, "id"));
-  await requireClassRole(c.var.user.id, row.classId, "member");
-  const [segRows, [outline], mentionRows] = await Promise.all([
+  const role = await requireClassRole(c.var.user?.id ?? null, row.classId, "read");
+  const [segRows, [outline], mentionRows, mastery] = await Promise.all([
     db.select().from(segments).where(eq(segments.lectureId, row.id)).orderBy(asc(segments.idx)),
     db.select().from(outlines).where(eq(outlines.lectureId, row.id)).limit(1),
     db.select().from(conceptMentions).where(eq(conceptMentions.lectureId, row.id)),
+    masteryFor(role, c.var.user?.id, row.classId),
   ]);
   const conceptIds = [...new Set(mentionRows.map(m => m.conceptId))];
   const conceptRows = conceptIds.length ? await db.select().from(concepts).where(inArray(concepts.id, conceptIds)) : [];
@@ -305,14 +336,14 @@ coreRoutes.get("/lectures/:id", requireUser, async (c) => {
     summary: outline?.summary ?? "",
     announcements,
     questionsAsked,
-    concepts: conceptRows.map(r => toConcept(r)),
+    concepts: conceptRows.map(r => toConcept(r, mastery)),
     mentions,
   });
 });
 
-coreRoutes.get("/lectures/:id/translations", requireUser, async (c) => {
+coreRoutes.get("/lectures/:id/translations", optionalUser, async (c) => {
   const row = await lectureOr404(uuidParam(c, "id"));
-  await requireClassRole(c.var.user.id, row.classId, "member");
+  await requireClassRole(c.var.user?.id ?? null, row.classId, "read");
   const lang = normalizeLang(c.req.query("lang"));
   if (!lang) return c.json({ error: "lang is required, e.g. ?lang=es" }, 400);
   const rows = await db.select({ segmentId: translations.segmentId, text: translations.text }).from(translations)
@@ -321,24 +352,24 @@ coreRoutes.get("/lectures/:id/translations", requireUser, async (c) => {
   return c.json(Object.fromEntries(rows.map(r => [String(r.segmentId), r.text])) as Record<string, string>);
 });
 
-coreRoutes.get("/classes/:classId/concepts", requireUser, async (c) => {
+coreRoutes.get("/classes/:classId/concepts", optionalUser, async (c) => {
   const classId = uuidParam(c, "classId");
   const u = c.var.user;
-  await requireClassRole(u.id, classId, "member");
+  const role = await requireClassRole(u?.id ?? null, classId, "read");
   const [rows, mastery] = await Promise.all([
     db.select().from(concepts).where(eq(concepts.classId, classId)).orderBy(desc(concepts.emphasis), asc(concepts.name)),
-    getMastery(u.id, classId),
+    masteryFor(role, u?.id, classId),
   ]);
   return c.json(rows.map(r => toConcept(r, mastery)));
 });
 
-coreRoutes.get("/classes/:classId/graph", requireUser, async (c) => {
+coreRoutes.get("/classes/:classId/graph", optionalUser, async (c) => {
   const classId = uuidParam(c, "classId");
   const u = c.var.user;
-  await requireClassRole(u.id, classId, "member");
+  const role = await requireClassRole(u?.id ?? null, classId, "read");
   const [rows, mastery] = await Promise.all([
     db.select().from(concepts).where(eq(concepts.classId, classId)),
-    getMastery(u.id, classId),
+    masteryFor(role, u?.id, classId),
   ]);
   const ids = rows.map(r => r.id);
   const linkRows = ids.length ? await db.select().from(conceptLinks).where(inArray(conceptLinks.fromId, ids)) : [];
@@ -347,12 +378,13 @@ coreRoutes.get("/classes/:classId/graph", requireUser, async (c) => {
   return c.json({ nodes: rows.map(r => toConcept(r, mastery)), links });
 });
 
-coreRoutes.get("/concepts/:id", requireUser, async (c) => {
+coreRoutes.get("/concepts/:id", optionalUser, async (c) => {
   const id = uuidParam(c, "id");
-  const u = c.var.user;
   const [row] = await db.select().from(concepts).where(eq(concepts.id, id)).limit(1);
   if (!row) return c.json({ error: "concept not found" }, 404);
-  await requireClassRole(u.id, row.classId, "member");
+  const role = await requireClassRole(c.var.user?.id ?? null, row.classId, "read");
+  // Guests have no card state; an empty user id matches no rows.
+  const u = { id: role === "guest" ? "" : c.var.user?.id ?? "" };
   const [linkRows, mentionRows, cardRows, [qc], mastery] = await Promise.all([
     db.select().from(conceptLinks).where(or(eq(conceptLinks.fromId, id), eq(conceptLinks.toId, id))),
     db.select({ lectureId: conceptMentions.lectureId, lectureTitle: lectures.title, segmentId: conceptMentions.segmentId, excerpt: conceptMentions.excerpt, start: segments.startS })
@@ -363,7 +395,7 @@ coreRoutes.get("/concepts/:id", requireUser, async (c) => {
       .from(cards).leftJoin(cardState, and(eq(cardState.cardId, cards.id), eq(cardState.userId, u.id)))
       .where(eq(cards.conceptId, id)),
     db.select({ n: count() }).from(questions).where(eq(questions.conceptId, id)),
-    getMastery(u.id, row.classId),
+    masteryFor(role, u.id, row.classId),
   ]);
   const relatedIds = [...new Set(linkRows.map(l => (l.fromId === id ? l.toId : l.fromId)))];
   const related = relatedIds.length ? await db.select().from(concepts).where(inArray(concepts.id, relatedIds)) : [];

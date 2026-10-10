@@ -27,6 +27,8 @@ const FONTS = [
   { name: "Silkscreen", google: true },
   { name: "VT323", google: true },
   { name: "DotGothic16", google: true },
+  { name: "Test File Font", file: "fonts/__test-font.ttf" },
+  { name: "Missing File Font", file: "fonts/nope.ttf" },
 ];
 
 // Same twelve languages as the web app (apps/web/src/lib/languages.ts).

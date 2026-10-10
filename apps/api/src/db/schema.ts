@@ -7,6 +7,7 @@ export const classes = pgTable("classes", {
   name: text("name").notNull(),
   code: text("code").notNull().unique(),          // short join code, e.g. CS229
   ownerUserId: text("owner_user_id").notNull(),
+  guestAccess: boolean("guest_access").notNull().default(false),   // anyone may read notes, graph and exam topics without signing in (the demo class)
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
