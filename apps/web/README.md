@@ -31,6 +31,7 @@ Env (Vite, build time): `VITE_NEON_AUTH_URL` (Neon Auth base URL for sign-in), `
 | `/c/:classId/practice` | signed in | 5 graded questions (`?concept=` / `?lecture=` first; A–D picks, Enter checks) |
 | `/c/:classId/partner` | signed in | Spoken learning partner (hold to talk) |
 | `/c/:classId/pretest` | signed in | Three questions on the syllabus's upcoming week |
+| `/c/:classId/lecturer` | owner | Lecturer view: device, session, who is watching and in which languages, live caption tail, students enrolled, questions asked in class |
 | `/c/:classId/today` | signed in | Cards due, next exam, practice set, pretest, coming-up announcements, weak spots, 7-day plan |
 | `/recall/:lectureId` | signed in | 3-minute free recall, compared into got / missed / wrong |
 

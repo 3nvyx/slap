@@ -252,12 +252,13 @@ coreRoutes.get("/classes/:classId", optionalUser, async (c) => {
   const classId = uuidParam(c, "classId");
   const u = c.var.user;
   const role = await requireClassRole(u?.id ?? null, classId, "read");
-  const [[cls], lectureRows, deviceRows, docRows] = await Promise.all([
+  const [[cls], lectureRows, deviceRows, docRows, [studentCount]] = await Promise.all([
     db.select({ name: classes.name, code: classes.code, owner: classes.ownerUserId, guestAccess: classes.guestAccess }).from(classes).where(eq(classes.id, classId)).limit(1),
     db.select().from(lectures).where(eq(lectures.classId, classId)).orderBy(desc(lectures.date), desc(lectures.startedAt)),
     db.select({ id: devices.id, name: devices.name, ownerUserId: devices.ownerUserId }).from(devices).where(eq(devices.classId, classId)).orderBy(asc(devices.name), asc(devices.id)),
     db.select({ id: documents.id, kind: documents.kind, title: documents.title, parsed: documents.parsed }).from(documents)
       .where(eq(documents.classId, classId)).orderBy(desc(documents.createdAt)),
+    db.select({ n: count() }).from(enrollments).where(and(eq(enrollments.classId, classId), eq(enrollments.role, "student"))),
   ]);
   if (!cls) return c.json({ error: "class not found" }, 404);
   const nextExam = earliestExam(docRows.filter(d => d.kind === "syllabus").map(d => d.parsed));
@@ -272,6 +273,7 @@ coreRoutes.get("/classes/:classId", optionalUser, async (c) => {
     lectures: lectureRows.map(r => lectureSummary(r)),
     device: { paired: !!dev, state: link ? link.state : "offline", name: dev?.name ?? null },
     live: liveMem ? { lectureId: liveMem.id, title: liveMem.title, replay: !!liveMem.replay, viewers: liveMem.viewers.size, languages: viewerLanguages(liveMem) } : null,
+    students: studentCount?.n ?? 0,
     nextExam,
     documents: docRows.map(d => ({ id: d.id, kind: d.kind, title: d.title })),
   });

@@ -20,8 +20,8 @@ export function useClass() {
   return useOutletContext<ClassContext>()
 }
 
-/** `account`: needs a signed-in member (guests are sent to sign in and come back here). */
-const NAV = [
+/** `account`: needs a signed-in member (guests are sent to sign in and come back here). `owner`: lecturer only. */
+const NAV: Array<{ to: string; label: string; key: string; end?: boolean; account?: boolean; owner?: boolean }> = [
   { to: '', label: 'Lectures', key: '01', end: true },
   { to: 'graph', label: 'Graph', key: '02' },
   { to: 'review', label: 'Review', key: '03', account: true },
@@ -30,6 +30,7 @@ const NAV = [
   { to: 'exam-topics', label: 'Exam topics', key: '06' },
   { to: 'today', label: 'Today', key: '07', account: true },
   { to: 'pretest', label: 'Pretest', key: '08', account: true },
+  { to: 'lecturer', label: 'Lecturer', key: '09', account: true, owner: true },
 ]
 
 export function DeviceChip({ device }: { device: ClassDetail['device'] }) {
@@ -116,7 +117,7 @@ export function ClassLayout() {
         <aside className="border-b border-line md:sticky md:top-14 md:h-[calc(100dvh-3.5rem)] md:w-56 md:shrink-0 md:border-b-0 md:border-r">
           <div className="flex gap-1 overflow-x-auto p-3 md:flex-col md:gap-0.5 md:p-4">
             <Label className="mb-2 hidden md:block">{detail.data ? detail.data.class.code : 'Class'}</Label>
-            {NAV.map((n) => {
+            {NAV.filter((n) => !n.owner || detail.data?.class.role === 'owner').map((n) => {
               const target = n.to ? `/c/${classId}/${n.to}` : `/c/${classId}`
               const locked = guest && n.account
               return (

@@ -2,7 +2,7 @@ import type { Concept, ExamTopic } from '@slap/contracts'
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useClass } from '../components/ClassLayout'
-import { Async, Button, ButtonLink, ExamBadge, Label, PageTitle } from '../components/ui'
+import { Async, Button, ButtonLink, ExamBadge, PageTitle } from '../components/ui'
 import { api } from '../lib/api'
 import { examInfo, fmtDate, masteryColor, pct } from '../lib/format'
 import { useApi } from '../lib/useApi'
@@ -81,7 +81,7 @@ export function ExamSheetPage() {
                       {c?.examQuote && <p className="mt-1 border-l-2 border-accent pl-2 text-sm italic text-ink-2">“{c.examQuote}”</p>}
                       {rel.length > 0 && (
                         <p className="mt-1 text-xs text-muted">
-                          <Label className="mr-1 inline">Links</Label>
+                          <span className="label mr-1">Links</span>
                           {rel.map((r) => r.name).join(' · ')}
                         </p>
                       )}

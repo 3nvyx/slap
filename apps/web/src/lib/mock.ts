@@ -486,6 +486,7 @@ const routes: Array<[string, RegExp, Handler]> = [
     const ls = lectures.filter((l) => l.classId === cls.id)
     return {
       class: { ...cls, lectureCount: ls.length },
+      students: cls.id === CLASS_ID ? 38 : 3,
       lectures: ls,
       device: (() => {
         const d = deviceIn(cls.id)

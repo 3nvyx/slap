@@ -85,6 +85,8 @@ export interface ClassDetail {
   lectures: LectureSummary[]
   device: ClassDevice
   live?: ClassLive | null
+  /** Enrolled students (not counting the owner). */
+  students?: number
   nextExam: NextExam
   documents: ClassDocument[]
 }
