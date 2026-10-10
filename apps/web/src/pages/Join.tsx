@@ -1,9 +1,7 @@
 import { useEffect } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
-import { loginPath } from '../components/RequireAuth'
 import { ButtonLink, ErrorBox, Label, Logo, Spinner } from '../components/ui'
 import { ApiError, api } from '../lib/api'
-import { useAuth } from '../lib/auth'
 import { useApi } from '../lib/useApi'
 
 const POLL_MS = 5000
@@ -11,7 +9,6 @@ const POLL_MS = 5000
 export function JoinPage() {
   const { code = '' } = useParams()
   const join = useApi(() => api.join(code), [code])
-  const { user } = useAuth()
 
   // Students often scan before the lecturer presses start: keep checking and open the captions by ourselves.
   const waiting = !!join.data && !join.data.live
@@ -51,12 +48,9 @@ export function JoinPage() {
                 <span className="pulse inline-block size-1.5 rounded-full bg-accent" /> Checking every few seconds
               </p>
               <div className="mt-6 flex flex-wrap gap-2">
-                <ButtonLink variant="ink" to={user || join.data.guestAccess ? `/c/${join.data.classId}` : loginPath(`/c/${join.data.classId}`)}>
-                  {user ? 'Open class notes' : join.data.guestAccess ? 'Browse notes and graph' : 'Sign in for notes and practice'}
+                <ButtonLink variant="ink" to={`/c/${join.data.classId}`}>
+                  Open class notes
                 </ButtonLink>
-                {!user && join.data.guestAccess && (
-                  <ButtonLink to={loginPath(`/c/${join.data.classId}`)}>Sign in</ButtonLink>
-                )}
                 <button className="h-10 cursor-pointer rounded-md px-4 text-sm text-ink-2 hover:bg-panel-2" onClick={() => void join.reload()}>
                   Check again
                 </button>

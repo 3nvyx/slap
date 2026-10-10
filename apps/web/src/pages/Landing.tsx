@@ -1,18 +1,18 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { UserMenu } from '../components/Shell'
+import { ClassesLink } from '../components/Shell'
 import { Button, inputCls, Label, Logo } from '../components/ui'
 import { api } from '../lib/api'
 import { useApi } from '../lib/useApi'
 
-/** Classes with guest access on: judges and visitors open one without an account. */
-function GuestClasses() {
-  const list = useApi(() => api.publicClasses(), [])
+/** Every class: there are no accounts, so judges and visitors open one directly. */
+function OpenClasses() {
+  const list = useApi(() => api.classes(), [])
   if (!list.data || list.data.length === 0) return null
   return (
     <section className="rounded-md border border-line bg-panel p-6 md:p-8">
-      <h2 className="text-2xl font-bold tracking-tight">Browse a class as a guest</h2>
-      <p className="mt-2 text-ink-2">No account needed: the lecture notes, concept graph and exam topics are open to read. Sign in to practise and track what you know.</p>
+      <h2 className="text-2xl font-bold tracking-tight">Open a class</h2>
+      <p className="mt-2 text-ink-2">No account needed: lecture notes, the concept graph, exam topics, cards and practice are all open. What you practise is remembered in this browser.</p>
       <div className="mt-4 flex flex-wrap gap-2">
         {list.data.map((c) => (
           <Link key={c.id} to={`/c/${c.id}`} className="inline-flex h-11 items-center gap-3 rounded-md border border-line bg-bg px-4 font-medium transition hover:border-ink">
@@ -70,10 +70,7 @@ export function Landing() {
       <header className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 md:px-8">
         <Logo className="text-xl" />
         <nav className="flex items-center gap-3">
-          <Link to="/classes" className="hidden text-sm text-ink-2 hover:text-ink sm:inline">
-            My classes
-          </Link>
-          <UserMenu />
+          <ClassesLink />
         </nav>
       </header>
 
@@ -90,8 +87,8 @@ export function Landing() {
               One $20 device per classroom captions the lecture live in your language, then turns it and your textbook into a knowledge graph, flashcards and practice questions.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link to="/login" className="inline-flex h-12 items-center rounded-md bg-ink px-6 font-semibold text-bg">
-                Sign in
+              <Link to="/classes" className="inline-flex h-12 items-center rounded-md bg-ink px-6 font-semibold text-bg">
+                Open classes
               </Link>
               <a href="#scan" className="inline-flex h-12 items-center rounded-md border border-line bg-panel px-6 font-semibold">
                 Scan to see captions
@@ -131,7 +128,7 @@ export function Landing() {
         </section>
 
         <div className="mt-6">
-          <GuestClasses />
+          <OpenClasses />
         </div>
 
         <section className="grid gap-4 py-12 md:grid-cols-3">

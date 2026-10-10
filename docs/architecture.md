@@ -14,7 +14,7 @@ Runtime: Node 22 LTS (the Mac has Node 26; the Docker image uses `node:22-alpine
 | `STT_BACKEND` | `deepgram` (default), `whisperlivekit` | Which speech-to-text implementation sits behind the `stt.ts` interface; `whisperlivekit` is WhisperLiveKit with the MLX Whisper backend, native on the Mac |
 | `LLM_BACKEND` | `claude` (default), `free`, `local` | Post-lecture jobs and grading; `free` is the one hosted fallback (Gemini Flash free tier); `local` is Ollama (Qwen3-8B) on the laptop, post-event |
 | `TRANSLATE_BACKEND` | `google` (default), `azure`, `deepl` | Live caption translation |
-| `DATABASE_URL`, `NEON_AUTH_BASE_URL`, `NEON_AUTH_JWKS_URL` | the Neon project's values (`neon env pull` writes them to `.env.local`) | Postgres and Auth; tokens are verified with `jose` (`createRemoteJWKSet`) against the JWKS URL, issuer and audience being the auth base URL; `DATABASE_URL` is server-side only |
+| `DATABASE_URL` | the Neon project's value (`neon env pull` writes it to `.env.local`) | Postgres; server-side only. There is no sign-in: the app has no accounts, and Neon Auth is not used (`neon env pull` still writes `NEON_AUTH_*`; nothing reads them) |
 | API keys | e.g. `DEEPGRAM_API_KEY`, `ANTHROPIC_API_KEY` | Only for the backends that are selected |
 
 `neon env pull` also writes `DATABASE_URL_UNPOOLED` (a direct connection, for migrations), `NEON_BRANCH` and `NEON_FUNCTION_API_BASE_URL`; the plan does not use the last one.
@@ -26,7 +26,7 @@ Health is split in two. `GET /health` is liveness: cheap, no backend calls, used
 ## Local mode
 
 - Run: `pnpm dev` in `apps/api` (Node in watch mode, running the TypeScript directly), plus a browser tab (the Vite dev server, or the built `apps/web/dist` served by the Node server).
-- Data and auth: connect to the Neon branch directly. There is no local Postgres and no local auth stack. The project `slap` is linked from the repo root through `.neon` (git-ignored), `neon.ts` declares `auth: true` and a sample function, and `neon env pull` writes `DATABASE_URL`, `NEON_AUTH_BASE_URL`, `NEON_AUTH_JWKS_URL` and the other connection variables to `.env.local`.
+- Data: connect to the Neon branch directly. There is no local Postgres. The project `slap` is linked from the repo root through `.neon` (git-ignored), and `neon env pull` writes `DATABASE_URL` and the other connection variables to `.env.local`.
 - Branches: `neon checkout <name> --create` makes an isolated database branch (for example a demo-data branch); `production` is the default branch. The free tier scales to zero, so the first query after idle has a short cold start.
 - Tooling: Neon CLI 8.x, the Neon agent skills (`.agents/skills/neon*`) and the Neon MCP server are installed for development.
 - Offline speech-to-text: `STT_BACKEND=whisperlivekit`. WhisperLiveKit does not have a whisper.cpp backend; on macOS it uses MLX Whisper on Apple Silicon. Pin the version and set the streaming policy explicitly (its default is SimulStreaming). Benchmark `large-v3-turbo` on the actual Mac and fall back to a smaller model if it cannot keep up while the UI and Docker also run. Expect roughly 0.5–2 s latency, to be measured. whisper.cpp remains a separate CLI/server experiment, not the WhisperLiveKit path. This is the one place Python stays: WhisperLiveKit and MLX Whisper run as a Python sidecar on the Mac (`uv` is used for it only), and `stt.ts` talks to it over its WebSocket API.
@@ -41,17 +41,20 @@ For the hackathon, "local app" is the dev server plus a browser tab. A real Mac 
 
 ## Docker image
 
-Built after the event, or Saturday if ahead. Build context is the repo root.
+Build context is the repo root; `.dockerignore` keeps `.git`, `.claude`, every `node_modules` and `dist`, env files and the non-app folders out of it. The host's `node_modules` must stay out, because they hold macOS binaries and would be copied over the image's.
 
-Two stages:
-1. Web stage on `node:22-alpine`, pinned to an exact tag that meets Vite 8's requirement (Node 20.19+ or 22.12+): `pnpm install --frozen-lockfile`, build the Vite app, output `dist/`. Alpine is fine here because it only runs Node tooling.
-2. Runtime stage on `node:22-alpine`, pinned to an exact tag at 22.18 or later (so type stripping needs no flag; confirm the version):
-   - Install pnpm at a pinned version, copy only the manifests (`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` and the `package.json` of `apps/api` and `packages/contracts`), and run `pnpm install --frozen-lockfile --prod`. The lockfile is committed and never re-resolved in the build, and the dependency layer is cached until dependencies change.
-   - Then copy the `apps/api` and `packages/contracts` source (TypeScript, run directly by Node) and the Noto fonts used for OLED frames.
-   - Copy `dist/` from the web stage to where the Node server serves static files.
-   - Set `NODE_ENV=production` and switch to the non-root `node` user that the image provides.
-   - `HEALTHCHECK` calls `/health`. The image has no curl; use busybox `wget` or a one-line `node -e` with `fetch`.
-   - Start with `node server` (the entry file under `apps/api`; the exact path, which ends in `.ts`, is set when the Dockerfile is written). One process, because the subscriber registry is in memory; the app trusts the forwarded headers from Caddy.
+Four stages in `Dockerfile`, all on `node:22-alpine` (22.18 or later, so type stripping needs no flag):
+1. `base`: `corepack enable` (pnpm at the version in the root `packageManager` field) and the manifests only (`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` and the `package.json` of `apps/api`, `apps/web` and `packages/contracts`), so the dependency layers are cached until dependencies change. The lockfile is committed and never re-resolved in the build.
+2. `web`: `pnpm install --frozen-lockfile --filter "@slap/web..."`, then the source and `pnpm --filter @slap/web build`, output `apps/web/dist`.
+3. `prod-deps`: `pnpm install --frozen-lockfile --prod --filter "@slap/api..."`. Only `node_modules` leaves this stage; pnpm and its store do not reach the runtime image.
+4. Runtime, in the same layout as the repo under `/app`:
+   - `node_modules` from `prod-deps`, then the `apps/api` and `packages/contracts` source (TypeScript, run directly by Node), which includes the OLED fonts in `apps/api/fonts`, and `apps/web/dist` from the web stage. The server finds the web app through the default `WEB_DIST` (`../web/dist`).
+   - The workspace layout is required. Node does not strip types from files under `node_modules`, so `@slap/contracts` has to resolve through its workspace symlink to `/app/packages/contracts`. `pnpm deploy` copies it into `node_modules` as TypeScript and the server then fails at import with `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`.
+   - `NODE_ENV=production`, `MODE=cloud`, non-root `node` user. The image is read-only to that user except `apps/api/.uploads` (uploaded PDFs until they are parsed).
+   - `HEALTHCHECK` calls `/api/health` with `wget`.
+   - Working directory `/app/apps/api`, start with `node src/server.ts`. One process, because the subscriber registry is in memory; the app trusts the forwarded headers from Caddy. The server needs `DATABASE_URL` to start.
+
+Build scripts of dependencies are approved in `pnpm-workspace.yaml` under `allowBuilds` (pnpm 11 removed `onlyBuiltDependencies`). pnpm exits 1 on any dependency with an install script that has no entry there, on the host and in the image, so a new one needs `true` or `false` (`pnpm approve-builds` writes it).
 
 Building on Apple Silicon for an x86 VPS needs explicit platform flags (for example `docker buildx build --platform linux/amd64`, or `platform: linux/amd64` in Compose); otherwise the image is arm64 and will not run there.
 
@@ -80,7 +83,7 @@ Caddy replaces cloudflared on a host with a public IP. The firmware's fixed addr
 | Google Cloud Run | Pay per use | Avoid for a live demo: needs min-instances to avoid cold starts, and WebSocket requests are capped at 60 minutes |
 | Oracle free tier | Free | Avoid: capacity problems getting an instance |
 
-The cloud profile is the API container plus external AI APIs plus Neon (Auth and Postgres), and nothing else: no local Whisper, LLM or database on a 1 GiB box. Neon's other services are not used (see `PLAN.md`, Context).
+The cloud profile is the API container plus external AI APIs plus Neon (Postgres), and nothing else: no local Whisper, LLM or database on a 1 GiB box. Neon's other services are not used (see `PLAN.md`, Context).
 
 ## CI (after the event)
 

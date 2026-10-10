@@ -3,7 +3,7 @@
 // reconnect snapshots, the viewers and their languages, and the translation cache.
 import type { CaptionEvent, CaptionWord, DeviceState, LectureSummary } from "@slap/contracts";
 import { AUDIO_SAMPLE_RATE } from "@slap/contracts";
-import { and, asc, count, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { db, schema } from "./db/index.ts";
 import { enqueueStudyBundle } from "./pipeline/bundle.ts";
 import { createStt, type SttResult, type SttSession } from "./pipeline/stt.ts";
@@ -38,7 +38,8 @@ export interface Viewer {
 }
 
 /** A connected device as seen by sessions; ws/device.ts owns the socket and implements refresh() and unpaired().
- *  A device belongs to a user (`ownerUserId`, null = unpaired) and records into its active class (`classId`). */
+ *  A device is paired when `ownerUserId` is set (the id of the caller that paired it, see user.ts; null = unpaired)
+ *  and records into its active class (`classId`). Paired devices are shared: every caller sees and controls them. */
 export interface DeviceLink {
   readonly id: string;
   name: string | null;
@@ -503,17 +504,17 @@ function deviceView(row: DeviceRow, cls: ActiveClass | null): DeviceView {
   };
 }
 
-/** The user's devices (including legacy rows whose active class the user owns), oldest first. */
-export async function listUserDevices(userId: string): Promise<DeviceView[]> {
+/** Every paired device (including legacy rows that have an active class but no owner), by name. */
+export async function listDevices(): Promise<DeviceView[]> {
   const { devices: dv, classes: cl } = schema;
   const rows = await db.select({ d: dv, c: { id: cl.id, name: cl.name, code: cl.code, ownerUserId: cl.ownerUserId } })
     .from(dv).leftJoin(cl, eq(cl.id, dv.classId))
-    .where(or(eq(dv.ownerUserId, userId), and(isNull(dv.ownerUserId), eq(cl.ownerUserId, userId))))
+    .where(or(isNotNull(dv.ownerUserId), isNotNull(dv.classId)))
     .orderBy(asc(dv.name), asc(dv.id));
   return rows.map(r => deviceView(r.d, r.c));
 }
 
-/** A device row with its effective owner, or null if unknown. */
+/** A device row with its effective owner (null = unpaired), or null if unknown. */
 export async function getDeviceRow(id: string): Promise<{ row: DeviceRow; owner: string | null } | null> {
   const [r] = await db.select({ d: schema.devices, classOwner: schema.classes.ownerUserId }).from(schema.devices)
     .leftJoin(schema.classes, eq(schema.classes.id, schema.devices.classId)).where(eq(schema.devices.id, id)).limit(1);
@@ -542,7 +543,7 @@ export async function pairDevice(pairCode: string, userId: string, classId: stri
   return { deviceId: row.id, ownerUserId: userId, activeClassId: cls?.id ?? null, connected: !!d, state: d?.state ?? "offline" };
 }
 
-/** Sets a device's active class. The caller checked that `userId` owns the device and is a member of the class.
+/** Sets a paired device's active class; the caller checked that the class exists. `userId` is recorded as the owner.
  *  Throws DeviceBusyError while the device records into another class. */
 export async function setActiveClass(deviceId: string, userId: string, classId: string): Promise<DeviceView> {
   const d = devices.get(deviceId);
@@ -570,20 +571,22 @@ export async function unpairDevice(deviceId: string): Promise<void> {
   log(`unpaired device ${deviceId}`);
 }
 
-/** For a web start of `classId` by `userId`: the caller's device that should record it, switched to the class if it
- *  was pointed elsewhere (a connected, non-recording device is preferred). Null if the caller has no device.
- *  Throws DeviceBusyError if the caller's only connected device is recording another class. */
+/** For a web start of `classId` by `userId`: the device that should record it. One already pointed at the class
+ *  is used as it is; otherwise a connected, non-recording device is switched to the class. Offline devices are
+ *  never switched. Null if there is no such device (the browser microphone records instead).
+ *  Throws DeviceBusyError if every connected device is recording another class. */
 export async function deviceForWebStart(userId: string, classId: string): Promise<string | null> {
-  const mine = await listUserDevices(userId);
-  if (!mine.length) return null;
-  const here = mine.find(x => x.activeClass?.id === classId && x.connected) ?? mine.find(x => x.activeClass?.id === classId);
+  const all = await listDevices();
+  const here = all.find(x => x.activeClass?.id === classId && x.connected) ?? all.find(x => x.activeClass?.id === classId);
   if (here) return here.id;
-  const idle = mine.find(x => x.connected && x.state !== "recording");
-  const busy = mine.find(x => x.connected && x.state === "recording");
-  if (!idle && busy) throw new DeviceBusyError(`your device is recording ${busy.activeClass?.code ?? "another course"}; stop that lecture first`);
-  const pick = idle ?? mine[0]!;
-  await setActiveClass(pick.id, userId, classId);
-  return pick.id;
+  const idle = all.find(x => x.connected && x.state !== "recording");
+  if (!idle) {
+    const busy = all.find(x => x.connected);
+    if (busy) throw new DeviceBusyError(`the device is recording ${busy.activeClass?.code ?? "another course"}; stop that lecture first`);
+    return null;
+  }
+  await setActiveClass(idle.id, userId, classId);
+  return idle.id;
 }
 
 // ---------- session lifecycle ----------
@@ -612,7 +615,7 @@ async function defaultTitle(classId: string): Promise<string> {
 export interface StartOpts {
   title?: string;
   source: "device" | "browser";
-  /** The device that records (the device that was pressed, or the caller's device from deviceForWebStart). It is
+  /** The device that records (the device that was pressed, or the one deviceForWebStart picked). It is
    *  bound only if it is connected and its active class is `classId`. Omitted: the first connected device pointed at the class. */
   deviceId?: string | null;
 }

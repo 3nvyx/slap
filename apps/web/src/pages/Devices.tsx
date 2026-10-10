@@ -1,5 +1,5 @@
-// Device ownership UI: a device belongs to the signed-in user and records into its active class.
-// Shared by the class list ("Your device" card) and the class home device panel.
+// Device UI: paired devices are shared by everyone (there is no sign-in) and each records into its active class.
+// Shared by the class list ("Device" card) and the class home device panel.
 import type { ClassSummary } from '@slap/contracts'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
@@ -60,7 +60,7 @@ export function YourDeviceCard({ classes, onClassesChanged }: { classes: ClassSu
 
   return (
     <Panel
-      title="Your device"
+      title="Device"
       action={
         list.length > 0 && !pairing ? (
           <button className="cursor-pointer text-xs text-muted underline hover:text-ink" onClick={() => setPairing(true)}>

@@ -26,7 +26,7 @@ import type {
 } from '@slap/contracts'
 import sample from '../fixtures/lecture_sample.txt?raw'
 import { ApiError } from './api'
-import type { ClassDetail, ClassDocument, ConceptDetail, DeviceSummary, Graph, JoinInfo, LectureDetail, Me, PairResult, PublicLecture, Today } from './types'
+import type { ClassDetail, ClassDocument, ConceptDetail, DeviceSummary, Graph, JoinInfo, LectureDetail, PairResult, PublicLecture, Today } from './types'
 
 const delay = (ms = 180 + Math.random() * 220) => new Promise((r) => setTimeout(r, ms))
 const iso = (d: Date) => d.toLocaleDateString('en-CA')
@@ -92,8 +92,8 @@ const CLASS2_ID = 'cls_stats116'
 const EXAM_DATE = iso(daysFromNow(12))
 
 const classes: ClassSummary[] = [
-  { id: CLASS_ID, name: 'CS229 Machine Learning', code: 'CS229', role: 'owner', lectureCount: 4, nextExam: EXAM_DATE, guestAccess: true },
-  { id: CLASS2_ID, name: 'STATS116 Probability', code: 'STAT116', role: 'student', lectureCount: 1, nextExam: null, guestAccess: false },
+  { id: CLASS_ID, name: 'CS229 Machine Learning', code: 'CS229', lectureCount: 4, nextExam: EXAM_DATE },
+  { id: CLASS2_ID, name: 'STATS116 Probability', code: 'STAT116', lectureCount: 1, nextExam: null },
 ]
 
 const lectures: LectureSummary[] = [
@@ -433,19 +433,18 @@ function mockPretest(fresh = false) {
 type Handler = (m: RegExpMatchArray, body: unknown, q: URLSearchParams) => unknown
 const routes: Array<[string, RegExp, Handler]> = [
   ['GET', /^\/api\/health\/ready$/, () => ({ ok: true, mode: 'demo', backends: { db: 'mock', stt: 'mock', llm: 'mock', translate: 'mock' } })],
-  ['GET', /^\/api\/classes\/public$/, () => classes.filter((c) => c.guestAccess).map((c) => ({ id: c.id, name: c.name, code: c.code }))],
   ['GET', /^\/api\/join\/([^/]+)$/, (m): JoinInfo => {
     const code = decodeURIComponent(m[1]).toUpperCase()
     const cls = classes.find((c) => c.code.toUpperCase() === code)
     if (!cls) throw new ApiError(404, 'unknown class code')
     const live = lectures.find((l) => l.classId === cls.id && l.status === 'live')
-    return { classId: cls.id, className: cls.name, lectureId: live?.id ?? null, live: !!live, guestAccess: !!cls.guestAccess }
+    return { classId: cls.id, className: cls.name, lectureId: live?.id ?? null, live: !!live }
   }],
   ['GET', /^\/api\/lectures\/([^/]+)\/public$/, (m): PublicLecture => {
     const lec = lectures.find((l) => l.id === m[1])
     if (!lec) throw new ApiError(404, 'lecture not found')
     const cls = classes.find((c) => c.id === lec.classId)!
-    return { title: lec.title, className: cls.name, classId: cls.id, guestAccess: !!cls.guestAccess, status: lec.status, finals: [] }
+    return { title: lec.title, className: cls.name, classId: cls.id, status: lec.status, finals: [] }
   }],
   ['POST', /^\/api\/lectures\/([^/]+)\/replay$/, (m): LectureSummary => {
     const lec = lectures.find((l) => l.id === m[1])
@@ -454,30 +453,18 @@ const routes: Array<[string, RegExp, Handler]> = [
     // The mock caption stream is the same for every id; point at the live fixture lecture.
     return { ...lectures.find((l) => l.status === 'live')!, title: `Replay · ${lec.title}` }
   }],
-  ['POST', /^\/api\/classes\/([^/]+)\/guest-access$/, (m, body): ClassSummary => {
-    const cls = classes.find((c) => c.id === m[1])
-    if (!cls) throw new ApiError(404, 'class not found')
-    cls.guestAccess = !!(body as { enabled: boolean }).enabled
-    return cls
-  }],
   ['GET', /^\/api\/classes\/([^/]+)\/announcements$/, (m) =>
     lectures
       .filter((l) => l.classId === m[1] && l.status === 'ready')
       .flatMap((l) => lectureDetail(l.id).announcements.map((a) => ({ ...a, lectureId: l.id, lectureTitle: l.title, lectureDate: l.date })))
       .sort((a, b) => (a.when && b.when ? a.when.localeCompare(b.when) : a.when ? -1 : b.when ? 1 : 0))],
-  ['GET', /^\/api\/me$/, (): Me => ({ userId: 'usr_demo', email: 'demo@slap.dev', classes })],
+  ['GET', /^\/api\/classes$/, (): ClassSummary[] => classes],
   ['POST', /^\/api\/classes$/, (_m, body): ClassSummary => {
     const { name, code } = body as { name: string; code: string }
     if (!name || !code) throw new ApiError(400, 'name and code are required')
     if (classes.some((c) => c.code.toUpperCase() === code.toUpperCase())) throw new ApiError(400, 'code already in use')
-    const cls: ClassSummary = { id: `cls_${code.toLowerCase()}`, name, code: code.toUpperCase(), role: 'owner', lectureCount: 0, nextExam: null }
+    const cls: ClassSummary = { id: `cls_${code.toLowerCase()}`, name, code: code.toUpperCase(), lectureCount: 0, nextExam: null }
     classes.push(cls)
-    return cls
-  }],
-  ['POST', /^\/api\/classes\/join$/, (_m, body): ClassSummary => {
-    const code = String((body as { code: string }).code ?? '').toUpperCase()
-    const cls = classes.find((c) => c.code.toUpperCase() === code)
-    if (!cls) throw new ApiError(404, 'unknown class code')
     return cls
   }],
   ['GET', /^\/api\/classes\/([^/]+)$/, (m): ClassDetail => {
@@ -486,7 +473,6 @@ const routes: Array<[string, RegExp, Handler]> = [
     const ls = lectures.filter((l) => l.classId === cls.id)
     return {
       class: { ...cls, lectureCount: ls.length },
-      students: cls.id === CLASS_ID ? 38 : 3,
       lectures: ls,
       device: (() => {
         const d = deviceIn(cls.id)
@@ -531,7 +517,7 @@ const routes: Array<[string, RegExp, Handler]> = [
     const lec: LectureSummary = { id: `lec_${Date.now().toString(36)}`, classId: m[1], title: (body as { title?: string })?.title || `Lecture ${n}`, date: iso(new Date()), status: 'live' }
     // The web start records with the user's device, switching it to this course first.
     const d = deviceIn(m[1]) ?? devices.find((x) => x.state !== 'recording')
-    if (!deviceIn(m[1]) && !d && devices.length) throw new ApiError(409, 'your device is recording another course; stop that lecture first')
+    if (!deviceIn(m[1]) && !d && devices.length) throw new ApiError(409, 'the device is recording another course; stop that lecture first')
     lectures.unshift(lec)
     if (d) {
       pointAt(d, m[1])

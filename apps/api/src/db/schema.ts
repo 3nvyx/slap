@@ -1,28 +1,21 @@
-// Slap database schema (Drizzle, Postgres on Neon). Users live in Neon Auth's
-// `neon_auth.user`; we reference them by their id (text) only.
+// Slap database schema (Drizzle, Postgres on Neon). There are no accounts: every `user_id` / `owner_user_id`
+// is the unverified per-browser id from user.ts (rows from before sign-in was removed hold Neon Auth user ids).
+// The database still has the `enrollments` table and `classes.guest_access` from then; nothing reads them.
 import { pgTable, text, uuid, timestamp, integer, real, boolean, jsonb, date, serial, primaryKey, uniqueIndex, index } from "drizzle-orm/pg-core";
 
 export const classes = pgTable("classes", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   code: text("code").notNull().unique(),          // short join code, e.g. CS229
-  ownerUserId: text("owner_user_id").notNull(),
-  guestAccess: boolean("guest_access").notNull().default(false),   // anyone may read notes, graph and exam topics without signing in (the demo class)
+  ownerUserId: text("owner_user_id").notNull(),   // the caller that created it; informational only
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
-
-export const enrollments = pgTable("enrollments", {
-  userId: text("user_id").notNull(),
-  classId: uuid("class_id").notNull().references(() => classes.id, { onDelete: "cascade" }),
-  role: text("role", { enum: ["owner", "student"] }).notNull().default("student"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-}, (t) => [primaryKey({ columns: [t.userId, t.classId] })]);
 
 export const devices = pgTable("devices", {
   id: uuid("id").primaryKey().defaultRandom(),
   deviceKey: text("device_key").notNull().unique(),   // shared secret flashed into firmware
   pairCode: text("pair_code").unique(),                // 6 chars shown on OLED until paired
-  ownerUserId: text("owner_user_id"),                  // the user it is paired to; null = unpaired (legacy rows: the active class's owner)
+  ownerUserId: text("owner_user_id"),                  // the caller that paired it; null = unpaired (legacy rows: the active class's owner)
   classId: uuid("class_id").references(() => classes.id, { onDelete: "set null" }),   // ACTIVE class: where a start records; null = none picked
   name: text("name"),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
@@ -112,7 +105,7 @@ export const cards = pgTable("cards", {
   back: text("back").notNull(),
 }, (t) => [index("cards_class").on(t.classId)]);
 
-// Per-student FSRS state (ts-fsrs Card fields).
+// Per-student FSRS state (ts-fsrs Card fields); a student is a browser (user.ts).
 export const cardState = pgTable("card_state", {
   userId: text("user_id").notNull(),
   cardId: uuid("card_id").notNull().references(() => cards.id, { onDelete: "cascade" }),

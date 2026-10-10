@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { AnnouncementList } from '../components/Announcements'
 import { useClass } from '../components/ClassLayout'
 import { ButtonLink, Dot, Label, PageTitle, Panel, Pill } from '../components/ui'
@@ -9,15 +9,9 @@ import { fmtDate, fmtTime } from '../lib/format'
 import { LANGUAGES } from '../lib/languages'
 import { useApi } from '../lib/useApi'
 
-/** One page for the person at the front: device, who is watching, the caption tail, students and their questions. */
+/** One page for the person at the front: device, who is watching, the caption tail and the questions asked. */
 export function LecturerPage() {
   const { classId, detail } = useClass()
-  if (detail.class.role !== 'owner') return <Navigate to={`/c/${classId}`} replace />
-  return <LecturerView classId={classId} />
-}
-
-function LecturerView({ classId }: { classId: string }) {
-  const { detail } = useClass()
   const live = detail.lectures.find((l) => l.status === 'live')
   const liveInfo = detail.live ?? null
   const current = live ?? null
@@ -76,10 +70,10 @@ function LecturerView({ classId }: { classId: string }) {
           </div>
         </div>
         <div className="rounded-md border border-line bg-panel p-5">
-          <Label>Students enrolled</Label>
-          <div className="mt-3 font-mono text-4xl font-bold">{detail.students ?? 0}</div>
+          <Label>Lectures</Label>
+          <div className="mt-3 font-mono text-4xl font-bold">{detail.lectures.length}</div>
           <div className="mt-1 text-xs text-muted">
-            {detail.lectures.length} lecture{detail.lectures.length === 1 ? '' : 's'} · code <span className="font-mono">{detail.class.code}</span>
+            code <span className="font-mono">{detail.class.code}</span>
           </div>
         </div>
       </div>
