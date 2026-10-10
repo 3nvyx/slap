@@ -16,6 +16,7 @@ import type {
   Rating,
   RecallResult,
   StudyBundleStatus,
+  StudyPlan,
 } from '@slap/contracts'
 import { clearToken, getToken } from './auth'
 import { API_BASE, MOCK } from './env'
@@ -160,6 +161,8 @@ export const api = {
     post<PretestAttempt>(`/api/classes/${enc(classId)}/pretest/${enc(questionId)}/attempt`, { answer }),
   examTopics: (classId: string) => get<ExamTopic[]>(`/api/classes/${enc(classId)}/exam-topics`),
   today: (classId: string) => get<Today>(`/api/classes/${enc(classId)}/today`),
+  studyPlan: (classId: string) => get<StudyPlan>(`/api/classes/${enc(classId)}/study-plan`),
+  regenerateStudyPlan: (classId: string) => post<StudyPlan>(`/api/classes/${enc(classId)}/study-plan`),
   mastery: (classId: string) => get<Record<string, number>>(`/api/classes/${enc(classId)}/mastery`),
   uploadDocument: (classId: string, kind: 'book' | 'syllabus', file: File) => {
     const form = new FormData()

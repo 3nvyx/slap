@@ -1,7 +1,7 @@
 /**
  * Study routes (docs/api.md "Study"): study bundle status/re-run, FSRS review,
- * practice + grading, recall check, exam topics, Today page, mastery, and course
- * document upload. Mounted by routes/index.ts under /api, so paths here are relative
+ * practice + grading, recall check, exam topics, Today page, the model-written study
+ * plan, mastery, and course document upload. Mounted by routes/index.ts under /api, so paths here are relative
  * to /api. Every route needs a signed-in class member; re-running a bundle and
  * uploading documents need the class owner. Errors are { error } via HTTPException.
  */
@@ -17,6 +17,7 @@ import { grade, pickPractice } from "../pipeline/practice.ts";
 import { recallCheck } from "../pipeline/recall.ts";
 import { getExamTopics } from "../pipeline/examTopics.ts";
 import { getToday } from "../pipeline/plan.ts";
+import { getStudyPlan } from "../pipeline/studyPlan.ts";
 import { getMastery } from "../pipeline/mastery.ts";
 import { getPretest, gradePretest } from "../pipeline/pretest.ts";
 import { askLecture } from "../pipeline/ask.ts";
@@ -178,6 +179,17 @@ studyRoutes.get("/classes/:classId/exam-topics", optionalUser, async c => {
 studyRoutes.get("/classes/:classId/today", requireUser, async c => {
   const classId = await member(c);
   return c.json(await getToday(c.var.user.id, classId));
+});
+
+// The model-written plan (syllabus dates, lecture notes, concept notes, class pace); cached per student per day.
+studyRoutes.get("/classes/:classId/study-plan", requireUser, async c => {
+  const classId = await member(c);
+  return c.json(await getStudyPlan(c.var.user.id, classId));
+});
+
+studyRoutes.post("/classes/:classId/study-plan", requireUser, async c => {
+  const classId = await member(c);
+  return c.json(await getStudyPlan(c.var.user.id, classId, { fresh: true }));
 });
 
 studyRoutes.get("/classes/:classId/mastery", requireUser, async c => {

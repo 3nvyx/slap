@@ -32,7 +32,7 @@ Env (Vite, build time): `VITE_NEON_AUTH_URL` (Neon Auth base URL for sign-in), `
 | `/c/:classId/partner` | signed in | Spoken learning partner (hold to talk) |
 | `/c/:classId/pretest` | signed in | Three questions on the syllabus's upcoming week |
 | `/c/:classId/lecturer` | owner | Lecturer view: device, session, who is watching and in which languages, live caption tail, students enrolled, questions asked in class |
-| `/c/:classId/today` | signed in | Cards due, next exam, practice set, pretest, coming-up announcements, weak spots, 7-day plan |
+| `/c/:classId/today` | signed in | Cards due, next exam, practice set, pretest, coming-up announcements, weak spots, and the model-written study plan (overview, class pace, key dates, day by day with tasks; regenerate button) |
 | `/recall/:lectureId` | signed in | 3-minute free recall, compared into got / missed / wrong |
 
 Guests: `ClassLayout` asks the API for the class without a token; a class with guest access answers with `role: "guest"`, the layout shows a banner and sends the per-student nav items to sign-in (and back). A 401/403 without a session redirects to `/login?next=`.
