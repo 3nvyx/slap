@@ -1,5 +1,5 @@
 import type { Attempt, Concept, Question } from '@slap/contracts'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useClass } from '../components/ClassLayout'
 import { Button, cx, Empty, ErrorBox, Label, PageTitle, Spinner, textareaCls } from '../components/ui'
@@ -76,6 +76,7 @@ function QuestionCard({ n, q, byId, classId, onGraded }: { n: number; q: Questio
   const [result, setResult] = useState<Attempt | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
+  const card = useRef<HTMLElement>(null)
   const concept = byId.get(q.conceptId)
   const other = q.relateTo ? (byId.get(q.relateTo)?.name ?? q.relateTo) : null
 
@@ -87,6 +88,9 @@ function QuestionCard({ n, q, byId, classId, onGraded }: { n: number; q: Questio
       const a = await api.attempt(q.id, answer)
       setResult(a)
       onGraded(a)
+      // Hands off to the next question so a set can be answered from the keyboard alone.
+      const next = card.current?.nextElementSibling
+      if (next instanceof HTMLElement && next.tagName === 'ARTICLE') next.focus({ preventScroll: false })
     } catch (e) {
       setError(e)
     } finally {
@@ -94,8 +98,30 @@ function QuestionCard({ n, q, byId, classId, onGraded }: { n: number; q: Questio
     }
   }
 
+  // Keyboard: A–D (or 1–4) picks an option, Enter checks; typed answers use ⌘/Ctrl+Enter (set on the textarea).
+  const onKey = (e: KeyboardEvent<HTMLElement>) => {
+    if (result || e.target instanceof HTMLTextAreaElement) return
+    if (q.kind === 'mcq' && q.options) {
+      const i = /^[a-d]$/i.test(e.key) ? e.key.toLowerCase().charCodeAt(0) - 97 : /^[1-4]$/.test(e.key) ? Number(e.key) - 1 : -1
+      if (i >= 0 && i < q.options.length) {
+        e.preventDefault()
+        setAnswer(q.options[i])
+        return
+      }
+    }
+    if (e.key === 'Enter' && answer.trim()) {
+      e.preventDefault()
+      void submit()
+    }
+  }
+
   return (
-    <article className={cx('rounded-md border bg-panel p-5 md:p-6', result ? (result.correct ? 'border-good/60' : 'border-bad/60') : 'border-line')}>
+    <article
+      ref={card}
+      tabIndex={-1}
+      onKeyDown={onKey}
+      className={cx('rounded-md border bg-panel p-5 outline-none focus-visible:ring-2 focus-visible:ring-ink/40 md:p-6', result ? (result.correct ? 'border-good/60' : 'border-bad/60') : 'border-line')}
+    >
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <span className="font-mono text-xs text-muted">{String(n).padStart(2, '0')}</span>
         <span className="label">{q.kind === 'mcq' ? 'Multiple choice' : q.kind === 'short' ? 'Short answer' : 'Relate'}</span>
@@ -162,7 +188,8 @@ function QuestionCard({ n, q, byId, classId, onGraded }: { n: number; q: Questio
           <p className="leading-relaxed text-ink-2">{result.feedback}</p>
         </div>
       ) : (
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex items-center justify-end gap-4">
+          <span className="text-xs text-muted">{q.kind === 'mcq' ? 'A–D picks · Enter checks' : '⌘/Ctrl+Enter checks'}</span>
           <Button variant="ink" disabled={busy || !answer.trim()} onClick={() => void submit()}>
             {busy ? 'Grading…' : 'Check'}
           </Button>
