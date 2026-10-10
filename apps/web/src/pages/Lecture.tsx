@@ -7,6 +7,7 @@ import { loginPath } from '../components/RequireAuth'
 import { Async, Button, ButtonLink, cx, Empty, ErrorBox, ExamBadge, inputCls, Label, MasteryBar, Pill } from '../components/ui'
 import { api, errorMessage } from '../lib/api'
 import { fmtDate, fmtTime, pct } from '../lib/format'
+import { LANGUAGES, storedLang, storeLang } from '../lib/languages'
 import type { LectureDetail } from '../lib/types'
 import { useApi } from '../lib/useApi'
 
@@ -68,6 +69,12 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
   const sections = useMemo(() => sectionsFor(data.segments, data.outline), [data.segments, data.outline])
   const location = useLocation()
   const [activeSeg, setActiveSeg] = useState<number | null>(null)
+  // Transcript translation: the language the student watched captions in, from the translations saved live.
+  const [lang, setLang] = useState(storedLang)
+  const tr = useApi(() => api.translations(lecture.id, lang), [lecture.id, lang], { enabled: lang !== 'en' && data.segments.length > 0 })
+  const trText = lang !== 'en' ? tr.data : undefined
+  const trCount = trText ? data.segments.filter((s) => trText[String(s.id)]).length : 0
+  const rtl = LANGUAGES.find((l) => l.code === lang)?.rtl
 
   // Deep link: #seg-<id> scrolls to and flashes that segment.
   useEffect(() => {
@@ -218,9 +225,34 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
           )}
 
           <section>
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <Label>Transcript</Label>
-              {data.concepts.length > 0 && <span className="text-xs text-muted">Hover a highlighted term for its note</span>}
+              <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
+                {data.concepts.length > 0 && <span>Hover a highlighted term for its note</span>}
+                {data.segments.length > 0 && (
+                  <label className="flex items-center gap-2">
+                    <span>Translation</span>
+                    <select
+                      className="h-8 rounded-md border border-line bg-bg px-2 text-xs text-ink"
+                      value={lang}
+                      onChange={(e) => {
+                        setLang(e.target.value)
+                        storeLang(e.target.value)
+                      }}
+                      aria-label="Transcript translation"
+                    >
+                      {LANGUAGES.map((l) => (
+                        <option key={l.code} value={l.code}>
+                          {l.code === 'en' ? 'None' : `${l.native} · ${l.name}`}
+                        </option>
+                      ))}
+                    </select>
+                    {lang !== 'en' && tr.data && (
+                      <span>{trCount === 0 ? 'none saved for this lecture' : trCount < data.segments.length ? `${trCount} of ${data.segments.length} lines` : 'saved live'}</span>
+                    )}
+                  </label>
+                )}
+              </div>
             </div>
             {data.segments.length === 0 ? (
               <Empty>No transcript yet.</Empty>
@@ -236,26 +268,36 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
                       {sec.summary && <p className="mt-1 text-sm text-ink-2">{sec.summary}</p>}
                     </div>
                   )}
-                  {paragraphs(sec.segments).map((para) => (
-                    <div key={para[0].id} className="mb-5 grid grid-cols-[3.5rem_1fr] gap-3">
-                      <span className="pt-1 font-mono text-xs text-muted">{fmtTime(para[0].start)}</span>
-                      <p className={cx('leading-[1.75]', isStudent(para[0]) && 'border-l-2 border-accent pl-3 text-ink-2')}>
-                        {para.map((s) => (
-                          <span key={s.id} id={`seg-${s.id}`} className={cx('scroll-mt-24 rounded-sm', activeSeg === s.id && 'flash')}>
-                            {isStudent(s) && (
-                              <span
-                                className="mr-2 inline-flex h-5 -translate-y-px items-center rounded-sm bg-ink px-1.5 align-middle font-mono text-[10px] uppercase tracking-wider text-bg"
-                                title={`Speaker ${s.speaker}`}
-                              >
-                                Student
+                  {paragraphs(sec.segments).map((para) => {
+                    const translated = trText ? para.map((s) => trText[String(s.id)]).filter(Boolean).join(' ') : ''
+                    return (
+                      <div key={para[0].id} className="mb-5 grid grid-cols-[3.5rem_1fr] gap-3">
+                        <span className="pt-1 font-mono text-xs text-muted">{fmtTime(para[0].start)}</span>
+                        <div className="min-w-0">
+                          <p className={cx('leading-[1.75]', isStudent(para[0]) && 'border-l-2 border-accent pl-3 text-ink-2')}>
+                            {para.map((s) => (
+                              <span key={s.id} id={`seg-${s.id}`} className={cx('scroll-mt-24 rounded-sm', activeSeg === s.id && 'flash')}>
+                                {isStudent(s) && (
+                                  <span
+                                    className="mr-2 inline-flex h-5 -translate-y-px items-center rounded-sm bg-ink px-1.5 align-middle font-mono text-[10px] uppercase tracking-wider text-bg"
+                                    title={`Speaker ${s.speaker}`}
+                                  >
+                                    Student
+                                  </span>
+                                )}
+                                <ConceptText text={s.text} matcher={matcher} classId={classId} />{' '}
                               </span>
-                            )}
-                            <ConceptText text={s.text} matcher={matcher} classId={classId} />{' '}
-                          </span>
-                        ))}
-                      </p>
-                    </div>
-                  ))}
+                            ))}
+                          </p>
+                          {translated && (
+                            <p lang={lang} dir={rtl ? 'rtl' : undefined} className="mt-1.5 border-l-2 border-line pl-3 text-sm leading-relaxed text-ink-2">
+                              {translated}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               ))
             )}
