@@ -44,7 +44,7 @@ export type CaptionEvent =
   | { type: "interim"; seq: number; text: string; words: CaptionWord[]; start: number; end: number }
   | { type: "final";   seq: number; segmentId: number; text: string; words: CaptionWord[]; start: number; end: number; speaker?: number }
   | { type: "translation"; seq: number; segmentId: number; lang: string; text: string }
-  | { type: "status"; state: DeviceState | "ended"; viewers: number; languages: string[]; latencyMs?: number; message?: string }
+  | { type: "status"; state: DeviceState | "ended"; viewers: number; languages: string[]; latencyMs?: number; message?: string; replay?: boolean }   // replay: a saved lecture played back, not live audio
   | { type: "snapshot"; seq: number; finals: Array<{ segmentId: number; text: string; start: number; end: number; translation?: string }> };
 
 export type LiveClientMessage =

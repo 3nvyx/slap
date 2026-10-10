@@ -1,11 +1,11 @@
 import type { OutlineSection, Segment, StudyBundleStatus } from '@slap/contracts'
-import { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useClass } from '../components/ClassLayout'
 import { ConceptText, useConceptMatcher } from '../components/ConceptText'
 import { loginPath } from '../components/RequireAuth'
-import { Async, Button, ButtonLink, cx, Empty, ErrorBox, ExamBadge, Label, MasteryBar, Pill } from '../components/ui'
-import { api } from '../lib/api'
+import { Async, Button, ButtonLink, cx, Empty, ErrorBox, ExamBadge, inputCls, Label, MasteryBar, Pill } from '../components/ui'
+import { api, errorMessage } from '../lib/api'
 import { fmtDate, fmtTime, pct } from '../lib/format'
 import type { LectureDetail } from '../lib/types'
 import { useApi } from '../lib/useApi'
@@ -113,6 +113,7 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
           <ButtonLink variant="ink" to={guest ? loginPath(`/recall/${lecture.id}`) : `/recall/${lecture.id}`}>
             Recall check
           </ButtonLink>
+          {owner && lecture.status !== 'live' && data.segments.length > 0 && <ReplayControl lectureId={lecture.id} durationS={data.segments[data.segments.length - 1].end} />}
         </div>
       </header>
 
@@ -262,6 +263,75 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
         </article>
       </div>
     </div>
+  )
+}
+
+/** "m:ss" or "ss" → seconds; null when blank or unparseable. */
+function parseClock(s: string): number | null {
+  const t = s.trim()
+  if (!t) return null
+  const m = /^(?:(\d+):)?(\d{1,2}(?:\.\d+)?)$/.exec(t)
+  if (!m) return null
+  return Number(m[1] ?? 0) * 60 + Number(m[2])
+}
+
+/** Demo replay (owner): plays this lecture's saved captions back through the live page, labelled as a replay.
+ *  Optional window (m:ss) and speed, so the dense five minutes can be shown without waiting an hour. */
+function ReplayControl({ lectureId, durationS }: { lectureId: string; durationS: number }) {
+  const [open, setOpen] = useState(false)
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [speed, setSpeed] = useState('1')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const navigate = useNavigate()
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    const f = parseClock(from)
+    const t = parseClock(to)
+    if ((from.trim() && f == null) || (to.trim() && t == null)) {
+      setError('Use m:ss, e.g. 12:30')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await api.replay(lectureId, { ...(f != null ? { from: f } : {}), ...(t != null ? { to: t } : {}), speed: Number(speed) })
+      navigate(`/live/${r.id}`)
+    } catch (err) {
+      setError(errorMessage(err))
+      setBusy(false)
+    }
+  }
+
+  if (!open)
+    return (
+      <Button onClick={() => setOpen(true)} title="Play the saved captions back through the live page (labelled as a replay)">
+        Replay captions
+      </Button>
+    )
+  return (
+    <form onSubmit={submit} className="flex flex-wrap items-center gap-2 rounded-md border border-line bg-panel p-2" aria-label="Replay captions">
+      <span className="label px-1">Replay</span>
+      <input className={inputCls + ' w-20 font-mono'} placeholder="0:00" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="From (m:ss)" />
+      <span className="text-xs text-muted">to</span>
+      <input className={inputCls + ' w-20 font-mono'} placeholder={fmtTime(durationS)} value={to} onChange={(e) => setTo(e.target.value)} aria-label="To (m:ss)" />
+      <select className={inputCls + ' w-20'} value={speed} onChange={(e) => setSpeed(e.target.value)} aria-label="Speed">
+        {['1', '2', '4'].map((s) => (
+          <option key={s} value={s}>
+            {s}×
+          </option>
+        ))}
+      </select>
+      <Button variant="accent" disabled={busy}>
+        {busy ? 'Starting…' : 'Play'}
+      </Button>
+      <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+        Cancel
+      </Button>
+      {error && <span className="basis-full text-xs text-bad">{error}</span>}
+    </form>
   )
 }
 

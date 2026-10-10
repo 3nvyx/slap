@@ -40,6 +40,8 @@ export interface PublicLecture {
   classId: string
   guestAccess: boolean
   status: LectureSummary['status']
+  /** A saved lecture being played back, not live audio. */
+  replay?: boolean
   finals: PublicFinal[]
 }
 
@@ -62,11 +64,20 @@ export interface ClassDevice {
   name?: string | null
 }
 
-/** Who is watching the live lecture right now; null when nothing is live. */
+/** Who is watching the live lecture (or replay) right now; null when nothing is live. */
 export interface ClassLive {
   lectureId: string
+  title: string
+  replay: boolean
   viewers: number
   languages: string[]
+}
+
+/** Replay window and rate for `POST /api/lectures/:id/replay`. */
+export interface ReplayOpts {
+  from?: number
+  to?: number
+  speed?: number
 }
 
 export interface ClassDetail {

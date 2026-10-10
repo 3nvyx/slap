@@ -104,6 +104,8 @@ export function LivePage() {
 
   const ended = state.status?.state === 'ended' || (meta.data && meta.data.status !== 'live' && state.finals.length === 0 && !state.interim)
   const live = !ended && socket === 'open' && state.status?.state === 'recording'
+  // Clearly labelled: a replay of a saved lecture is not the room's live audio.
+  const replay = !!(state.status?.replay || meta.data?.replay)
   const translated = lang !== 'en'
   const size = SIZES[sizeIdx]
   const smaller = SIZES[Math.max(0, sizeIdx - 1)]
@@ -118,6 +120,11 @@ export function LivePage() {
           <span className="hidden sm:inline">slap</span>
         </Link>
         <div className="min-w-0 flex-1 truncate text-sm text-white/60">
+          {replay && (
+            <span className="mr-2 inline-flex h-5 items-center rounded-sm border border-yellow-400/70 px-1.5 font-mono text-[10px] uppercase tracking-wider text-yellow-300" title="A saved lecture played back, not live audio">
+              Replay
+            </span>
+          )}
           {meta.data ? (
             <>
               <span className="text-white/90">{meta.data.className}</span> · {meta.data.title}
@@ -165,8 +172,8 @@ export function LivePage() {
         <div className="mx-auto w-full max-w-6xl space-y-6">
           {ended && (
             <div className="rounded-md border border-white/15 bg-white/5 p-5 text-base" onClick={(e) => e.stopPropagation()}>
-              <div className="font-mono text-xs uppercase tracking-widest text-white/50">Lecture ended</div>
-              <p className="mt-2 text-white/80">Captions stopped. Notes, flashcards and practice will be ready shortly.</p>
+              <div className="font-mono text-xs uppercase tracking-widest text-white/50">{replay ? 'Replay ended' : 'Lecture ended'}</div>
+              <p className="mt-2 text-white/80">{replay ? 'That was a saved lecture played back; its notes and practice are already in the class.' : 'Captions stopped. Notes, flashcards and practice will be ready shortly.'}</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link
                   to={user ? `/recall/${lectureId}` : loginPath(`/recall/${lectureId}`)}
@@ -188,7 +195,7 @@ export function LivePage() {
             </div>
           )}
           <div>
-            <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">Lecturer · EN</div>
+            <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">{replay ? 'Replay of a saved lecture · EN' : 'Lecturer · EN'}</div>
             <SourceLine state={state} size={translated ? smaller : size} />
           </div>
           {(translated || state.finals.length > 0) && (
@@ -210,9 +217,9 @@ export function LivePage() {
 
       <footer className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-white/10 px-4 py-2.5 font-mono text-[11px] uppercase tracking-wider text-white/55 md:px-8">
         <span className="flex items-center gap-2">
-          <span className={`size-2 rounded-full ${live ? 'pulse bg-[#ff6a00]' : socket === 'reconnecting' ? 'bg-yellow-400' : 'bg-white/30'}`} />
-          <span className={live ? 'text-[#ff8a3d]' : ''}>
-            {ended ? 'Ended' : socket === 'reconnecting' ? 'Reconnecting' : socket === 'connecting' ? 'Connecting' : live ? 'Live' : (state.status?.state ?? 'Waiting')}
+          <span className={`size-2 rounded-full ${live ? (replay ? 'pulse bg-yellow-400' : 'pulse bg-[#ff6a00]') : socket === 'reconnecting' ? 'bg-yellow-400' : 'bg-white/30'}`} />
+          <span className={live ? (replay ? 'text-yellow-300' : 'text-[#ff8a3d]') : ''}>
+            {ended ? 'Ended' : socket === 'reconnecting' ? 'Reconnecting' : socket === 'connecting' ? 'Connecting' : live ? (replay ? 'Replay' : 'Live') : (state.status?.state ?? 'Waiting')}
           </span>
         </span>
         {state.status && <span>{state.status.viewers} watching</span>}

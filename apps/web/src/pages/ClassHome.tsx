@@ -155,12 +155,29 @@ function SessionPanel({
     }
   }
 
+  // A replay has no lecture row: it only shows up in the in-memory `live` info.
+  const replay = !live && liveInfo?.replay ? liveInfo : null
+
   return (
     <section className="dotgrid overflow-hidden rounded-md border border-line bg-panel">
       <div className="flex flex-wrap items-center gap-6 p-5 md:p-6">
         <div className="min-w-0 flex-1">
           <Label>Session</Label>
-          {live ? (
+          {replay ? (
+            <>
+              <div className="mt-2 flex items-center gap-2">
+                <Pill status="replay">replay</Pill>
+                <span className="truncate text-lg font-semibold">{replay.title}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-3 text-sm">
+                <Link className="underline" to={`/live/${replay.lectureId}`}>
+                  Open captions
+                </Link>
+                <Watching info={replay} />
+                <span className="text-muted">Saved captions played back · labelled as a replay</span>
+              </div>
+            </>
+          ) : live ? (
             <>
               <div className="mt-2 flex items-center gap-2">
                 <Pill status="live" />
@@ -187,7 +204,11 @@ function SessionPanel({
           )}
         </div>
         {owner &&
-          (live ? (
+          (replay ? (
+            <Button variant="ink" size="lg" className="min-w-40" disabled={busy} onClick={() => void act(() => api.stopLecture(replay.lectureId))}>
+              <span className="size-3 rounded-[2px] bg-yellow-400" /> {busy ? 'Stopping…' : 'Stop replay'}
+            </Button>
+          ) : live ? (
             <Button
               variant="ink"
               size="lg"

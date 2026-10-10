@@ -41,6 +41,10 @@ before(async () => {
     { classId: ids.cls, title: "Lecture 2", date: "2026-10-08", status: "ready", source: "import", endedAt: new Date() },
   ]).returning();
   ids.l1 = l1!.id; ids.l2 = l2!.id;
+  await d.insert(s.segments).values([
+    { lectureId: ids.l1, idx: 0, startS: 0, endS: 1, text: "Gradient descent takes a step." },
+    { lectureId: ids.l1, idx: 1, startS: 1.2, endS: 2, text: "Against the gradient." },
+  ]);
   await d.insert(s.outlines).values([
     { lectureId: ids.l1, summary: "s", sections: [], announcements: [{ kind: "other", text: "Slides are online", when: null }, { kind: "deadline", text: "Problem set 2", when: "2099-01-15" }] },
     { lectureId: ids.l2, summary: "s", sections: [], announcements: [{ kind: "exam", text: "Midterm", when: "2099-01-02" }] },
@@ -154,6 +158,38 @@ test("practice ?lectureId puts that lecture's questions first; ?conceptId still 
   assert.equal(l1.data[0].id, ids.q1);
   assert.equal(l1.data.length, 3, "fills up from the rest of the class");
   assert.equal((await call(owner, "GET", `/api/classes/${ids.cls}/practice?lectureId=nope`)).status, 400);
+});
+
+test("replay route: owner only; the replay is the class's live lecture, public and stoppable by its own id", { skip }, async () => {
+  assert.equal((await call(stranger, "POST", `/api/lectures/${ids.l1}/replay`, { speed: 10 })).status, 403);
+  assert.equal((await call(owner, "POST", `/api/lectures/${ids.l2}/replay`, { speed: 10 })).status, 400, "no transcript");
+  assert.equal((await call(owner, "POST", `/api/lectures/${ids.l1}/replay`, { from: 5 })).status, 400, "empty window");
+
+  const r = await call(owner, "POST", `/api/lectures/${ids.l1}/replay`, { speed: 0.25 });
+  assert.equal(r.status, 201);
+  assert.equal(r.data.status, "live");
+  assert.equal(r.data.title, "Replay · Lecture 1");
+  assert.notEqual(r.data.id, ids.l1);
+  const replayId: string = r.data.id;
+
+  assert.equal((await call(owner, "POST", `/api/lectures/${ids.l1}/replay`)).status, 409, "one replay per class");
+  const join = await call(null, "GET", `/api/join/${`GT${run}`.slice(0, 16)}`);
+  assert.equal(join.data.live, true);
+  assert.equal(join.data.lectureId, replayId);
+  const pub = await call(null, "GET", `/api/lectures/${replayId}/public`);
+  assert.equal(pub.status, 200);
+  assert.equal(pub.data.replay, true);
+  assert.equal(pub.data.title, "Replay · Lecture 1");
+  const cls = await call(owner, "GET", `/api/classes/${ids.cls}`);
+  assert.equal(cls.data.live?.lectureId, replayId);
+  assert.equal(cls.data.live?.replay, true);
+  assert.equal(cls.data.lectures.length, 2, "a replay adds no lecture row");
+
+  assert.equal((await call(stranger, "POST", `/api/lectures/${replayId}/stop`)).status, 403);
+  const stop = await call(owner, "POST", `/api/lectures/${replayId}/stop`);
+  assert.equal(stop.status, 200);
+  assert.equal(stop.data.status, "ended");
+  assert.equal((await call(null, "GET", `/api/join/${`GT${run}`.slice(0, 16)}`)).data.live, false);
 });
 
 test("turning guest access off closes the class again", { skip }, async () => {
