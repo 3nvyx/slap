@@ -11,6 +11,7 @@ import { ExamTopicsPage } from './pages/ExamTopics'
 import { JoinPage } from './pages/Join'
 import { Landing } from './pages/Landing'
 import { LecturePage } from './pages/Lecture'
+import { LecturerPage } from './pages/Lecturer'
 import { LivePage } from './pages/Live'
 import { NotFound } from './pages/NotFound'
 import { PartnerPage } from './pages/Partner'
@@ -73,6 +74,7 @@ export default function App() {
               <Route path="practice" element={<PracticePage />} />
               <Route path="partner" element={<PartnerPage />} />
               <Route path="pretest" element={<PretestPage />} />
+              <Route path="lecturer" element={<LecturerPage />} />
               <Route path="today" element={<TodayPage />} />
             </Route>
           </Route>
