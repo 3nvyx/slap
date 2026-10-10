@@ -22,6 +22,7 @@ import type {
   RecallResult,
   Segment,
   StudyBundleStatus,
+  StudyPlan,
   StudyPlanDay,
 } from '@slap/contracts'
 import sample from '../fixtures/lecture_sample.txt?raw'
@@ -260,6 +261,46 @@ function plan(): StudyPlanDay[] {
       reason: i === 0 ? 'Cards due today plus your two weakest exam-flagged concepts.' : i === 6 ? 'Mixed review across lectures, 5 days before the midterm.' : `Interleaved practice on high-emphasis topics; ${12 - i} days to the midterm.`,
     }
   })
+}
+
+let studyPlanSeq = 0
+function studyPlan(fresh = false): StudyPlan {
+  if (fresh) studyPlanSeq++
+  const today = iso(new Date())
+  const examDays = 12
+  const horizon = examDays + 1
+  const ranked = [...concepts].sort((a, b) => Number(b.examFlag) - Number(a.examFlag) || (a.mastery ?? 0) - (b.mastery ?? 0) || b.emphasis - a.emphasis)
+  const weakest = ranked.slice(0, 3)
+  const days = Array.from({ length: horizon }, (_, i) => {
+    const date = iso(daysFromNow(i))
+    const cardsDue = Math.max(2, 14 - i * 2)
+    const pick = i === examDays ? ranked.filter((c) => c.examFlag).slice(0, 2) : i === examDays - 1 ? weakest : [0, 1, 2].map((j) => ranked[((i + studyPlanSeq) * 3 + j) % ranked.length])
+    const reason = i === examDays ? 'Midterm today: light review of flagged concepts only.' : i === examDays - 1 ? 'Day before the midterm: retrieval practice on your weakest flagged concepts.' : i >= examDays - 2 ? `${examDays - i} days to the midterm: no new material, mixed review.` : `${examDays - i} days to the midterm: three concepts mixed across lectures, keeping pace with two lectures a week.`
+    return {
+      date,
+      focus: pick[0]?.name ?? 'Review',
+      concepts: pick.map((c) => ({ id: c.id, name: c.name })),
+      tasks: [`Review ${cardsDue} cards`, ...pick.slice(0, 2).map((c) => `Practice: 3 questions on ${c.name}`), ...(pick[2] ? [`Re-read the notes on ${pick[2].name}`] : [])],
+      minutes: 20 + 15 * pick.length + Math.min(30, cardsDue),
+      cardsDue,
+      reason,
+    }
+  })
+  return {
+    date: today,
+    generatedAt: new Date().toISOString(),
+    horizonDays: horizon,
+    overview: 'Twelve days to the midterm: cover its topics first, interleaved across the four lectures, and finish new material two days early so the last stretch is retrieval practice.',
+    pace: 'Four lectures in two weeks, about two a week; the syllabus is in week 5 of 10 and your notes cover every topic so far.',
+    paceData: { lecturesHeld: 4, lecturesPerWeek: 2, currentWeek: 5, totalWeeks: 10, lastLectureDate: iso(daysFromNow(-2)) },
+    nextExam: { name: 'Midterm', date: EXAM_DATE, daysLeft: examDays },
+    keyDates: [
+      { date: iso(daysFromNow(3)), daysLeft: 3, name: 'Lecture: Exponential family', kind: 'lecture', note: 'Preview the syllabus topics the day before.' },
+      { date: iso(daysFromNow(6)), daysLeft: 6, name: 'Problem set 2', kind: 'deadline', note: 'Keep the day before light and get it in early.' },
+      { date: EXAM_DATE, daysLeft: examDays, name: 'Midterm', kind: 'exam', note: 'Covers lectures 1-6; finish new material two days before.' },
+    ],
+    days,
+  }
 }
 
 function lectureDetail(id: string): LectureDetail {
@@ -643,6 +684,8 @@ const routes: Array<[string, RegExp, Handler]> = [
       notInLecture: false,
     }
   }],
+  ['GET', /^\/api\/classes\/([^/]+)\/study-plan$/, () => studyPlan()],
+  ['POST', /^\/api\/classes\/([^/]+)\/study-plan$/, () => studyPlan(true)],
   ['GET', /^\/api\/classes\/([^/]+)\/pretest$/, () => mockPretest()],
   ['POST', /^\/api\/classes\/([^/]+)\/pretest$/, () => mockPretest(true)],
   ['POST', /^\/api\/classes\/([^/]+)\/pretest\/([^/]+)\/attempt$/, (m, body) => {

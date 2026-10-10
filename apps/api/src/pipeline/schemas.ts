@@ -113,6 +113,26 @@ export const SyllabusOut = z.object({
 });
 export type SyllabusOut = z.infer<typeof SyllabusOut>;
 
+export const StudyPlanOut = z.object({
+  overview: str.default(""),
+  pace: str.default(""),
+  keyDates: z.array(z.object({
+    date: isoDay,
+    name: nonEmpty,
+    kind: z.enum(["exam", "deadline", "lecture", "other"]).catch("other"),
+    note: str.default(""),
+  })).default([]),
+  days: z.array(z.object({
+    date: isoDay,
+    focus: str.default(""),
+    concepts: names,
+    tasks: names,
+    minutes: z.coerce.number().min(0).max(600).catch(45),
+    reason: str.default(""),
+  })).default([]),
+});
+export type StudyPlanOut = z.infer<typeof StudyPlanOut>;
+
 /** Removes ``` fences and any prose before the first `{` / after the last `}`. */
 export function stripToJson(text: string): string {
   let t = text.trim();

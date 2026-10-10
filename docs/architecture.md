@@ -12,7 +12,7 @@ Runtime: Node 22 LTS (the Mac has Node 26; the Docker image uses `node:22-alpine
 |---|---|---|
 | `MODE` | `demo`, `local`, `cloud` | Which way the app is being run; the variables below still choose the backends |
 | `STT_BACKEND` | `deepgram` (default), `whisperlivekit` | Which speech-to-text implementation sits behind the `stt.ts` interface; `whisperlivekit` is WhisperLiveKit with the MLX Whisper backend, native on the Mac |
-| `LLM_BACKEND` | `claude` (default), `free`, `local` | Post-lecture jobs and grading; `free` is the one hosted fallback (Gemini Flash free tier); `local` is Ollama (Qwen3-8B) on the laptop, post-event |
+| `LLM_BACKEND` | `claude` (default), `openai`, `gemini`, `mock` | Post-lecture jobs, grading and the study plan; `openai` is the Responses API (`OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_REASONING`); `gemini` is the hosted fallback (Gemini Flash free tier); `mock` runs with no key. Ollama (`local`) is a post-event idea, not built |
 | `TRANSLATE_BACKEND` | `google` (default), `azure`, `deepl` | Live caption translation |
 | `DATABASE_URL`, `NEON_AUTH_BASE_URL`, `NEON_AUTH_JWKS_URL` | the Neon project's values (`neon env pull` writes them to `.env.local`) | Postgres and Auth; tokens are verified with `jose` (`createRemoteJWKSet`) against the JWKS URL, issuer and audience being the auth base URL; `DATABASE_URL` is server-side only |
 | API keys | e.g. `DEEPGRAM_API_KEY`, `ANTHROPIC_API_KEY` | Only for the backends that are selected |

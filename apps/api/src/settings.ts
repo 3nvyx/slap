@@ -13,11 +13,14 @@ export const settings = {
   stt: { backend: env("STT_BACKEND", "deepgram") as "deepgram" | "mock", deepgramKey: env("DEEPGRAM_API_KEY") },
   translate: { backend: env("TRANSLATE_BACKEND", env("GOOGLE_TRANSLATE_API_KEY") ? "google" : "mock") as "google" | "mock", googleKey: env("GOOGLE_TRANSLATE_API_KEY") },
   llm: {
-    backend: env("LLM_BACKEND", env("ANTHROPIC_API_KEY") ? "claude" : env("GEMINI_API_KEY") ? "gemini" : "mock") as "claude" | "gemini" | "mock",
+    backend: env("LLM_BACKEND", env("ANTHROPIC_API_KEY") ? "claude" : env("OPENAI_API_KEY") ? "openai" : env("GEMINI_API_KEY") ? "gemini" : "mock") as "claude" | "openai" | "gemini" | "mock",
     anthropicKey: env("ANTHROPIC_API_KEY"),
     anthropicModel: env("ANTHROPIC_MODEL", "claude-sonnet-5-5")!,
     geminiKey: env("GEMINI_API_KEY"),
     geminiModel: env("GEMINI_MODEL", "gemini-2.5-flash")!,
+    openaiKey: env("OPENAI_API_KEY"),
+    openaiModel: env("OPENAI_MODEL") || "gpt-5-mini",   // Responses API model id; fill in .env.local
+    openaiReasoning: env("OPENAI_REASONING", "low")!,    // reasoning.effort for reasoning models; "" sends none
   },
   fish: {
     key: env("FISH_API_KEY"),

@@ -96,6 +96,28 @@ export interface Pretest {
 }
 export interface PretestAttempt { questionId: string; answer: string; correct: boolean; feedback: string }
 
+// Study plan written by the model from the syllabus dates, lecture notes, concept notes and the class's pace
+// (generated per student per class per day, kept in memory). `concepts[].id` is null when a name did not match a note.
+export interface StudyPlanKeyDate { date: string; daysLeft: number; name: string; kind: "exam" | "deadline" | "lecture" | "other"; note: string }
+export interface StudyPlanDayDetail {
+  date: string; focus: string; concepts: Array<{ id: string | null; name: string }>; tasks: string[]; minutes: number; cardsDue: number; reason: string;
+}
+export interface StudyPlanPace {
+  lecturesHeld: number; lecturesPerWeek: number | null; currentWeek: number | null; totalWeeks: number;
+  lastLectureDate: string | null;
+}
+export interface StudyPlan {
+  date: string;                 // the day it was written for
+  generatedAt: string;
+  horizonDays: number;
+  overview: string;
+  pace: string;                 // the model's one-liner on the class pace
+  paceData: StudyPlanPace;      // the numbers it was given
+  nextExam: { name: string; date: string; daysLeft: number } | null;
+  keyDates: StudyPlanKeyDate[];
+  days: StudyPlanDayDetail[];
+}
+
 export type JobStatus = "queued" | "running" | "done" | "failed";
 export interface StudyBundleStatus { lectureId: string; status: JobStatus; steps: Record<string, JobStatus>; error?: string | null }
 

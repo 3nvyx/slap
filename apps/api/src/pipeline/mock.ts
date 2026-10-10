@@ -6,8 +6,8 @@
  * concepts are frequent noun phrases, definitions are lecture quotes, grading is
  * keyword overlap.
  */
-import type { AskPayload, BookPayload, CardsPayload, ConceptsPayload, GradePayload, OutlinePayload, PretestPayload, PromptSeg, QuestionsPayload, RecallPayload, SyllabusPayload } from "./tasks.ts";
-import type { AskOut, BookOut, CardsOut, ConceptsOut, GradeOut, OutlineOut, PretestOut, QuestionsOut, RecallOut, SyllabusOut } from "./schemas.ts";
+import type { AskPayload, BookPayload, CardsPayload, ConceptsPayload, GradePayload, OutlinePayload, PretestPayload, PromptSeg, QuestionsPayload, RecallPayload, StudyPlanPayload, SyllabusPayload } from "./tasks.ts";
+import type { AskOut, BookOut, CardsOut, ConceptsOut, GradeOut, OutlineOut, PretestOut, QuestionsOut, RecallOut, StudyPlanOut, SyllabusOut } from "./schemas.ts";
 import { GLOSSARY } from "./mockGlossary.ts";
 import { STOPWORDS, contentWords, firstSentence, keywordOverlap, readInputBlock, seededShuffle, slugify, stem, titleCase, tokenize } from "./util.ts";
 
@@ -25,6 +25,7 @@ export function mockComplete(task: string, prompt: string, docText?: string): st
       case "syllabus": return mockSyllabus(input as unknown as SyllabusPayload, docText ?? "");
       case "pretest": return mockPretest(input as unknown as PretestPayload);
       case "ask": return mockAsk(input as unknown as AskPayload);
+      case "studyplan": return mockStudyPlan(input as unknown as StudyPlanPayload);
       default: return { text: `mock reply for ${task}` };
     }
   })();
@@ -428,4 +429,47 @@ function mockSyllabus(p: SyllabusPayload, doc: string): SyllabusOut {
     }
   }
   return out;
+}
+
+// ---------- study plan ----------
+
+/** Deterministic plan: key dates straight from the input; days interleave the weakest high-emphasis concepts,
+ *  exam day is light review, the day before it is the weakest three, deadlines make lighter days. */
+export function mockStudyPlan(p: StudyPlanPayload): StudyPlanOut {
+  const day = (n: number) => { const d = new Date(p.today + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const end = day(p.horizonDays - 1);
+  const keyDates: StudyPlanOut["keyDates"] = [
+    ...p.exams.map(e => ({ date: e.date, name: e.name, kind: "exam" as const, note: e.topics.length ? `Covers ${e.topics.slice(0, 4).join(", ")}: finish new material 2 days before.` : "Finish new material 2 days before; review flagged concepts on the day." })),
+    ...p.deadlines.map(d => ({ date: d.date, name: d.name, kind: "deadline" as const, note: "Keep the day before light and get it in early." })),
+    ...p.announcements.filter(a => a.when && /^\d{4}-\d{2}-\d{2}$/.test(a.when)).map(a => ({ date: a.when!, name: a.text.slice(0, 80), kind: (a.kind === "exam" || a.kind === "deadline" ? a.kind : "other") as "exam" | "deadline" | "other", note: `Said in ${a.lecture}.` })),
+  ].filter(k => k.date >= p.today && (k.date <= end || k.kind === "exam")).sort((a, b) => a.date.localeCompare(b.date));
+  const exam = p.exams.find(e => e.daysLeft >= 0) ?? null;
+  const ranked = [...p.concepts].sort((a, b) => Number(b.examFlag) - Number(a.examFlag) || (a.mastery ?? 0) - (b.mastery ?? 0) || b.emphasis - a.emphasis);
+  const weakest = ranked.slice(0, 3);
+  const deadlineDays = new Set(p.deadlines.map(d => d.date));
+  const days: StudyPlanOut["days"] = [];
+  for (let i = 0; i < p.horizonDays; i++) {
+    const date = day(i);
+    const due = p.cardsDueByDay[i] ?? 0;
+    const beforeDeadline = deadlineDays.has(day(i + 1));
+    let chosen: typeof ranked;
+    let reason: string;
+    if (exam && i === exam.daysLeft) { chosen = ranked.filter(c => c.examFlag).slice(0, 2); reason = `${exam.name} today: light review only.`; }
+    else if (exam && i === exam.daysLeft - 1) { chosen = weakest; reason = `Day before ${exam.name}: retrieval practice on the weakest flagged concepts.`; }
+    else if (beforeDeadline) { chosen = ranked.slice((i * 2) % Math.max(1, ranked.length)).slice(0, 1); reason = "A deadline tomorrow: one concept and the due cards, nothing more."; }
+    else { chosen = ranked.length ? [0, 1, 2].map(j => ranked[(i * 3 + j) % ranked.length]!).filter((c, j, a) => a.indexOf(c) === j) : []; reason = exam ? `${exam.daysLeft - i} days to ${exam.name}: three concepts mixed across lectures.` : "No exam date yet: steady practice on the highest-emphasis concepts."; }
+    const tasks = [
+      ...(due ? [`Review ${due} card${due === 1 ? "" : "s"}`] : []),
+      ...chosen.slice(0, 2).map(c => `Practice: 3 questions on ${c.name}`),
+      ...(chosen[2] ? [`Re-read the notes on ${chosen[2].name}`] : []),
+    ];
+    days.push({ date, focus: chosen[0]?.name ?? "Review", concepts: chosen.map(c => c.name), tasks, minutes: 20 + 15 * chosen.length + Math.min(30, due), reason });
+  }
+  const pace = p.pace.lecturesHeld
+    ? `${p.pace.lecturesHeld} lecture${p.pace.lecturesHeld === 1 ? "" : "s"} so far${p.pace.lecturesPerWeek ? `, about ${p.pace.lecturesPerWeek} a week` : ""}${p.pace.currentWeek ? `; the syllabus is in week ${p.pace.currentWeek} of ${p.pace.totalWeeks}` : ""}.`
+    : "No lectures recorded yet: the plan follows the syllabus only.";
+  const overview = exam
+    ? `${exam.daysLeft} days to ${exam.name}: cover its topics first, interleaved across lectures, and finish new material 2 days early.`
+    : "Steady interleaved practice on the highest-emphasis concepts, previewing each week's syllabus topics before the lecture.";
+  return { overview, pace, keyDates, days };
 }
