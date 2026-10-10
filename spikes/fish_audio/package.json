@@ -1,0 +1,7 @@
+{ "name": "slap-spike-fish", "private": true, "type": "module",
+  "scripts": {
+    "tts": "node --env-file-if-exists=../../.env.local --env-file-if-exists=../../../.env.local tts_test.ts",
+    "asr": "node --env-file-if-exists=../../.env.local --env-file-if-exists=../../../.env.local asr_test.ts ../whisper_local/audio/cs229_l03_12to17.wav ../deepgram_stream/transcript_deepgram.txt"
+  },
+  "dependencies": { "@msgpack/msgpack": "^3.1.2", "ws": "^8.18.3" },
+  "devDependencies": { "@types/ws": "^8.18.1", "@types/node": "^24.0.0" } }

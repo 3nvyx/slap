@@ -1,0 +1,181 @@
+import type {
+  Attempt,
+  Card,
+  ClassSummary,
+  Concept,
+  ExamTopic,
+  Health,
+  LectureSummary,
+  PartnerSession,
+  PartnerTurn,
+  PartnerVoice,
+  Question,
+  Rating,
+  RecallResult,
+  StudyBundleStatus,
+} from '@slap/contracts'
+import { clearToken, getToken } from './auth'
+import { API_BASE, MOCK } from './env'
+import type {
+  ClassDetail,
+  ConceptDetail,
+  DeviceSummary,
+  DocumentDetail,
+  Graph,
+  JoinInfo,
+  LectureDetail,
+  Me,
+  PairResult,
+  PublicLecture,
+  ReviewResult,
+  Today,
+  UploadResult,
+} from './types'
+
+export class ApiError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
+type Method = 'GET' | 'POST' | 'DELETE'
+
+interface RequestOptions {
+  body?: unknown
+  /** Public routes skip the token. */
+  auth?: boolean
+}
+
+async function request<T>(method: Method, path: string, opts: RequestOptions = {}, retried = false): Promise<T> {
+  if (MOCK) {
+    const { mockRequest } = await import('./mock')
+    return mockRequest<T>(method, path, opts.body)
+  }
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  const auth = opts.auth ?? true
+  if (auth) {
+    const token = await getToken()
+    if (token) headers.Authorization = `Bearer ${token}`
+  }
+  let body: BodyInit | undefined
+  if (opts.body instanceof FormData) body = opts.body
+  else if (opts.body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+    body = JSON.stringify(opts.body)
+  }
+
+  let res: Response
+  try {
+    res = await fetch(API_BASE + path, { method, headers, body })
+  } catch {
+    throw new ApiError(0, 'Network error: is the API running?')
+  }
+  if (res.status === 401 && auth && !retried) {
+    clearToken()
+    return request<T>(method, path, opts, true)
+  }
+  const text = await res.text()
+  let data: unknown = null
+  if (text) {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = null
+    }
+  }
+  if (data && typeof data === 'object' && 'error' in data && typeof (data as { error: unknown }).error === 'string') {
+    throw new ApiError(res.status, (data as { error: string }).error)
+  }
+  if (!res.ok) throw new ApiError(res.status, `${res.status} ${res.statusText || 'Request failed'}`)
+  return data as T
+}
+
+const get = <T>(path: string, auth = true) => request<T>('GET', path, { auth })
+const post = <T>(path: string, body?: unknown) => request<T>('POST', path, { body: body ?? {} })
+const enc = encodeURIComponent
+
+export const api = {
+  health: () => get<Health>('/api/health/ready', false),
+
+  // public
+  join: (code: string) => get<JoinInfo>(`/api/join/${enc(code)}`, false),
+  publicLecture: (id: string, lang: string) => get<PublicLecture>(`/api/lectures/${enc(id)}/public?lang=${enc(lang)}`, false),
+
+  // signed in
+  me: () => get<Me>('/api/me'),
+  createClass: (name: string, code: string) => post<ClassSummary>('/api/classes', { name, code }),
+  joinClass: (code: string) => post<ClassSummary>('/api/classes/join', { code }),
+  classDetail: (classId: string) => get<ClassDetail>(`/api/classes/${enc(classId)}`),
+  startSession: (classId: string, title?: string) =>
+    post<LectureSummary>(`/api/classes/${enc(classId)}/sessions/start`, title ? { title } : {}),
+  stopLecture: (lectureId: string) => post<LectureSummary>(`/api/lectures/${enc(lectureId)}/stop`),
+  importLecture: (classId: string, input: { title: string; date: string; transcript: string }) =>
+    post<LectureSummary>(`/api/classes/${enc(classId)}/lectures/import`, input),
+  /** Pairs to the caller. `classId` becomes the active class (omitted: the caller's only class, if exactly one). */
+  pairDevice: (pairCode: string, classId?: string) =>
+    post<PairResult>('/api/devices/pair', classId ? { pairCode, classId } : { pairCode }),
+  devices: () => get<DeviceSummary[]>('/api/devices'),
+  setActiveClass: (deviceId: string, classId: string) =>
+    post<DeviceSummary>(`/api/devices/${enc(deviceId)}/active-class`, { classId }),
+  unpairDevice: (deviceId: string) => request<{ ok: boolean }>('DELETE', `/api/devices/${enc(deviceId)}`),
+  lecture: (id: string) => get<LectureDetail>(`/api/lectures/${enc(id)}`),
+  translations: (id: string, lang: string) =>
+    get<Record<string, string>>(`/api/lectures/${enc(id)}/translations?lang=${enc(lang)}`),
+  concepts: (classId: string) => get<Concept[]>(`/api/classes/${enc(classId)}/concepts`),
+  graph: (classId: string) => get<Graph>(`/api/classes/${enc(classId)}/graph`),
+  concept: (id: string) => get<ConceptDetail>(`/api/concepts/${enc(id)}`),
+
+  // study
+  bundle: (lectureId: string) => get<StudyBundleStatus>(`/api/lectures/${enc(lectureId)}/bundle`),
+  rerunBundle: (lectureId: string) => post<StudyBundleStatus>(`/api/lectures/${enc(lectureId)}/bundle`),
+  due: (classId: string, limit = 20) => get<Card[]>(`/api/classes/${enc(classId)}/review/due?limit=${limit}`),
+  review: (cardId: string, rating: Rating) => post<ReviewResult>(`/api/cards/${enc(cardId)}/review`, { rating }),
+  /** `conceptId` is an optional extension (not in the spec); the API may ignore it. */
+  practice: (classId: string, n = 5, conceptId?: string) =>
+    get<Question[]>(
+      `/api/classes/${enc(classId)}/practice?n=${n}${conceptId ? `&conceptId=${enc(conceptId)}` : ''}`,
+    ),
+  attempt: (questionId: string, answer: string) => post<Attempt>(`/api/questions/${enc(questionId)}/attempt`, { answer }),
+  recall: (lectureId: string, text: string) => post<RecallResult>(`/api/lectures/${enc(lectureId)}/recall`, { text }),
+  examTopics: (classId: string) => get<ExamTopic[]>(`/api/classes/${enc(classId)}/exam-topics`),
+  today: (classId: string) => get<Today>(`/api/classes/${enc(classId)}/today`),
+  mastery: (classId: string) => get<Record<string, number>>(`/api/classes/${enc(classId)}/mastery`),
+  uploadDocument: (classId: string, kind: 'book' | 'syllabus', file: File) => {
+    const form = new FormData()
+    form.append('kind', kind)
+    form.append('file', file)
+    return request<UploadResult>('POST', `/api/classes/${enc(classId)}/documents`, { body: form })
+  },
+  document: (id: string) => get<DocumentDetail>(`/api/documents/${enc(id)}`),
+
+  // learning partner (spoken practice)
+  partnerVoices: () => get<PartnerVoice[]>('/api/partner/voices'),
+  partnerSession: (classId: string, input: { lectureId?: string; voiceId?: string; lang?: string }) =>
+    post<PartnerSession>(`/api/classes/${enc(classId)}/partner/session`, input),
+  /** Multipart: `audio` (the recorded blob) or `text` (typed answer or a chip like "skip"). */
+  partnerTurn: (sessionId: string, input: { audio?: Blob; filename?: string; text?: string }) => {
+    const form = new FormData()
+    if (input.audio) form.append('audio', input.audio, input.filename ?? 'answer.webm')
+    if (input.text != null) form.append('text', input.text)
+    return request<PartnerTurn>('POST', `/api/partner/${enc(sessionId)}/turn`, { body: form })
+  },
+  endPartner: (sessionId: string) => request<unknown>('DELETE', `/api/partner/${enc(sessionId)}`),
+}
+
+/** Partner audio URLs come back as `/api/partner/audio/:id` (public). Resolve against the API origin. */
+export function audioSrc(url: string): string {
+  return url.startsWith('/') ? API_BASE + url : url
+}
+
+export function errorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 401) return 'Please sign in again.'
+    if (err.status === 403) return "You don't have access to this."
+    if (err.status === 404) return 'Not found.'
+    if (err.status >= 502 && err.status <= 504) return 'The Slap API is not reachable right now.'
+    return err.message
+  }
+  return err instanceof Error ? err.message : String(err)
+}

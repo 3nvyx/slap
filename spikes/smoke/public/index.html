@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8"><title>slap smoke</title>
+<body style="margin:0;background:#111;color:#eee;font:20px/1.4 system-ui;padding:24px">
+<div id="src" style="min-height:3em;color:#aaa"></div>
+<div id="fin" style="font-size:28px"></div>
+<script>
+const ws = new WebSocket(`ws://${location.host}/ws/live`);
+ws.onmessage = e => { const d = JSON.parse(e.data);
+  if (d.type === 'interim') { const w = d.words||[]; src.innerHTML = w.map((x,i)=> i>=w.length-2 ? `<b style="color:#fff">${x.punctuated_word||x.word}</b>` : (x.punctuated_word||x.word)).join(' '); }
+  if (d.type === 'final') { fin.textContent = d.text; src.textContent = ''; } };
+</script>

@@ -1,0 +1,22 @@
+# After-event hosting on one small VPS: API container + Caddy (automatic HTTPS, WebSocket proxy).
+# Secrets come from a .env file next to this compose file (never committed).
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MODE: cloud
+    expose: ["8787"]
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api]
+volumes:
+  caddy_data:
+  caddy_config:

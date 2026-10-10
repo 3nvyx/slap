@@ -1,0 +1,20 @@
+{
+  "name": "slap-smoke",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "server": "node --env-file-if-exists=../../.env.local --env-file-if-exists=../../../.env.local server.ts",
+    "device": "node fake_device.ts ../whisper_local/audio/cs229_l03_12to17.wav",
+    "db": "node --env-file-if-exists=../../.env.local --env-file-if-exists=../../../.env.local db_check.ts",
+    "jwks": "node --env-file-if-exists=../../.env.local --env-file-if-exists=../../../.env.local jwks_check.ts"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.1",
+    "jose": "^6.0.11",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.1"
+  }
+}

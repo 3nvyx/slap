@@ -1,0 +1,14 @@
+smoke server on http://localhost:8787
+[device] connected
+[device] text: {"hello":"fake-device","fw":"smoke","code":"A7K2QX"}
+[dg] open
+FINAL +1827ms  Wanna know if the Gaussian model is good enough for whatever
+FINAL +286ms  So if it turns out that the Gaussian model gives you a reall
+FINAL +226ms  and you need to model the errors in a more precise way to ge
+FINAL +438ms  then Gaussian isn't right for you. But it's a sliding scale.
+FINAL +1921ms  And one interesting thing that's amazing is if you get enoug
+FINAL +243ms  you know, law of large numbers and a bunch of other things, 
+FINAL +352ms  it kind of turns out that this is a pretty good model. So it
+FINAL +2116ms  Alright.
+FINAL +531ms  So let's see this. Actually, before I go on, any questions o
+[device] closed. interim median 121 ms (n=38), final median 438 ms (n=9)

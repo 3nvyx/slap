@@ -1,0 +1,3 @@
+# Wokwi library manifest (Arduino library registry names)
+U8g2
+WebSockets

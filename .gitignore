@@ -1,0 +1,17 @@
+.env
+.env.*
+spikes/**/audio/
+spikes/**/.venv/
+spikes/**/__pycache__/
+hardware/housing/stl/*.stl
+!hardware/housing/stl/.gitkeep
+node_modules/
+apps/api/.uploads/
+firmware/esp32/include/config.h
+firmware/esp32/.pio/
+apps/web/.env.development.local
+dist/
+apps/api/fixtures/dev-credentials.local.md
+!.env.example
+hardware/housing/print/.venv/
+hardware/housing/print/sliced*/
