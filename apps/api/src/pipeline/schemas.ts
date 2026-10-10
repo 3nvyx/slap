@@ -76,6 +76,9 @@ export const PretestOut = z.object({
 });
 export type PretestOut = z.infer<typeof PretestOut>;
 
+export const AskOut = z.object({ answer: nonEmpty, cites: z.array(idx).default([]), notInLecture: z.coerce.boolean().default(false) });
+export type AskOut = z.infer<typeof AskOut>;
+
 export const GradeOut = z.object({ correct: z.coerce.boolean(), feedback: str.default("") });
 export type GradeOut = z.infer<typeof GradeOut>;
 

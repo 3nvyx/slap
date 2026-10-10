@@ -5,6 +5,7 @@ import type {
   Concept,
   ExamTopic,
   Health,
+  LectureAnswer,
   LectureSummary,
   PartnerSession,
   PartnerTurn,
@@ -149,6 +150,8 @@ export const api = {
     ),
   attempt: (questionId: string, answer: string) => post<Attempt>(`/api/questions/${enc(questionId)}/attempt`, { answer }),
   recall: (lectureId: string, text: string) => post<RecallResult>(`/api/lectures/${enc(lectureId)}/recall`, { text }),
+  /** A question answered from the transcript only, with the segments it rests on (members). */
+  ask: (lectureId: string, question: string) => post<LectureAnswer>(`/api/lectures/${enc(lectureId)}/ask`, { question }),
   /** Before the next lecture: questions on the syllabus's upcoming week (generated once a day; not stored). */
   pretest: (classId: string) => get<Pretest>(`/api/classes/${enc(classId)}/pretest`),
   regeneratePretest: (classId: string) => post<Pretest>(`/api/classes/${enc(classId)}/pretest`),

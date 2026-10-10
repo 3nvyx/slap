@@ -19,6 +19,7 @@ import { getExamTopics } from "../pipeline/examTopics.ts";
 import { getToday } from "../pipeline/plan.ts";
 import { getMastery } from "../pipeline/mastery.ts";
 import { getPretest, gradePretest } from "../pipeline/pretest.ts";
+import { askLecture } from "../pipeline/ask.ts";
 import { MAX_UPLOAD_BYTES, createDocument, getDocument } from "../pipeline/documents.ts";
 import { getSyllabus, nextExam } from "../pipeline/syllabus.ts";
 import { getDb } from "../pipeline/db.ts";
@@ -137,6 +138,18 @@ studyRoutes.post("/lectures/:id/recall", requireUser, async c => {
   const r = await recallCheck(c.var.user.id, id, text);
   if (!r) throw new HTTPException(404, { message: "lecture not found" });
   return c.json(r);
+});
+
+// ---------- ask the lecture ----------
+
+const AskBody = z.object({ question: z.string().trim().min(2, "ask a question").max(500) });
+studyRoutes.post("/lectures/:id/ask", requireUser, async c => {
+  const id = idParam(c, "id", "lecture");
+  await classOf(c, "lectures", id, "member");
+  const { question } = await jsonBody(c, AskBody);
+  const a = await askLecture(id, question);
+  if (!a) throw new HTTPException(404, { message: "lecture not found" });
+  return c.json(a);
 });
 
 // ---------- pretest (before the next lecture) ----------

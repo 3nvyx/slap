@@ -6,7 +6,7 @@
  */
 import { inputBlock } from "./util.ts";
 
-export type Task = "outline" | "concepts" | "cards" | "questions" | "grade" | "recall" | "book" | "syllabus" | "pretest";
+export type Task = "outline" | "concepts" | "cards" | "questions" | "grade" | "recall" | "book" | "syllabus" | "pretest" | "ask";
 
 export interface PromptSeg { i: number; start: number; end: number; text: string }
 
@@ -24,6 +24,13 @@ export interface GradePayload { kind: "short" | "relate"; question: string; mode
 export interface RecallPayload { lectureTitle: string; concepts: Array<{ name: string; definition: string }>; outline: string[]; text: string }
 export interface BookPayload { knownConcepts: string[] }
 export interface SyllabusPayload { today: string }
+export interface AskPayload {
+  lectureTitle: string;
+  question: string;
+  /** The transcript lines most relevant to the question (callers cap the size). */
+  segments: PromptSeg[];
+  concepts: Array<{ name: string; definition: string }>;
+}
 export interface PretestPayload {
   count: number;
   week: number;
@@ -135,6 +142,18 @@ except weeks, which may have a null date.
 JSON shape:
 {"title": string|null, "exams": [{"name": string, "date": "YYYY-MM-DD", "topics": [string]}],
  "weeks": [{"week": number, "topics": [string], "date": "YYYY-MM-DD"|null}], "deadlines": [{"name": string, "date": "YYYY-MM-DD"}]}
+
+${inputBlock(p)}`;
+}
+
+export function askPrompt(p: AskPayload): string {
+  return `A student asks a question about the lecture "${p.lectureTitle}". Answer it in 2-5 sentences using only what the
+transcript lines in "segments" say (each line is "[i @ m:ss] text"; "concepts" are the lecture's concept notes for context).
+Quote or paraphrase the lecturer. "cites" lists the i of every line the answer rests on (1-4 lines). If the transcript does
+not cover the question, say so in one sentence, set "notInLecture" true and leave "cites" empty; do not answer from outside
+knowledge.
+
+JSON shape: {"answer": string, "cites": [number], "notInLecture": boolean}
 
 ${inputBlock(p)}`;
 }

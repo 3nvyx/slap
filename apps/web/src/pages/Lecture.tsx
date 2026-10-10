@@ -1,4 +1,4 @@
-import type { OutlineSection, Segment, StudyBundleStatus } from '@slap/contracts'
+import type { LectureAnswer, OutlineSection, Segment, StudyBundleStatus } from '@slap/contracts'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useClass } from '../components/ClassLayout'
@@ -88,6 +88,16 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
   }, [location.hash, data.segments])
 
   const scrollTo = (domId: string) => document.getElementById(domId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  // Same hash twice doesn't fire a navigation; scroll and flash directly.
+  const jumpTo = (segmentId: number) => {
+    const el = document.getElementById(`seg-${segmentId}`)
+    if (!el) return false
+    window.history.replaceState(null, '', `#seg-${segmentId}`)
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    setActiveSeg(null)
+    requestAnimationFrame(() => setActiveSeg(segmentId))
+    return true
+  }
 
   return (
     <div>
@@ -183,14 +193,7 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
                     <a
                       href={`#seg-${q.segmentId}`}
                       onClick={(e) => {
-                        // Same hash twice doesn't fire a navigation; scroll and flash directly.
-                        const el = document.getElementById(`seg-${q.segmentId}`)
-                        if (!el) return
-                        e.preventDefault()
-                        window.history.replaceState(null, '', `#seg-${q.segmentId}`)
-                        el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-                        setActiveSeg(null)
-                        requestAnimationFrame(() => setActiveSeg(q.segmentId))
+                        if (jumpTo(q.segmentId)) e.preventDefault()
                       }}
                       className="flex items-baseline gap-3 rounded-md border border-line bg-panel px-4 py-3 text-sm hover:border-ink"
                     >
@@ -223,6 +226,8 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
               </ul>
             </section>
           )}
+
+          {!guest && data.segments.length > 0 && <AskPanel lectureId={lecture.id} live={lecture.status === 'live'} jumpTo={jumpTo} />}
 
           <section>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -305,6 +310,86 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
         </article>
       </div>
     </div>
+  )
+}
+
+/** "Ask the lecture": a question answered from the transcript only, each answer with the lines it rests on. */
+function AskPanel({ lectureId, live, jumpTo }: { lectureId: string; live: boolean; jumpTo: (segmentId: number) => boolean }) {
+  const [question, setQuestion] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  const [thread, setThread] = useState<Array<{ q: string; a: LectureAnswer }>>([])
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    const q = question.trim()
+    if (q.length < 2 || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const a = await api.ask(lectureId, q)
+      setThread((t) => [{ q, a }, ...t].slice(0, 8))
+      setQuestion('')
+    } catch (err) {
+      setError(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="mb-8 rounded-md border border-line bg-panel p-5">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <Label>Ask the lecture</Label>
+        <span className="text-xs text-muted">{live ? 'Answers from what has been said so far' : 'Answers come from the transcript only, with the lines they rest on'}</span>
+      </div>
+      <form onSubmit={submit} className="flex gap-2">
+        <input
+          className={inputCls}
+          placeholder="e.g. Why did the lecturer say the Gaussian is a good default?"
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          maxLength={500}
+          aria-label="Question about the lecture"
+        />
+        <Button variant="ink" disabled={busy || question.trim().length < 2}>
+          {busy ? 'Reading…' : 'Ask'}
+        </Button>
+      </form>
+      {error != null && (
+        <div className="mt-3">
+          <ErrorBox error={error} />
+        </div>
+      )}
+      {thread.length > 0 && (
+        <ol className="mt-4 space-y-4">
+          {thread.map((t, i) => (
+            <li key={`${i}-${t.q}`} className={cx('border-t border-line pt-4', i > 0 && 'opacity-80')}>
+              <div className="text-sm font-medium">{t.q}</div>
+              <p className={cx('mt-1.5 leading-relaxed', t.a.notInLecture ? 'text-muted' : 'text-ink-2')}>{t.a.answer}</p>
+              {t.a.citations.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {t.a.citations.map((c) => (
+                    <a
+                      key={c.segmentId}
+                      href={`#seg-${c.segmentId}`}
+                      onClick={(e) => {
+                        if (jumpTo(c.segmentId)) e.preventDefault()
+                      }}
+                      className="inline-flex max-w-full items-baseline gap-2 rounded-md border border-line bg-bg px-2.5 py-1 text-xs hover:border-ink"
+                      title={c.excerpt}
+                    >
+                      <span className="font-mono text-accent">{fmtTime(c.start)}</span>
+                      <span className="truncate">{c.excerpt}</span>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   )
 }
 
