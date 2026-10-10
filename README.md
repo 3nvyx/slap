@@ -29,10 +29,12 @@ Environment (read only in `apps/api/src/settings.ts`): `DATABASE_URL`, `NEON_AUT
 
 ## Demo run
 
-1. `pnpm dev` (API on :8787, serving the built web app), sign in at `/login` (Neon Auth: Google or email).
-2. Create a class (code `CS229`), then pair the device by typing its on-screen code in the Device panel.
-3. Press the device's button (or double-slap it, or "Start session" in the app). Captions appear for anyone who opens `/j/CS229`; pick a language in the top bar.
+1. `pnpm dev` (API on :8787, serving the built web app; `pnpm --filter @slap/web build` first), sign in at `/login` (Neon Auth: Google or email).
+2. Create a class (code `CS229`), then pair the device by typing its on-screen code in the Device panel. Turn on **Guest access** under the join QR so judges can browse the notes, graph and exam topics without an account (the landing page lists such classes).
+3. Press the device's button (or double-slap it, or "Start session" in the app). Captions appear for anyone who opens `/j/CS229` (the page waits and opens them by itself if scanned early); pick a language in the top bar. The class home shows who is watching and in which languages.
 4. Open Partner in the class nav to practise out loud: hold the orange button and answer; the partner grades you and asks the next question in your chosen Fish voice. Needs `FISH_API_KEY` (and `FISH_VOICE_ID`).
-5. Stop the session: the study bundle runs (outline, concepts, cards, questions) and the lecture page, graph, review, practice, recall, exam topics and today pages fill in.
+5. Stop the session: the study bundle runs (outline, concepts, cards, questions) and the lecture page, graph, review, practice, recall, exam topics, exam sheet, pretest and today pages fill in. Ask the lecture a question from its page; export the class as an Obsidian vault from the graph.
 
-Without hardware: `node --env-file-if-exists=../../.env.local --env-file-if-exists=../../../.env.local apps/api/src/scripts/fake_device.ts --pair-code SLAP01 --seconds 300` streams the fixture lecture as a device would; or toggle "Use laptop microphone" on the class page.
+Without hardware: `node --env-file-if-exists=../../.env.local --env-file-if-exists=../../../.env.local apps/api/src/scripts/fake_device.ts --pair-code SLAP01 --seconds 300` streams the fixture lecture as a device would; toggle "Use laptop microphone" on the class page; or press **Replay captions** on any saved lecture to play it back through the caption page (labelled as a replay, joinable by the QR).
+
+Study jobs need a real LLM (`ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`) and live translation needs `GOOGLE_TRANSLATE_API_KEY`; without them the API runs those backends as mocks and `GET /api/health/ready` says so.
