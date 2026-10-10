@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - packages/*
+onlyBuiltDependencies:
+  - esbuild
+  - '@napi-rs/canvas'
+  - '@tailwindcss/oxide'
+  - sharp

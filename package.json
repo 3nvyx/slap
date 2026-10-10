@@ -1,0 +1,13 @@
+{
+  "name": "slap",
+  "private": true,
+  "packageManager": "pnpm@12.9.1",
+  "scripts": {
+    "dev": "pnpm --filter @slap/api dev",
+    "dev:web": "pnpm --filter @slap/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "db:push": "pnpm --filter @slap/api db:push",
+    "db:studio": "pnpm --filter @slap/api db:studio"
+  }
+}

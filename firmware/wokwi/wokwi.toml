@@ -1,0 +1,6 @@
+[wokwi]
+version = 1
+# For Wokwi CLI / VS Code: build sim_test with PlatformIO or arduino-cli for
+# esp32-s3 first, then point these at the outputs.
+firmware = "build/sim_test.ino.bin"
+elf = "build/sim_test.ino.elf"

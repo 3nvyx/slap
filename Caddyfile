@@ -1,0 +1,4 @@
+# Replace with the real hostname. Caddy proxies WebSockets with no extra config.
+{$SLAP_HOST:localhost} {
+	reverse_proxy api:8787
+}

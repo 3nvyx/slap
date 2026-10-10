@@ -1,0 +1,18 @@
+{
+ "large-v3-turbo": {
+  "wall_s": 59.3,
+  "rtf": 0.198,
+  "speed_x_realtime": 5.1,
+  "peak_gb": 1.91,
+  "words": 1108,
+  "segments": 60
+ },
+ "small": {
+  "wall_s": 24.7,
+  "rtf": 0.082,
+  "speed_x_realtime": 12.2,
+  "peak_gb": 1.91,
+  "words": 1106,
+  "segments": 68
+ }
+}
