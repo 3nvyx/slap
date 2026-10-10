@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useClass } from '../components/ClassLayout'
-import { Async, Bar, Empty, ExamBadge, Label, MasteryBar, PageTitle } from '../components/ui'
+import { Async, Bar, ButtonLink, Empty, ExamBadge, Label, MasteryBar, PageTitle } from '../components/ui'
 import { api } from '../lib/api'
 import { pct } from '../lib/format'
 import { useApi } from '../lib/useApi'
@@ -14,7 +14,9 @@ export function ExamTopicsPage() {
 
   return (
     <div className="max-w-4xl">
-      <PageTitle kicker="What to study first" title="Exam topics" />
+      <PageTitle kicker="What to study first" title="Exam topics">
+        <ButtonLink to={`/c/${classId}/exam-sheet`}>One-page sheet</ButtonLink>
+      </PageTitle>
       <p className="mb-8 max-w-2xl border-l-2 border-accent pl-3 text-sm text-ink-2">
         Heuristic: concepts ranked by how much the lecturer stressed them (explicit “this will be on the exam”, how often and how long each came up), weighted towards the ones you haven’t mastered. A guide, not a prediction.
       </p>

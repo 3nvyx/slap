@@ -102,6 +102,13 @@ test("the owner turns guest access on; the class summary reports it", { skip }, 
   assert.equal(pub.data.guestAccess, true);
 });
 
+test("public class list: only classes with guest access, no token needed", { skip }, async () => {
+  const r = await call(null, "GET", "/api/classes/public");
+  assert.equal(r.status, 200);
+  const mine = r.data.find((c: any) => c.id === ids.cls);
+  assert.deepEqual(mine, { id: ids.cls, name: "Guest test (throwaway)", code: `GT${run}`.slice(0, 16) });
+});
+
 test("guests (anonymous or non-member) read the class, lectures, concepts, graph, exam topics and announcements as role guest", { skip }, async () => {
   for (const who of [null, stranger]) {
     const cls = await call(who, "GET", `/api/classes/${ids.cls}`);
@@ -256,4 +263,5 @@ test("turning guest access off closes the class again", { skip }, async () => {
   assert.equal((await call(null, "GET", `/api/classes/${ids.cls}`)).status, 401);
   assert.equal((await call(stranger, "GET", `/api/classes/${ids.cls}/announcements`)).status, 403);
   assert.equal((await call(owner, "GET", `/api/classes/${ids.cls}`)).status, 200);
+  assert.ok(!(await call(null, "GET", "/api/classes/public")).data.some((c: any) => c.id === ids.cls), "gone from the public list");
 });

@@ -2,6 +2,28 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { UserMenu } from '../components/Shell'
 import { Button, inputCls, Label, Logo } from '../components/ui'
+import { api } from '../lib/api'
+import { useApi } from '../lib/useApi'
+
+/** Classes with guest access on: judges and visitors open one without an account. */
+function GuestClasses() {
+  const list = useApi(() => api.publicClasses(), [])
+  if (!list.data || list.data.length === 0) return null
+  return (
+    <section className="rounded-md border border-line bg-panel p-6 md:p-8">
+      <h2 className="text-2xl font-bold tracking-tight">Browse a class as a guest</h2>
+      <p className="mt-2 text-ink-2">No account needed: the lecture notes, concept graph and exam topics are open to read. Sign in to practise and track what you know.</p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {list.data.map((c) => (
+          <Link key={c.id} to={`/c/${c.id}`} className="inline-flex h-11 items-center gap-3 rounded-md border border-line bg-bg px-4 font-medium transition hover:border-ink">
+            <span className="font-mono text-xs text-muted">{c.code}</span>
+            {c.name}
+          </Link>
+        ))}
+      </div>
+    </section>
+  )
+}
 
 function DevicePlaceholder() {
   return (
@@ -107,6 +129,10 @@ export function Landing() {
             </form>
           </div>
         </section>
+
+        <div className="mt-6">
+          <GuestClasses />
+        </div>
 
         <section className="grid gap-4 py-12 md:grid-cols-3">
           {FEATURES.map((f) => (

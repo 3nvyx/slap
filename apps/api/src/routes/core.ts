@@ -127,6 +127,13 @@ coreRoutes.get("/join/:code", async (c) => {
   return c.json({ classId: cls.id, className: cls.name, lectureId: live?.id ?? null, live: !!live, guestAccess: cls.guestAccess });
 });
 
+// Classes anyone may browse (guest access on): the landing page's "browse as a guest" list for judges.
+coreRoutes.get("/classes/public", async (c) => {
+  const rows = await db.select({ id: classes.id, name: classes.name, code: classes.code }).from(classes)
+    .where(eq(classes.guestAccess, true)).orderBy(asc(classes.name)).limit(20);
+  return c.json(rows);
+});
+
 coreRoutes.get("/lectures/:id/public", async (c) => {
   const id = uuidParam(c, "id");
   const lang = normalizeLang(c.req.query("lang"));

@@ -433,6 +433,7 @@ function mockPretest(fresh = false) {
 type Handler = (m: RegExpMatchArray, body: unknown, q: URLSearchParams) => unknown
 const routes: Array<[string, RegExp, Handler]> = [
   ['GET', /^\/api\/health\/ready$/, () => ({ ok: true, mode: 'demo', backends: { db: 'mock', stt: 'mock', llm: 'mock', translate: 'mock' } })],
+  ['GET', /^\/api\/classes\/public$/, () => classes.filter((c) => c.guestAccess).map((c) => ({ id: c.id, name: c.name, code: c.code }))],
   ['GET', /^\/api\/join\/([^/]+)$/, (m): JoinInfo => {
     const code = decodeURIComponent(m[1]).toUpperCase()
     const cls = classes.find((c) => c.code.toUpperCase() === code)

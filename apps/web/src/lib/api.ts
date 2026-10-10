@@ -105,6 +105,7 @@ export const api = {
   health: () => get<Health>('/api/health/ready', false),
 
   // public
+  publicClasses: () => get<Array<{ id: string; name: string; code: string }>>('/api/classes/public', false),
   join: (code: string) => get<JoinInfo>(`/api/join/${enc(code)}`, false),
   publicLecture: (id: string, lang: string) => get<PublicLecture>(`/api/lectures/${enc(id)}/public?lang=${enc(lang)}`, false),
 
