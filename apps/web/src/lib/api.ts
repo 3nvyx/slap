@@ -17,6 +17,7 @@ import type {
 import { clearToken, getToken } from './auth'
 import { API_BASE, MOCK } from './env'
 import type {
+  ClassAnnouncement,
   ClassDetail,
   ConceptDetail,
   DeviceSummary,
@@ -107,7 +108,10 @@ export const api = {
   me: () => get<Me>('/api/me'),
   createClass: (name: string, code: string) => post<ClassSummary>('/api/classes', { name, code }),
   joinClass: (code: string) => post<ClassSummary>('/api/classes/join', { code }),
+  /** Readable by guests when the class has guest access (then `class.role` is "guest"). */
   classDetail: (classId: string) => get<ClassDetail>(`/api/classes/${enc(classId)}`),
+  setGuestAccess: (classId: string, enabled: boolean) => post<ClassSummary>(`/api/classes/${enc(classId)}/guest-access`, { enabled }),
+  announcements: (classId: string) => get<ClassAnnouncement[]>(`/api/classes/${enc(classId)}/announcements`),
   startSession: (classId: string, title?: string) =>
     post<LectureSummary>(`/api/classes/${enc(classId)}/sessions/start`, title ? { title } : {}),
   stopLecture: (lectureId: string) => post<LectureSummary>(`/api/lectures/${enc(lectureId)}/stop`),
@@ -132,10 +136,10 @@ export const api = {
   rerunBundle: (lectureId: string) => post<StudyBundleStatus>(`/api/lectures/${enc(lectureId)}/bundle`),
   due: (classId: string, limit = 20) => get<Card[]>(`/api/classes/${enc(classId)}/review/due?limit=${limit}`),
   review: (cardId: string, rating: Rating) => post<ReviewResult>(`/api/cards/${enc(cardId)}/review`, { rating }),
-  /** `conceptId` is an optional extension (not in the spec); the API may ignore it. */
-  practice: (classId: string, n = 5, conceptId?: string) =>
+  /** `conceptId` puts that concept's questions first; `lectureId` then prefers that lecture's. */
+  practice: (classId: string, n = 5, focus: { conceptId?: string; lectureId?: string } = {}) =>
     get<Question[]>(
-      `/api/classes/${enc(classId)}/practice?n=${n}${conceptId ? `&conceptId=${enc(conceptId)}` : ''}`,
+      `/api/classes/${enc(classId)}/practice?n=${n}${focus.conceptId ? `&conceptId=${enc(focus.conceptId)}` : ''}${focus.lectureId ? `&lectureId=${enc(focus.lectureId)}` : ''}`,
     ),
   attempt: (questionId: string, answer: string) => post<Attempt>(`/api/questions/${enc(questionId)}/attempt`, { answer }),
   recall: (lectureId: string, text: string) => post<RecallResult>(`/api/lectures/${enc(lectureId)}/recall`, { text }),

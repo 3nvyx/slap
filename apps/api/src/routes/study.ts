@@ -10,7 +10,7 @@ import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { requireClassRole, requireUser, type UserEnv } from "../auth.ts";
+import { optionalUser, requireClassRole, requireUser, type MaybeUserEnv, type UserEnv } from "../auth.ts";
 import { enqueueStudyBundle, getBundleStatus } from "../pipeline/bundle.ts";
 import { getDueCards, reviewCard } from "../pipeline/cards.ts";
 import { grade, pickPractice } from "../pipeline/practice.ts";
@@ -23,9 +23,10 @@ import { getSyllabus, nextExam } from "../pipeline/syllabus.ts";
 import { getDb } from "../pipeline/db.ts";
 
 type C = Context<UserEnv>;
+type MaybeC = Context<MaybeUserEnv>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function idParam(c: C, name: string, what: string): string {
+function idParam(c: C | MaybeC, name: string, what: string): string {
   const v = c.req.param(name) ?? "";
   if (!UUID.test(v)) throw new HTTPException(404, { message: `${what} not found` });
   return v;
@@ -46,13 +47,13 @@ function intQuery(c: C, name: string, def: number, min: number, max: number): nu
   return n;
 }
 
-/** Loads the class id of a row and checks the caller's role in it. */
-async function classOf(c: C, table: "lectures" | "cards" | "questions" | "documents", id: string, need: "member" | "owner"): Promise<string> {
+/** Loads the class id of a row and checks the caller's role in it (`read` admits guests of a guest-access class). */
+async function classOf(c: C | MaybeC, table: "lectures" | "cards" | "questions" | "documents", id: string, need: "read" | "member" | "owner"): Promise<string> {
   const { db, schema } = await getDb();
   const t = schema[table];
   const [row] = await db.select({ classId: t.classId }).from(t).where(eq(t.id, id)).limit(1);
   if (!row) throw new HTTPException(404, { message: `${table.replace(/s$/, "")} not found` });
-  await requireClassRole(c.var.user.id, row.classId, need);
+  await requireClassRole(c.var.user?.id ?? null, row.classId, need);
   return row.classId;
 }
 
@@ -62,13 +63,21 @@ async function member(c: C, need: "member" | "owner" = "member"): Promise<string
   return classId;
 }
 
-export const studyRoutes = new Hono<UserEnv>();
+/** Class id plus whether the caller is a guest (read-only: no mastery or per-student state). */
+async function reader(c: MaybeC): Promise<{ classId: string; guest: boolean }> {
+  const classId = idParam(c, "classId", "class");
+  const role = await requireClassRole(c.var.user?.id ?? null, classId, "read");
+  return { classId, guest: role === "guest" };
+}
+
+// Untyped like coreRoutes: each route's middleware (requireUser / optionalUser) types `c.var.user`.
+export const studyRoutes = new Hono();
 
 // ---------- study bundle ----------
 
-studyRoutes.get("/lectures/:id/bundle", requireUser, async c => {
+studyRoutes.get("/lectures/:id/bundle", optionalUser, async c => {
   const id = idParam(c, "id", "lecture");
-  await classOf(c, "lectures", id, "member");
+  await classOf(c, "lectures", id, "read");
   const s = await getBundleStatus(id);
   if (!s) return c.json({ error: "no study bundle has been run for this lecture yet" }, 404);
   return c.json(s);
@@ -102,7 +111,9 @@ studyRoutes.get("/classes/:classId/practice", requireUser, async c => {
   const classId = await member(c);
   const focus = c.req.query("conceptId");
   if (focus !== undefined && !UUID.test(focus)) throw new HTTPException(400, { message: "conceptId must be a concept id" });
-  return c.json(await pickPractice(c.var.user.id, classId, intQuery(c, "n", 5, 1, 50), undefined, focus));
+  const lectureId = c.req.query("lectureId");
+  if (lectureId !== undefined && !UUID.test(lectureId)) throw new HTTPException(400, { message: "lectureId must be a lecture id" });
+  return c.json(await pickPractice(c.var.user.id, classId, intQuery(c, "n", 5, 1, 50), undefined, focus, lectureId));
 });
 
 const AttemptBody = z.object({ answer: z.string().max(4000) });
@@ -129,10 +140,10 @@ studyRoutes.post("/lectures/:id/recall", requireUser, async c => {
 
 // ---------- derived pages ----------
 
-studyRoutes.get("/classes/:classId/exam-topics", requireUser, async c => {
-  const classId = await member(c);
+studyRoutes.get("/classes/:classId/exam-topics", optionalUser, async c => {
+  const { classId, guest } = await reader(c);
   const exam = nextExam(await getSyllabus(classId));
-  return c.json(await getExamTopics(c.var.user.id, classId, { syllabusTopics: exam?.topics ?? [] }));
+  return c.json(await getExamTopics(c.var.user?.id ?? "", classId, { syllabusTopics: exam?.topics ?? [], ...(guest ? { mastery: {} } : {}) }));
 });
 
 studyRoutes.get("/classes/:classId/today", requireUser, async c => {

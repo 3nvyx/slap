@@ -3,9 +3,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useClass } from '../components/ClassLayout'
 import { ConceptText, useConceptMatcher } from '../components/ConceptText'
-import { Async, Button, ButtonLink, cx, Empty, ErrorBox, Label, Pill } from '../components/ui'
+import { loginPath } from '../components/RequireAuth'
+import { Async, Button, ButtonLink, cx, Empty, ErrorBox, ExamBadge, Label, MasteryBar, Pill } from '../components/ui'
 import { api } from '../lib/api'
-import { fmtDate, fmtTime } from '../lib/format'
+import { fmtDate, fmtTime, pct } from '../lib/format'
 import type { LectureDetail } from '../lib/types'
 import { useApi } from '../lib/useApi'
 
@@ -54,9 +55,15 @@ function paragraphs(segs: Segment[], size = 4): Segment[][] {
 }
 
 function LectureView({ data, reload }: { data: LectureDetail; reload: () => Promise<void> }) {
-  const { classId, detail } = useClass()
+  const { classId, detail, guest } = useClass()
   const { lecture } = data
   const owner = detail.class.role === 'owner'
+  const ready = lecture.status === 'ready'
+  // Weakest first, so the list doubles as "what to practise from this lecture".
+  const conceptList = useMemo(
+    () => [...data.concepts].sort((a, b) => (a.mastery ?? -1) - (b.mastery ?? -1) || b.emphasis - a.emphasis),
+    [data.concepts],
+  )
   const matcher = useConceptMatcher(data.concepts)
   const sections = useMemo(() => sectionsFor(data.segments, data.outline), [data.segments, data.outline])
   const location = useLocation()
@@ -92,13 +99,18 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
           </div>
           <h1 className="text-3xl font-bold tracking-tight md:text-4xl">{lecture.title}</h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {lecture.status === 'live' && (
             <ButtonLink variant="accent" to={`/live/${lecture.id}`}>
               Open live captions
             </ButtonLink>
           )}
-          <ButtonLink variant="ink" to={`/recall/${lecture.id}`}>
+          {ready && data.concepts.length > 0 && (
+            <ButtonLink variant={guest ? 'outline' : 'accent'} to={guest ? loginPath(`/c/${classId}/practice?lecture=${lecture.id}`) : `/c/${classId}/practice?lecture=${lecture.id}`}>
+              Practice this lecture
+            </ButtonLink>
+          )}
+          <ButtonLink variant="ink" to={guest ? loginPath(`/recall/${lecture.id}`) : `/recall/${lecture.id}`}>
             Recall check
           </ButtonLink>
         </div>
@@ -107,21 +119,42 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
       {lecture.status !== 'ready' && lecture.status !== 'live' && <BundleBanner lectureId={lecture.id} owner={owner} onDone={reload} />}
 
       <div className="grid gap-8 lg:grid-cols-[240px_1fr]">
-        <nav className="lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:self-start lg:overflow-y-auto">
-          <Label className="mb-3">Outline</Label>
-          {data.outline.length === 0 ? (
-            <p className="text-sm text-muted">{lecture.status === 'ready' ? 'No outline.' : 'Outline appears when the study bundle is ready.'}</p>
-          ) : (
-            <ol className="space-y-1 border-l border-line">
-              {data.outline.map((o, i) => (
-                <li key={i}>
-                  <button onClick={() => scrollTo(`sec-${i}`)} className="-ml-px block w-full cursor-pointer border-l-2 border-transparent py-1.5 pl-3 text-left text-sm hover:border-accent">
-                    <span className="block font-mono text-[11px] text-muted">{fmtTime(o.start)}</span>
-                    <span className="block leading-snug">{o.title}</span>
-                  </button>
-                </li>
-              ))}
-            </ol>
+        <nav className="space-y-8 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:self-start lg:overflow-y-auto">
+          <div>
+            <Label className="mb-3">Outline</Label>
+            {data.outline.length === 0 ? (
+              <p className="text-sm text-muted">{ready ? 'No outline.' : 'Outline appears when the study bundle is ready.'}</p>
+            ) : (
+              <ol className="space-y-1 border-l border-line">
+                {data.outline.map((o, i) => (
+                  <li key={i}>
+                    <button onClick={() => scrollTo(`sec-${i}`)} className="-ml-px block w-full cursor-pointer border-l-2 border-transparent py-1.5 pl-3 text-left text-sm hover:border-accent">
+                      <span className="block font-mono text-[11px] text-muted">{fmtTime(o.start)}</span>
+                      <span className="block leading-snug">{o.title}</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+          {conceptList.length > 0 && (
+            <div>
+              <Label className="mb-3">Concepts · {conceptList.length}</Label>
+              <ul className="space-y-2.5">
+                {conceptList.map((c) => (
+                  <li key={c.id}>
+                    <Link to={`/c/${classId}/concept/${c.id}`} className="group block">
+                      <div className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-sm group-hover:underline">{c.name}</span>
+                        {c.examFlag && <ExamBadge />}
+                        {!guest && <span className="font-mono text-[11px] text-muted">{c.mastery == null ? 'new' : pct(c.mastery)}</span>}
+                      </div>
+                      {!guest && <MasteryBar value={c.mastery} />}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </nav>
 

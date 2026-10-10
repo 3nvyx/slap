@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { lazy, Suspense, useEffect } from 'react'
+import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { ClassLayout } from './components/ClassLayout'
 import { RequireAuth } from './components/RequireAuth'
 import { Spinner } from './components/ui'
@@ -23,9 +23,19 @@ const LoginPage = lazy(() => import('./pages/Login').then((m) => ({ default: m.L
 const AuthPage = lazy(() => import('./pages/Login').then((m) => ({ default: m.AuthPage })))
 const GraphPage = lazy(() => import('./pages/Graph').then((m) => ({ default: m.GraphPage })))
 
+/** Client-side navigation keeps the scroll offset; start each new page at the top (hash links scroll themselves). */
+function ScrollToTop() {
+  const { pathname, hash } = useLocation()
+  useEffect(() => {
+    if (!hash) window.scrollTo(0, 0)
+  }, [pathname, hash])
+  return null
+}
+
 export default function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <Suspense
         fallback={
           <div className="mx-auto max-w-md px-6 pt-24">
@@ -45,15 +55,20 @@ export default function App() {
           <Route element={<RequireAuth />}>
             <Route path="/classes" element={<ClassesPage />} />
             <Route path="/recall/:lectureId" element={<RecallPage />} />
-            <Route path="/c/:classId" element={<ClassLayout />}>
-              <Route index element={<ClassHome />} />
-              <Route path="lecture/:id" element={<LecturePage />} />
-              <Route path="graph" element={<GraphPage />} />
-              <Route path="concept/:conceptId" element={<ConceptPage />} />
+          </Route>
+
+          {/* class pages: members, or guests of a class with guest access (ClassLayout sends the rest to sign in) */}
+          <Route path="/c/:classId" element={<ClassLayout />}>
+            <Route index element={<ClassHome />} />
+            <Route path="lecture/:id" element={<LecturePage />} />
+            <Route path="graph" element={<GraphPage />} />
+            <Route path="concept/:conceptId" element={<ConceptPage />} />
+            <Route path="exam-topics" element={<ExamTopicsPage />} />
+            {/* per-student pages */}
+            <Route element={<RequireAuth />}>
               <Route path="review" element={<ReviewPage />} />
               <Route path="practice" element={<PracticePage />} />
               <Route path="partner" element={<PartnerPage />} />
-              <Route path="exam-topics" element={<ExamTopicsPage />} />
               <Route path="today" element={<TodayPage />} />
             </Route>
           </Route>
