@@ -6,6 +6,7 @@ Base: same origin as the web app. JSON bodies. Auth: `Authorization: Bearer <Neo
 
 ## Public
 - `GET /api/health` liveness `{ ok }`; `GET /api/health/ready` → `Health` (checks DB and reports backends live/mock/down; never calls paid APIs).
+- `GET /api/classes/public` → `[{ id, name, code }]`: classes with guest access on (the landing page's "browse as a guest" list), up to 20.
 - `GET /api/join/:code` → `{ classId, className, lectureId | null, live: boolean, guestAccess: boolean }` (code = class code, e.g. `CS229`).
 - `GET /api/lectures/:id/public?lang=xx` → `{ title, className, classId, guestAccess, status, finals: [{segmentId,text,start,end,translation?}] }` for the caption page / guests.
 - `WS /ws/live/:lectureId?lang=xx` → `CaptionEvent` stream; client sends `LiveClientMessage` (`subscribe` with `since` for reconnect; server replies `snapshot` then live events).

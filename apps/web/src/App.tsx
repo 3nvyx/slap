@@ -6,6 +6,7 @@ import { Spinner } from './components/ui'
 import { ClassesPage } from './pages/Classes'
 import { ClassHome } from './pages/ClassHome'
 import { ConceptPage } from './pages/Concept'
+import { ExamSheetPage } from './pages/ExamSheet'
 import { ExamTopicsPage } from './pages/ExamTopics'
 import { JoinPage } from './pages/Join'
 import { Landing } from './pages/Landing'
@@ -65,6 +66,7 @@ export default function App() {
             <Route path="graph" element={<GraphPage />} />
             <Route path="concept/:conceptId" element={<ConceptPage />} />
             <Route path="exam-topics" element={<ExamTopicsPage />} />
+            <Route path="exam-sheet" element={<ExamSheetPage />} />
             {/* per-student pages */}
             <Route element={<RequireAuth />}>
               <Route path="review" element={<ReviewPage />} />
