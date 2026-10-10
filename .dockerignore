@@ -1,0 +1,19 @@
+# Keeps the build context small and host-only files out of the image.
+# node_modules must stay out: the host's are macOS builds and would overwrite the image's.
+.git
+.claude
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+.neon
+apps/api/.uploads
+# Dev-only audio (fake_device.ts and manual checks), not read by the server
+apps/api/fixtures/*.wav
+apps/api/*.mp3
+# Not part of the image
+docs
+firmware
+hardware
+screen-lab
+spikes

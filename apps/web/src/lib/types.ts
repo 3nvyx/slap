@@ -22,8 +22,6 @@ export interface JoinInfo {
   className: string
   lectureId: string | null
   live: boolean
-  /** The class can be browsed (notes, graph, exam topics) without signing in. */
-  guestAccess: boolean
 }
 
 export interface PublicFinal {
@@ -38,17 +36,10 @@ export interface PublicLecture {
   title: string
   className: string
   classId: string
-  guestAccess: boolean
   status: LectureSummary['status']
   /** A saved lecture being played back, not live audio. */
   replay?: boolean
   finals: PublicFinal[]
-}
-
-export interface Me {
-  userId: string
-  email: string
-  classes: ClassSummary[]
 }
 
 export interface ClassDocument {
@@ -57,7 +48,7 @@ export interface ClassDocument {
   title: string
 }
 
-/** `GET /api/classes/:id` device: one whose active class is this class (the caller's first). `paired: false` if none. */
+/** `GET /api/classes/:id` device: one whose active class is this class (a connected one first). `paired: false` if none. */
 export interface ClassDevice {
   paired: boolean
   state: DeviceState | 'offline' | null
@@ -85,8 +76,6 @@ export interface ClassDetail {
   lectures: LectureSummary[]
   device: ClassDevice
   live?: ClassLive | null
-  /** Enrolled students (not counting the owner). */
-  students?: number
   nextExam: NextExam
   documents: ClassDocument[]
 }

@@ -28,7 +28,6 @@ function backends(dbUp: boolean): Health["backends"] {
     stt: settings.stt.backend === "deepgram" && has(settings.stt.deepgramKey) ? "live" : "mock",
     translate: settings.translate.backend === "google" ? (has(settings.translate.googleKey) ? "live" : "down") : "mock",
     llm: llm === "mock" ? "mock" : has(llm === "claude" ? settings.llm.anthropicKey : llm === "openai" ? settings.llm.openaiKey : settings.llm.geminiKey) ? "live" : "down",
-    auth: has(settings.auth.jwksUrl) && has(settings.auth.baseUrl) ? "live" : "down",
     db: dbUp ? "live" : "down",
   };
 }

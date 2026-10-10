@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { loginPath } from '../components/RequireAuth'
 import { api } from '../lib/api'
-import { useAuth } from '../lib/auth'
 import { type CaptionState, useCaptions } from '../lib/captions'
 import { LANGUAGES, storedLang, storeLang } from '../lib/languages'
 import { useApi } from '../lib/useApi'
@@ -79,7 +77,6 @@ export function LivePage() {
   const [sizeIdx, setSizeIdx] = useState(readSize)
   const meta = useApi(() => api.publicLecture(lectureId, lang), [lectureId])
   const { state, socket } = useCaptions(lectureId, lang)
-  const { user } = useAuth()
   useWakeLock(true)
 
   // Captions page is always dark, whatever the system theme.
@@ -176,19 +173,14 @@ export function LivePage() {
               <p className="mt-2 text-white/80">{replay ? 'That was a saved lecture played back; its notes and practice are already in the class.' : 'Captions stopped. Notes, flashcards and practice will be ready shortly.'}</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link
-                  to={user ? `/recall/${lectureId}` : loginPath(`/recall/${lectureId}`)}
+                  to={`/recall/${lectureId}`}
                   className="inline-flex h-10 items-center rounded-md bg-[#ff6a00] px-4 text-sm font-semibold text-white"
                 >
                   Take the 3-minute recall check
                 </Link>
-                {meta.data && (user || meta.data.guestAccess) && (
+                {meta.data && (
                   <Link to={`/c/${meta.data.classId}/lecture/${lectureId}`} className="inline-flex h-10 items-center rounded-md border border-white/20 px-4 text-sm">
-                    {user ? 'Open the lecture notes' : 'Browse the notes as a guest'}
-                  </Link>
-                )}
-                {!user && (
-                  <Link to={loginPath(meta.data ? `/c/${meta.data.classId}` : '/classes')} className="inline-flex h-10 items-center rounded-md border border-white/20 px-4 text-sm">
-                    Sign in
+                    Open the lecture notes
                   </Link>
                 )}
               </div>

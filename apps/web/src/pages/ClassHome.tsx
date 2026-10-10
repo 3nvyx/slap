@@ -4,7 +4,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useClass } from '../components/ClassLayout'
 import { AnnouncementList } from '../components/Announcements'
-import { Button, cx, Empty, ErrorBox, inputCls, Label, PageTitle, Panel, Pill, textareaCls } from '../components/ui'
+import { Button, Empty, ErrorBox, inputCls, Label, PageTitle, Panel, Pill, textareaCls } from '../components/ui'
 import { api } from '../lib/api'
 import { useMicStreamer } from '../lib/micStream'
 import { examInfo, fmtDate, fmtTime } from '../lib/format'
@@ -15,9 +15,8 @@ import { useApi } from '../lib/useApi'
 import { PairForm } from './Devices'
 
 export function ClassHome() {
-  const { classId, detail, guest, reloadClass } = useClass()
+  const { classId, detail, reloadClass } = useClass()
   const cls = detail.class
-  const owner = cls.role === 'owner'
   const live = detail.lectures.find((l) => l.status === 'live')
   const exam = examInfo(detail.nextExam)
   const lectures = [...detail.lectures].sort((a, b) => b.date.localeCompare(a.date))
@@ -26,7 +25,7 @@ export function ClassHome() {
 
   return (
     <div>
-      <PageTitle kicker={`${cls.code} · ${cls.role}`} title={cls.name}>
+      <PageTitle kicker={cls.code} title={cls.name}>
         {exam && (
           <div className="rounded-md border border-line bg-panel px-4 py-2 text-right">
             <Label>Next: {exam.name}</Label>
@@ -40,10 +39,10 @@ export function ClassHome() {
 
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <div className="space-y-6">
-          <SessionPanel classId={classId} owner={owner} guest={guest} live={live} liveInfo={detail.live ?? null} device={detail.device} onChange={reloadClass} latestReady={latestReady} />
+          <SessionPanel classId={classId} live={live} liveInfo={detail.live ?? null} device={detail.device} onChange={reloadClass} latestReady={latestReady} />
           <Panel title={`Lectures · ${lectures.length}`}>
             {lectures.length === 0 ? (
-              <Empty>No lectures yet. {owner ? 'Start a session, or import a transcript below.' : 'They appear here once the lecturer records one.'}</Empty>
+              <Empty>No lectures yet. Start a session, or import a transcript below.</Empty>
             ) : (
               <ol className="divide-y divide-line">
                 {lectures.map((l) => (
@@ -57,22 +56,13 @@ export function ClassHome() {
               <AnnouncementList items={announcements.data} classId={classId} limit={6} />
             </Panel>
           )}
-          {owner && <ImportPanel classId={classId} onDone={reloadClass} />}
+          <ImportPanel classId={classId} onDone={reloadClass} />
         </div>
 
         <div className="space-y-6">
-          <JoinPanel code={cls.code} classId={classId} owner={owner} guestAccess={!!cls.guestAccess} onChange={reloadClass} />
-          {guest ? (
-            <Panel title="Device">
-              <div className="flex items-center gap-2 text-sm">
-                <Pill status={detail.device.paired ? (detail.device.state ?? 'idle') : 'unpaired'} />
-                <span>{detail.device.paired ? `${detail.device.name ?? 'A device'} records into this course` : 'No device paired'}</span>
-              </div>
-            </Panel>
-          ) : (
-            <DevicePanel classId={classId} owner={owner} device={detail.device} onChange={reloadClass} />
-          )}
-          {owner && <UploadPanel classId={classId} onDone={reloadClass} />}
+          <JoinPanel code={cls.code} />
+          <DevicePanel classId={classId} device={detail.device} onChange={reloadClass} />
+          <UploadPanel classId={classId} onDone={reloadClass} />
           <Panel title="Documents">
             {detail.documents.length === 0 ? (
               <p className="text-sm text-muted">No syllabus or book chapter yet.</p>
@@ -118,8 +108,6 @@ function Watching({ info }: { info: ClassLive }) {
 
 function SessionPanel({
   classId,
-  owner,
-  guest,
   live,
   liveInfo,
   device,
@@ -127,8 +115,6 @@ function SessionPanel({
   latestReady,
 }: {
   classId: string
-  owner: boolean
-  guest: boolean
   live?: LectureSummary
   liveInfo: ClassLive | null
   device: ClassDevice
@@ -139,7 +125,7 @@ function SessionPanel({
   const [error, setError] = useState<unknown>(null)
   const [title, setTitle] = useState('')
   const [useMic, setUseMic] = useState(false)
-  const mic = useMicStreamer(live?.id ?? null, owner && useMic && !!live)
+  const mic = useMicStreamer(live?.id ?? null, useMic && !!live)
   const navigate = useNavigate()
 
   const act = async (fn: () => Promise<unknown>) => {
@@ -195,16 +181,13 @@ function SessionPanel({
             <>
               <div className="mt-2 text-lg font-semibold">Not recording</div>
               <div className="mt-1 text-sm text-muted">
-                Device {device.paired ? <>{device.name ? `${device.name} · ` : ''}{device.state ?? 'idle'}</> : 'not recording into this course'}. {owner ? 'Double-slap the device or press start.' : 'Captions start when the lecturer begins.'}
+                Device {device.paired ? <>{device.name ? `${device.name} · ` : ''}{device.state ?? 'idle'}</> : 'not recording into this course'}. Double-slap the device or press start.
               </div>
-              {owner && (
-                <input className={inputCls + ' mt-3 max-w-sm'} placeholder="Title (optional)" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Lecture title" />
-              )}
+              <input className={inputCls + ' mt-3 max-w-sm'} placeholder="Title (optional)" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Lecture title" />
             </>
           )}
         </div>
-        {owner &&
-          (replay ? (
+        {replay ? (
             <Button variant="ink" size="lg" className="min-w-40" disabled={busy} onClick={() => void act(() => api.stopLecture(replay.lectureId))}>
               <span className="size-3 rounded-[2px] bg-yellow-400" /> {busy ? 'Stopping…' : 'Stop replay'}
             </Button>
@@ -228,20 +211,18 @@ function SessionPanel({
             <Button variant="accent" size="lg" className="min-w-48" disabled={busy} onClick={() => void act(() => api.startSession(classId, title.trim() || undefined))}>
               <span className="size-3 rounded-full bg-white" /> {busy ? 'Starting…' : 'Start session'}
             </Button>
-          ))}
+          )}
       </div>
-      {owner && (
-        <MicRow
-          on={useMic}
-          onToggle={() => setUseMic((v) => !v)}
-          live={!!live}
-          state={mic.state}
-          level={mic.level}
-          error={mic.error}
-          devicePaired={device.paired}
-        />
-      )}
-      {!guest && <PartnerRow classId={classId} latestReady={latestReady} />}
+      <MicRow
+        on={useMic}
+        onToggle={() => setUseMic((v) => !v)}
+        live={!!live}
+        state={mic.state}
+        level={mic.level}
+        error={mic.error}
+        devicePaired={device.paired}
+      />
+      <PartnerRow classId={classId} latestReady={latestReady} />
       {error != null && (
         <div className="px-5 pb-5">
           <ErrorBox error={error} />
@@ -334,9 +315,8 @@ function MicRow({
   )
 }
 
-/** The caller's device for this course: its state, a switch to this course, or the pair form when none is paired.
- *  Students see the status only; the pair form opens on request so it is not in the way. */
-function DevicePanel({ classId, owner, device, onChange }: { classId: string; owner: boolean; device: ClassDevice; onChange: () => Promise<void> }) {
+/** The device for this course: its state, a switch to this course, or the pair form when none is paired. */
+function DevicePanel({ classId, device, onChange }: { classId: string; device: ClassDevice; onChange: () => Promise<void> }) {
   const devices = useMyDevices()
   const [pairing, setPairing] = useState(false)
   const a = useAction()
@@ -391,11 +371,11 @@ function DevicePanel({ classId, owner, device, onChange }: { classId: string; ow
     body = (
       <div className="flex items-center gap-2 text-sm">
         <Pill status={device.paired ? (device.state ?? 'idle') : 'unpaired'} />
-        <span>{device.paired ? `${device.name ?? 'A member’s device'} records into this course` : 'No device paired'}</span>
+        <span>{device.paired ? `${device.name ?? 'A device'} records into this course` : 'No device paired'}</span>
       </div>
     )
   }
-  const showForm = devices.data !== undefined && (pairing || (owner && mine.length === 0))
+  const showForm = devices.data !== undefined && (pairing || mine.length === 0)
 
   return (
     <Panel
@@ -425,11 +405,10 @@ function DevicePanel({ classId, owner, device, onChange }: { classId: string; ow
   )
 }
 
-function JoinPanel({ code, classId, owner, guestAccess, onChange }: { code: string; classId: string; owner: boolean; guestAccess: boolean; onChange: () => Promise<void> }) {
+function JoinPanel({ code }: { code: string }) {
   const url = `${window.location.origin}/j/${code}`
   const short = url.replace(/^https?:\/\//, '')
   const [copied, setCopied] = useState(false)
-  const a = useAction()
   return (
     <Panel title="Join captions">
       <div className="flex flex-col items-center gap-4">
@@ -452,32 +431,10 @@ function JoinPanel({ code, classId, owner, guestAccess, onChange }: { code: stri
             </Button>
           </div>
           <p className="mt-3 text-xs text-muted">
-            No sign-in needed. The link shows live captions{guestAccess ? ', and anyone can browse the notes, graph and exam topics.' : '.'}
+            No sign-in needed. The link shows live captions, and from there the notes, graph and practice.
           </p>
         </div>
       </div>
-      {owner && (
-        <div className="mt-4 flex items-center gap-3 border-t border-line pt-4">
-          <button
-            role="switch"
-            aria-checked={guestAccess}
-            disabled={a.busy}
-            onClick={() => void a.run(async () => {
-              await api.setGuestAccess(classId, !guestAccess)
-              await onChange()
-            })}
-            className={cx('relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition disabled:opacity-50', guestAccess ? 'bg-accent' : 'bg-panel-2 ring-1 ring-line')}
-          >
-            <span className={cx('absolute top-0.5 size-5 rounded-full bg-white shadow transition-all', guestAccess ? 'left-[22px]' : 'left-0.5')} />
-            <span className="sr-only">Guest access</span>
-          </button>
-          <div className="min-w-0">
-            <div className="text-sm font-medium">Guest access</div>
-            <div className="text-xs text-muted">Let anyone with the link read the notes without an account (for judges and visitors). They can’t practise or review.</div>
-            {a.error != null && <div className="mt-1 text-xs text-bad">{String(a.error instanceof Error ? a.error.message : a.error)}</div>}
-          </div>
-        </div>
-      )}
     </Panel>
   )
 }
