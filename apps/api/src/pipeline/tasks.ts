@@ -6,7 +6,7 @@
  */
 import { inputBlock } from "./util.ts";
 
-export type Task = "outline" | "concepts" | "cards" | "questions" | "grade" | "recall" | "book" | "syllabus";
+export type Task = "outline" | "concepts" | "cards" | "questions" | "grade" | "recall" | "book" | "syllabus" | "pretest";
 
 export interface PromptSeg { i: number; start: number; end: number; text: string }
 
@@ -24,6 +24,13 @@ export interface GradePayload { kind: "short" | "relate"; question: string; mode
 export interface RecallPayload { lectureTitle: string; concepts: Array<{ name: string; definition: string }>; outline: string[]; text: string }
 export interface BookPayload { knownConcepts: string[] }
 export interface SyllabusPayload { today: string }
+export interface PretestPayload {
+  count: number;
+  week: number;
+  topics: string[];
+  /** What the class has covered so far, so questions can build on it. */
+  knownConcepts: Array<{ name: string; definition: string }>;
+}
 
 export const SYSTEM_TUTOR =
   "You turn university lecture transcripts and course documents into accurate study material. " +
@@ -128,6 +135,19 @@ except weeks, which may have a null date.
 JSON shape:
 {"title": string|null, "exams": [{"name": string, "date": "YYYY-MM-DD", "topics": [string]}],
  "weeks": [{"week": number, "topics": [string], "date": "YYYY-MM-DD"|null}], "deadlines": [{"name": string, "date": "YYYY-MM-DD"}]}
+
+${inputBlock(p)}`;
+}
+
+export function pretestPrompt(p: PretestPayload): string {
+  return `Write exactly ${p.count} short pre-lecture questions for a student about to attend week ${p.week}, whose syllabus topics are listed
+in "topics". The student has NOT had that lecture yet: ask about the prerequisite ideas, intuitions and definitions a prepared
+student should bring, drawing on "knownConcepts" (what the course has covered so far) where they connect. One question per topic
+where possible. Kinds: "mcq" (exactly 4 options, one correct; "answer" equals the correct option's text) or "short" (answerable
+in 1-2 sentences; "answer" is a model answer). "topic" is the syllabus topic the question is about. "explanation" is one line.
+
+JSON shape:
+{"questions": [{"topic": string, "kind": "mcq"|"short", "prompt": string, "options": [string]|null, "answer": string, "explanation": string}]}
 
 ${inputBlock(p)}`;
 }

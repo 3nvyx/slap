@@ -6,8 +6,8 @@
  * concepts are frequent noun phrases, definitions are lecture quotes, grading is
  * keyword overlap.
  */
-import type { BookPayload, CardsPayload, ConceptsPayload, GradePayload, OutlinePayload, PromptSeg, QuestionsPayload, RecallPayload, SyllabusPayload } from "./tasks.ts";
-import type { BookOut, CardsOut, ConceptsOut, GradeOut, OutlineOut, QuestionsOut, RecallOut, SyllabusOut } from "./schemas.ts";
+import type { BookPayload, CardsPayload, ConceptsPayload, GradePayload, OutlinePayload, PretestPayload, PromptSeg, QuestionsPayload, RecallPayload, SyllabusPayload } from "./tasks.ts";
+import type { BookOut, CardsOut, ConceptsOut, GradeOut, OutlineOut, PretestOut, QuestionsOut, RecallOut, SyllabusOut } from "./schemas.ts";
 import { GLOSSARY } from "./mockGlossary.ts";
 import { STOPWORDS, contentWords, firstSentence, keywordOverlap, readInputBlock, seededShuffle, slugify, stem, titleCase, tokenize } from "./util.ts";
 
@@ -23,6 +23,7 @@ export function mockComplete(task: string, prompt: string, docText?: string): st
       case "recall": return mockRecall(input as unknown as RecallPayload);
       case "book": return mockBook(input as unknown as BookPayload, docText ?? "");
       case "syllabus": return mockSyllabus(input as unknown as SyllabusPayload, docText ?? "");
+      case "pretest": return mockPretest(input as unknown as PretestPayload);
       default: return { text: `mock reply for ${task}` };
     }
   })();
@@ -284,6 +285,28 @@ function mockQuestions(p: QuestionsPayload): QuestionsOut {
     qs.push({ concept: c.slug, kind: "short", prompt: ex, answer: c.definition, explanation: "Book exercise.", relateTo: null, styleSource: "book" });
   }
   return { questions: qs.slice(0, Math.max(count, Math.min(qs.length, count + 3))) };
+}
+
+/** Pre-lecture questions: one per upcoming topic, mcq when there are enough known concepts to make distractors. */
+function mockPretest(p: PretestPayload): PretestOut {
+  const topics = (p.topics ?? []).filter(Boolean);
+  const known = (p.knownConcepts ?? []).filter(c => c.definition);
+  const count = Math.max(1, p.count ?? 3);
+  const qs: PretestOut["questions"] = [];
+  for (let k = 0; k < count && topics.length; k++) {
+    const topic = topics[k % topics.length]!;
+    const near = [...known].sort((a, b) => keywordOverlap(topic, b.name + " " + b.definition).shared - keywordOverlap(topic, a.name + " " + a.definition).shared);
+    const anchor = near[0];
+    if (k % 2 === 0 && near.length >= 4) {
+      const options = seededShuffle(near.slice(0, 4).map(c => c.name), topic);
+      qs.push({ topic, kind: "mcq", prompt: `Week ${p.week} covers ${topic}. Which idea from the course so far is it most closely built on?`,
+        options, answer: anchor!.name, explanation: `${anchor!.name} is the closest prerequisite the course has covered.` });
+    } else {
+      qs.push({ topic, kind: "short", prompt: `Before the lecture on ${topic}: what do you already know about it, and how might it connect to ${anchor?.name ?? "what you have covered so far"}?`,
+        answer: anchor ? `${topic} builds on ${anchor.name}: ${anchor.definition}` : `${topic} is the next topic on the syllabus.`, explanation: "A prepared student can state the connection in a sentence." });
+    }
+  }
+  return { questions: qs };
 }
 
 // ---------- grading ----------

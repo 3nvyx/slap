@@ -14,6 +14,7 @@ import { LivePage } from './pages/Live'
 import { NotFound } from './pages/NotFound'
 import { PartnerPage } from './pages/Partner'
 import { PracticePage } from './pages/Practice'
+import { PretestPage } from './pages/Pretest'
 import { RecallPage } from './pages/Recall'
 import { ReviewPage } from './pages/Review'
 import { TodayPage } from './pages/Today'
@@ -69,6 +70,7 @@ export default function App() {
               <Route path="review" element={<ReviewPage />} />
               <Route path="practice" element={<PracticePage />} />
               <Route path="partner" element={<PartnerPage />} />
+              <Route path="pretest" element={<PretestPage />} />
               <Route path="today" element={<TodayPage />} />
             </Route>
           </Route>

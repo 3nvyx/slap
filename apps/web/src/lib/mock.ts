@@ -414,6 +414,21 @@ function partnerTurn(sessionId: string, form: FormData): PartnerTurn {
   }
 }
 
+// ---------- pretest ----------
+let pretestQs: Array<{ id: string; topic: string; kind: 'mcq' | 'short'; prompt: string; options: string[] | null }> = []
+let pretestSeq = 0
+function mockPretest(fresh = false) {
+  if (fresh || pretestQs.length === 0) {
+    const n = ++pretestSeq
+    pretestQs = [
+      { id: `pre_${n}_1`, topic: 'Exponential family', kind: 'mcq', prompt: 'Week 5 covers the exponential family. Which idea from the course so far is it most closely built on?', options: ['Gaussian', 'Least squares', 'Law of large numbers', 'Normalizing constant'] },
+      { id: `pre_${n}_2`, topic: 'Generalized linear models', kind: 'short', prompt: 'Before the lecture on generalized linear models: what do you already know about them, and how might they connect to linear regression?', options: null },
+      { id: `pre_${n}_3`, topic: 'Softmax regression', kind: 'short', prompt: 'Softmax regression handles more than two classes. What would you expect it to generalise from logistic regression?', options: null },
+    ]
+  }
+  return { week: { week: 5, topics: ['Exponential family', 'Generalized linear models', 'Softmax regression'], date: iso(daysFromNow(3)) }, questions: pretestQs }
+}
+
 // ---------- router ----------
 type Handler = (m: RegExpMatchArray, body: unknown, q: URLSearchParams) => unknown
 const routes: Array<[string, RegExp, Handler]> = [
@@ -615,7 +630,16 @@ const routes: Array<[string, RegExp, Handler]> = [
     plan: plan(),
     nextExam: { name: 'Midterm', date: EXAM_DATE },
   })],
-  ['GET', /^\/api\/classes\/([^/]+)\/mastery$/, () => Object.fromEntries(concepts.filter((c) => c.mastery != null).map((c) => [c.id, c.mastery]))],
+  ['GET', /^\/api\/classes\/([^/]+)\/pretest$/, () => mockPretest()],
+  ['POST', /^\/api\/classes\/([^/]+)\/pretest$/, () => mockPretest(true)],
+  ['POST', /^\/api\/classes\/([^/]+)\/pretest\/([^/]+)\/attempt$/, (m, body) => {
+    const answer = String((body as { answer: string }).answer ?? '')
+    const q = pretestQs.find((x) => x.id === m[2])
+    if (!q) throw new ApiError(404, 'that pretest question has expired; load the pretest again')
+    const correct = q.kind === 'mcq' ? answer === q.options?.[0] : answer.trim().split(/\s+/).length >= 8
+    return { questionId: q.id, answer, correct, feedback: correct ? 'Yes: that is the connection to look for in the lecture.' : `Listen for this in the lecture: ${q.topic} builds on what the course has covered so far.` }
+  }],
+  ['GET', /^\/api\/classes\/([^/]+)\/mastery$/,() => Object.fromEntries(concepts.filter((c) => c.mastery != null).map((c) => [c.id, c.mastery]))],
   ['POST', /^\/api\/classes\/([^/]+)\/documents$/, (_m, body) => {
     const form = body as FormData
     const file = form.get('file') as File | null

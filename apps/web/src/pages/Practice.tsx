@@ -1,5 +1,5 @@
-import type { Attempt, Concept, Question } from '@slap/contracts'
-import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import type { Attempt, Concept, Question, QuestionKind } from '@slap/contracts'
+import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useClass } from '../components/ClassLayout'
 import { Button, cx, Empty, ErrorBox, Label, PageTitle, Spinner, textareaCls } from '../components/ui'
@@ -71,23 +71,67 @@ export function PracticePage() {
   )
 }
 
+/** A practice question from the class pool: concept link and style in the header, graded through /attempt. */
 function QuestionCard({ n, q, byId, classId, onGraded }: { n: number; q: Question; byId: Map<string, Concept>; classId: string; onGraded: (a: Attempt) => void }) {
+  const concept = byId.get(q.conceptId)
+  const other = q.relateTo ? (byId.get(q.relateTo)?.name ?? q.relateTo) : null
+  return (
+    <AnswerCard
+      n={n}
+      q={q}
+      header={
+        <>
+          <span className="label">{q.kind === 'mcq' ? 'Multiple choice' : q.kind === 'short' ? 'Short answer' : 'Relate'}</span>
+          <span className="label">· {q.styleSource === 'book' ? 'book style' : 'lecture style'}</span>
+          {concept && (
+            <Link to={`/c/${classId}/concept/${concept.id}`} className="ml-auto text-xs underline">
+              {concept.name}
+            </Link>
+          )}
+        </>
+      }
+      relate={q.kind === 'relate' && concept && other ? { a: concept.name, b: other } : null}
+      grade={(answer) => api.attempt(q.id, answer)}
+      onGraded={onGraded}
+    />
+  )
+}
+
+export interface Graded {
+  correct: boolean
+  feedback: string
+}
+
+/** One answerable question: options or a textarea, keyboard answering, formative feedback. Used by Practice and the pretest. */
+export function AnswerCard<G extends Graded>({
+  n,
+  q,
+  header,
+  relate,
+  grade,
+  onGraded,
+}: {
+  n: number
+  q: { id: string; kind: QuestionKind; prompt: string; options?: string[] | null }
+  header?: ReactNode
+  relate?: { a: string; b: string } | null
+  grade: (answer: string) => Promise<G>
+  onGraded: (g: G) => void
+}) {
   const [answer, setAnswer] = useState('')
-  const [result, setResult] = useState<Attempt | null>(null)
+  const [result, setResult] = useState<Graded | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
   const card = useRef<HTMLElement>(null)
-  const concept = byId.get(q.conceptId)
-  const other = q.relateTo ? (byId.get(q.relateTo)?.name ?? q.relateTo) : null
 
   const submit = async () => {
     if (!answer.trim() || result) return
     setBusy(true)
     setError(null)
     try {
-      const a = await api.attempt(q.id, answer)
-      setResult(a)
-      onGraded(a)
+      const g = await grade(answer)
+      setResult(g)
+      onGraded(g)
       // Hands off to the next question so a set can be answered from the keyboard alone.
       const next = card.current?.nextElementSibling
       if (next instanceof HTMLElement && next.tagName === 'ARTICLE') next.focus({ preventScroll: false })
@@ -124,20 +168,14 @@ function QuestionCard({ n, q, byId, classId, onGraded }: { n: number; q: Questio
     >
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <span className="font-mono text-xs text-muted">{String(n).padStart(2, '0')}</span>
-        <span className="label">{q.kind === 'mcq' ? 'Multiple choice' : q.kind === 'short' ? 'Short answer' : 'Relate'}</span>
-        <span className="label">· {q.styleSource === 'book' ? 'book style' : 'lecture style'}</span>
-        {concept && (
-          <Link to={`/c/${classId}/concept/${concept.id}`} className="ml-auto text-xs underline">
-            {concept.name}
-          </Link>
-        )}
+        {header}
       </div>
 
-      {q.kind === 'relate' && concept && other && (
+      {relate && (
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-          <span className="rounded-md border border-line bg-bg px-2.5 py-1 font-medium">{concept.name}</span>
+          <span className="rounded-md border border-line bg-bg px-2.5 py-1 font-medium">{relate.a}</span>
           <span className="font-mono text-muted">←?→</span>
-          <span className="rounded-md border border-line bg-bg px-2.5 py-1 font-medium">{other}</span>
+          <span className="rounded-md border border-line bg-bg px-2.5 py-1 font-medium">{relate.b}</span>
         </div>
       )}
       <p className="text-lg font-medium leading-snug">{q.prompt}</p>
@@ -165,7 +203,7 @@ function QuestionCard({ n, q, byId, classId, onGraded }: { n: number; q: Questio
         ) : (
           <textarea
             className={textareaCls + ' min-h-28'}
-            placeholder={q.kind === 'relate' ? `Describe how ${concept?.name ?? 'these'} and ${other ?? 'the other concept'} are related…` : 'Your answer…'}
+            placeholder={relate ? `Describe how ${relate.a} and ${relate.b} are related…` : 'Your answer…'}
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
             disabled={!!result}

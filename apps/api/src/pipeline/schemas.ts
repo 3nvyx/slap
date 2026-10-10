@@ -64,6 +64,18 @@ export const QuestionsOut = z.object({
 });
 export type QuestionsOut = z.infer<typeof QuestionsOut>;
 
+export const PretestOut = z.object({
+  questions: z.array(z.object({
+    topic: nonEmpty,
+    kind: z.enum(["mcq", "short"]),
+    prompt: nonEmpty,
+    options: z.array(nonEmpty).nullish(),
+    answer: nonEmpty,
+    explanation: str.default(""),
+  })).default([]),
+});
+export type PretestOut = z.infer<typeof PretestOut>;
+
 export const GradeOut = z.object({ correct: z.coerce.boolean(), feedback: str.default("") });
 export type GradeOut = z.infer<typeof GradeOut>;
 

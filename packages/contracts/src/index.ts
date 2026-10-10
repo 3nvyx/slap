@@ -79,6 +79,15 @@ export interface RecallResult { got: string[]; missed: string[]; wrong: string[]
 export interface ExamTopic { conceptId: string; name: string; emphasis: number; examFlag: boolean; mastery: number | null; score: number }
 export interface StudyPlanDay { date: string; cardsDue: number; concepts: string[]; questions: string[]; reason: string }
 
+// Pretest before the next lecture: a few questions on what the syllabus says is coming (generated per class
+// per day, kept in memory, not tied to concept notes). Answers are graded but not stored.
+export interface PretestQuestion { id: string; topic: string; kind: "mcq" | "short"; prompt: string; options?: string[] | null }
+export interface Pretest {
+  week: { week: number; topics: string[]; date?: string | null } | null;   // null: no syllabus, or nothing left on it
+  questions: PretestQuestion[];
+}
+export interface PretestAttempt { questionId: string; answer: string; correct: boolean; feedback: string }
+
 export type JobStatus = "queued" | "running" | "done" | "failed";
 export interface StudyBundleStatus { lectureId: string; status: JobStatus; steps: Record<string, JobStatus>; error?: string | null }
 

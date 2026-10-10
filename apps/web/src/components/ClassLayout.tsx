@@ -29,6 +29,7 @@ const NAV = [
   { to: 'partner', label: 'Partner', key: '05', account: true },
   { to: 'exam-topics', label: 'Exam topics', key: '06' },
   { to: 'today', label: 'Today', key: '07', account: true },
+  { to: 'pretest', label: 'Pretest', key: '08', account: true },
 ]
 
 export function DeviceChip({ device }: { device: ClassDetail['device'] }) {

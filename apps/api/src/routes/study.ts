@@ -18,6 +18,7 @@ import { recallCheck } from "../pipeline/recall.ts";
 import { getExamTopics } from "../pipeline/examTopics.ts";
 import { getToday } from "../pipeline/plan.ts";
 import { getMastery } from "../pipeline/mastery.ts";
+import { getPretest, gradePretest } from "../pipeline/pretest.ts";
 import { MAX_UPLOAD_BYTES, createDocument, getDocument } from "../pipeline/documents.ts";
 import { getSyllabus, nextExam } from "../pipeline/syllabus.ts";
 import { getDb } from "../pipeline/db.ts";
@@ -136,6 +137,21 @@ studyRoutes.post("/lectures/:id/recall", requireUser, async c => {
   const r = await recallCheck(c.var.user.id, id, text);
   if (!r) throw new HTTPException(404, { message: "lecture not found" });
   return c.json(r);
+});
+
+// ---------- pretest (before the next lecture) ----------
+
+studyRoutes.get("/classes/:classId/pretest", requireUser, async c => c.json(await getPretest(await member(c))));
+
+studyRoutes.post("/classes/:classId/pretest", requireUser, async c => c.json(await getPretest(await member(c), { fresh: true })));
+
+studyRoutes.post("/classes/:classId/pretest/:questionId/attempt", requireUser, async c => {
+  const classId = await member(c);
+  const questionId = idParam(c, "questionId", "question");
+  const { answer } = await jsonBody(c, AttemptBody);
+  const a = await gradePretest(classId, questionId, answer);
+  if (!a) throw new HTTPException(404, { message: "that pretest question has expired; load the pretest again" });
+  return c.json(a);
 });
 
 // ---------- derived pages ----------
