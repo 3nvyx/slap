@@ -27,12 +27,13 @@ const FONTS = [
   { name: "Silkscreen", google: true },
   { name: "VT323", google: true },
   { name: "DotGothic16", google: true },
-  { name: "Test File Font", file: "fonts/__test-font.ttf" },
-  { name: "Missing File Font", file: "fonts/nope.ttf" },
 ];
 
 // Same twelve languages as the web app (apps/web/src/lib/languages.ts).
 // `sample` is the caption shown for that language; the translations are placeholders, not checked by a native speaker.
+// `deviceBoxes: true` marks a language the real device cannot draw yet: its server has no font for the
+// script, so every character comes out as an empty box (checked against apps/api/src/oled.ts on 10 October).
+// The lab still draws it with this computer's fonts and shows a warning. Remove the flag once the server has a font.
 const LANGUAGES = [
   { code: "en", name: "English", native: "English", sample: [
     "So what does a Gaussian look like?",
@@ -44,7 +45,7 @@ const LANGUAGES = [
     "Es una curva de campana centrada en la media.",
     "Con suficientes datos, es un modelo bastante bueno.",
   ] },
-  { code: "zh", name: "Chinese", native: "中文", sample: [
+  { code: "zh", name: "Chinese", native: "中文", deviceBoxes: true, sample: [
     "那么高斯分布是什么样子的？",
     "它是一条以均值为中心的钟形曲线。",
     "只要数据足够多，这就是一个相当好的模型。",
@@ -54,17 +55,17 @@ const LANGUAGES = [
     "Đó là một đường cong hình chuông có tâm tại giá trị trung bình.",
     "Khi có đủ dữ liệu, đây là một mô hình khá tốt.",
   ] },
-  { code: "ko", name: "Korean", native: "한국어", sample: [
+  { code: "ko", name: "Korean", native: "한국어", deviceBoxes: true, sample: [
     "그렇다면 가우시안은 어떤 모양일까요?",
     "평균을 중심으로 한 종 모양의 곡선입니다.",
     "데이터가 충분하면 꽤 좋은 모델이 됩니다.",
   ] },
-  { code: "hi", name: "Hindi", native: "हिन्दी", sample: [
+  { code: "hi", name: "Hindi", native: "हिन्दी", deviceBoxes: true, sample: [
     "तो गाउसियन कैसा दिखता है?",
     "यह माध्य पर केंद्रित एक घंटी के आकार का वक्र है।",
     "पर्याप्त डेटा होने पर यह काफ़ी अच्छा मॉडल है।",
   ] },
-  { code: "ar", name: "Arabic", native: "العربية", rtl: true, sample: [
+  { code: "ar", name: "Arabic", native: "العربية", rtl: true, deviceBoxes: true, sample: [
     "إذن كيف يبدو التوزيع الغاوسي؟",
     "إنه منحنى على شكل جرس يتمركز حول المتوسط.",
     "مع بيانات كافية، يُعد هذا نموذجًا جيدًا إلى حد كبير.",
@@ -84,7 +85,7 @@ const LANGUAGES = [
     "É uma curva em forma de sino centrada na média.",
     "Com dados suficientes, este é um modelo bastante bom.",
   ] },
-  { code: "ja", name: "Japanese", native: "日本語", sample: [
+  { code: "ja", name: "Japanese", native: "日本語", deviceBoxes: true, sample: [
     "では、ガウス分布はどんな形でしょうか。",
     "平均を中心とした釣鐘型の曲線です。",
     "データが十分にあれば、これはかなり良いモデルです。",

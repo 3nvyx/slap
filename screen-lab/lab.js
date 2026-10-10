@@ -7,6 +7,8 @@ const W = 128, H = 64;
 
 const LAB = { screens: [], sprites: {}, fontFamily: "Helvetica", loadErrors: [] };
 
+document.getElementById("dead").hidden = true;   // the page shows this notice until this script runs
+
 window.addEventListener("error", e => {
   LAB.loadErrors.push(`${(e.filename || "").split("/").pop()}:${e.lineno}  ${e.message}`);
   if (typeof showErrors === "function" && document.readyState === "complete") showErrors();
@@ -403,7 +405,7 @@ function buildCells() {
   const def = currentScreen();
   const list = state.view === "screens"
     ? LAB.screens.map(s => ({ label: s.name, def: s, lang: undefined, pick: () => { state.screen = s.name; state.view = "one"; changed(); } }))
-    : langs.map(l => ({ label: `${l.native} · ${l.name}`, def, lang: l, pick: () => { state.lang = l.code; state.view = "one"; changed(); } }));
+    : langs.map(l => ({ label: `${l.native} · ${l.name}${l.deviceBoxes ? " · boxes on the real device" : ""}`, def, lang: l, pick: () => { state.lang = l.code; state.view = "one"; changed(); } }));
   cells = list.map(c => ({ ...c, canvas: el("canvas") }));
   $("cells").replaceChildren(...cells.map(c => el("button", { className: "cell", onclick: c.pick }, c.canvas, el("span", {}, c.label))));
 }
@@ -439,6 +441,9 @@ function render() {
     for (const byte of lastFrame) for (let b = byte; b; b >>= 1) on += b & 1;
     $("name").textContent = def.name;
     $("note").textContent = def.note || "";
+    const lang = currentLang();
+    $("warn").hidden = !lang.deviceBoxes;
+    $("warn").textContent = `The real device cannot draw ${lang.name} yet: every character shows as an empty box, because its server has no font for it. The lab uses this computer's fonts.`;
     $("stats").textContent = `128 × 64 pixels · ${on.toLocaleString()} lit (${Math.round(on / (W * H) * 100)}%)`;
     $("led").classList.toggle("on", !!def.led);
   } else {
@@ -481,12 +486,15 @@ function savePng() {
 function watchFiles() {
   if (!location.protocol.startsWith("http")) return;
   const files = ["index.html", "lab.js", "data.js", "sprites.js", "screens.js"];
-  let last = null;
+  const read = cache => Promise.all(files.map(f => fetch(f, { cache }).then(r => r.text()))).then(t => t.join("\u0000"));
+  // Compare against the browser's cached copies (what this page was built from, possibly stale).
+  // Polling with "reload" also refreshes that cache, so the page reload picks up the new files.
+  let loaded = null;
+  read("force-cache").then(sig => { loaded = sig; }, () => {});
   setInterval(async () => {
     try {
-      const sig = (await Promise.all(files.map(f => fetch(f, { cache: "no-store" }).then(r => r.text())))).join("\u0000");
-      if (last !== null && sig !== last) location.reload();
-      last = sig;
+      const now = await read("reload");
+      if (loaded !== null && now !== loaded) location.reload();
     } catch { /* server stopped */ }
   }, 1000);
   $("live").textContent = "Updates by itself when a file changes";
@@ -522,7 +530,7 @@ function boot() {
   $("imgCopy").onclick = () => navigator.clipboard?.writeText($("imgCode").value).then(() => { $("imgCopy").textContent = "Copied"; setTimeout(() => $("imgCopy").textContent = "Copy", 1200); });
   $("errorDismiss").onclick = () => { LAB.loadErrors = []; showErrors(); };
   document.addEventListener("keydown", e => {
-    if (e.target.matches("input, textarea, select") || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    if (e.target.matches?.("input, textarea, select") || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
     const i = LAB.screens.indexOf(currentScreen()) + (e.key === "ArrowDown" ? 1 : -1);
     if (LAB.screens[i]) { state.screen = LAB.screens[i].name; changed(); e.preventDefault(); }
   });
