@@ -131,6 +131,23 @@ test("guests (anonymous or non-member) read the class, lectures, concepts, graph
   }
 });
 
+test("vault export: a zip of the notes, readable by guests, with the concept and lecture files", { skip }, async () => {
+  const res = await m.app.request(`/api/classes/${ids.cls}/export`);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("content-type"), "application/zip");
+  assert.match(res.headers.get("content-disposition") ?? "", /attachment; filename="GT.*-vault\.zip"/);
+  const zip = Buffer.from(await res.arrayBuffer());
+  assert.equal(zip.readUInt32LE(0), 0x04034b50);
+  assert.equal(zip.readUInt32LE(zip.length - 22), 0x06054b50);
+  const text = zip.toString("utf8");
+  assert.ok(text.includes("Concepts/Gradient descent.md"), "concept note");
+  assert.ok(text.includes("Lectures/2026-10-01 Lecture 1.md") && text.includes("Lectures/2026-10-08 Lecture 2.md"), "lecture notes");
+  assert.ok(text.includes("Guest test (throwaway).md"), "index note");
+  assert.ok(text.includes("- **deadline** (2099-01-15): Problem set 2"), "announcements in the lecture note");
+  const asStranger = await m.app.request(`/api/classes/${ids.cls}/export`, { headers: { authorization: `Bearer ${await sign(stranger)}` } });
+  assert.equal(asStranger.status, 200, "signed-in non-member of a guest class");
+});
+
 test("per-student routes stay closed to guests", { skip }, async () => {
   assert.equal((await call(null, "GET", `/api/classes/${ids.cls}/practice`)).status, 401);
   assert.equal((await call(null, "GET", `/api/classes/${ids.cls}/review/due`)).status, 401);

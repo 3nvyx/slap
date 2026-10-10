@@ -10,6 +10,8 @@ import { db, schema } from "../db/index.ts";
 import { getMastery } from "../pipeline/mastery.ts";
 import { unpackAnnouncements } from "../pipeline/outline.ts";
 import { isSourceLang, normalizeLang } from "../pipeline/translate.ts";
+import { buildVault, noteName } from "../pipeline/vault.ts";
+import { zipStore } from "../pipeline/zip.ts";
 import {
   DeviceBusyError, deviceForWebStart, effectiveOwner, findLiveLecture, getDevice, getDeviceRow, getLecture, importLecture, isUuid,
   listUserDevices, liveLectureInMemory, pairDevice, ReplayError, setActiveClass, startReplay, startSession, stopSession, toSummary, unpairDevice, viewerLanguages,
@@ -276,6 +278,40 @@ coreRoutes.post("/classes/:classId/guest-access", requireUser, async (c) => {
   const b = await body(c, z.object({ enabled: z.boolean() }));
   await db.update(classes).set({ guestAccess: b.enabled }).where(eq(classes.id, classId));
   return c.json(await oneSummary(u.id, classId));
+});
+
+// Obsidian vault: every concept note and lecture note as markdown with [[links]], zipped (store-only).
+coreRoutes.get("/classes/:classId/export", optionalUser, async (c) => {
+  const classId = uuidParam(c, "classId");
+  const u = c.var.user;
+  const role = await requireClassRole(u?.id ?? null, classId, "read");
+  const [[cls], conceptRows, linkRows, mentionRows, lectureRows, mastery] = await Promise.all([
+    db.select({ name: classes.name, code: classes.code }).from(classes).where(eq(classes.id, classId)).limit(1),
+    db.select().from(concepts).where(eq(concepts.classId, classId)),
+    db.select().from(conceptLinks).innerJoin(concepts, eq(concepts.id, conceptLinks.fromId)).where(eq(concepts.classId, classId)),
+    db.select({ conceptId: conceptMentions.conceptId, lectureId: conceptMentions.lectureId, start: segments.startS, excerpt: conceptMentions.excerpt })
+      .from(conceptMentions).innerJoin(lectures, eq(lectures.id, conceptMentions.lectureId)).leftJoin(segments, eq(segments.id, conceptMentions.segmentId))
+      .where(eq(lectures.classId, classId)).orderBy(asc(lectures.date), asc(segments.startS)),
+    db.select({ l: lectures, o: outlines }).from(lectures).leftJoin(outlines, eq(outlines.lectureId, lectures.id))
+      .where(and(eq(lectures.classId, classId), inArray(lectures.status, ["ready", "ended"]))).orderBy(asc(lectures.date)),
+    masteryFor(role, u?.id, classId),
+  ]);
+  if (!cls) return c.json({ error: "class not found" }, 404);
+  const files = buildVault({
+    className: cls.name, classCode: cls.code,
+    concepts: conceptRows.map(r => toConcept(r, mastery)),
+    links: linkRows.map(r => ({ from: r.concept_links.fromId, to: r.concept_links.toId, relation: r.concept_links.relation })),
+    mentions: mentionRows,
+    lectures: lectureRows.map(({ l, o }) => ({
+      id: l.id, title: l.title, date: l.date, summary: o?.summary ?? "", sections: (o?.sections ?? []) as OutlineSection[],
+      announcements: unpackAnnouncements(o?.announcements).announcements,
+    })),
+  });
+  const zip = zipStore(files);
+  c.header("Content-Type", "application/zip");
+  c.header("Content-Disposition", `attachment; filename="${noteName(cls.code).replace(/"/g, "")}-vault.zip"`);
+  c.header("Content-Length", String(zip.length));
+  return c.body(new Uint8Array(zip));
 });
 
 // Announcements across the class's lectures (from each study bundle's outline), dated ones first.

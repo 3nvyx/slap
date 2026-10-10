@@ -172,6 +172,41 @@ export const api = {
   endPartner: (sessionId: string) => request<unknown>('DELETE', `/api/partner/${enc(sessionId)}`),
 }
 
+/** Downloads a file that needs the bearer token (an `<a href>` cannot send it): fetch → blob → save. */
+export async function downloadFile(path: string, fallbackName: string): Promise<void> {
+  const headers: Record<string, string> = {}
+  const token = await getToken()
+  if (token) headers.Authorization = `Bearer ${token}`
+  let res: Response
+  try {
+    res = await fetch(API_BASE + path, { headers })
+  } catch {
+    throw new ApiError(0, 'Network error: is the API running?')
+  }
+  if (!res.ok) {
+    let message = `${res.status} ${res.statusText || 'Request failed'}`
+    try {
+      const data = (await res.json()) as { error?: string }
+      if (typeof data.error === 'string') message = data.error
+    } catch {
+      /* not JSON */
+    }
+    throw new ApiError(res.status, message)
+  }
+  const name = /filename="?([^";]+)"?/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallbackName
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
+/** Obsidian vault of the class's notes. */
+export const exportVault = (classId: string, code: string) => downloadFile(`/api/classes/${enc(classId)}/export`, `${code}-vault.zip`)
+
 /** Partner audio URLs come back as `/api/partner/audio/:id` (public). Resolve against the API origin. */
 export function audioSrc(url: string): string {
   return url.startsWith('/') ? API_BASE + url : url
