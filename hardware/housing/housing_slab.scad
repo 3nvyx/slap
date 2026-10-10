@@ -314,7 +314,7 @@ hooks = [["left", 0], ["back", hx1], ["back", hx2], ["front", hx1], ["front", hx
 // pins actually used (wiring.md): [column, index from antenna end]
 // column 0 = 3V3 row: 3V3,3V3,RST,4,5,6,7,15,16,17,18,8,3,46,9,10,11,12,13,14,5V,G
 // column 1 = far row: G,TX,RX,1,2,42,41,40,39,38,37,36,35,0,45,48,47,21,20,19,G,G
-used_pins = [[0,0],[0,1],[0,3],[0,4],[0,5],[0,11],[0,14],[0,21],[1,0],[1,4],[1,20],[1,21]];
+used_pins = [[0,0],[0,1],[0,3],[0,4],[0,5],[0,11],[0,14],[0,15],[0,21],[1,0],[1,21]];  // v2.3: LED on GPIO 10 (3V3 column), GPIO 2 unused
 function pin_xy(c, k) = dev_xy(c == 0 ? dev_pin_inset : dev_w - dev_pin_inset,
                                dev_pin_v0 + (dev_pins - 1 - k)*2.54);
 function rect_dist(p, x0, x1, y0, y1) =
