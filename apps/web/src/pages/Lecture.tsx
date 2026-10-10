@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useClass } from '../components/ClassLayout'
 import { ConceptText, useConceptMatcher } from '../components/ConceptText'
-import { loginPath } from '../components/RequireAuth'
 import { Async, Button, ButtonLink, cx, Empty, ErrorBox, ExamBadge, inputCls, Label, MasteryBar, Pill } from '../components/ui'
 import { api, errorMessage } from '../lib/api'
 import { fmtDate, fmtTime, pct } from '../lib/format'
@@ -56,9 +55,8 @@ function paragraphs(segs: Segment[], size = 4): Segment[][] {
 }
 
 function LectureView({ data, reload }: { data: LectureDetail; reload: () => Promise<void> }) {
-  const { classId, detail, guest } = useClass()
+  const { classId } = useClass()
   const { lecture } = data
-  const owner = detail.class.role === 'owner'
   const ready = lecture.status === 'ready'
   // Weakest first, so the list doubles as "what to practise from this lecture".
   const conceptList = useMemo(
@@ -123,18 +121,18 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
             </ButtonLink>
           )}
           {ready && data.concepts.length > 0 && (
-            <ButtonLink variant={guest ? 'outline' : 'accent'} to={guest ? loginPath(`/c/${classId}/practice?lecture=${lecture.id}`) : `/c/${classId}/practice?lecture=${lecture.id}`}>
+            <ButtonLink variant="accent" to={`/c/${classId}/practice?lecture=${lecture.id}`}>
               Practice this lecture
             </ButtonLink>
           )}
-          <ButtonLink variant="ink" to={guest ? loginPath(`/recall/${lecture.id}`) : `/recall/${lecture.id}`}>
+          <ButtonLink variant="ink" to={`/recall/${lecture.id}`}>
             Recall check
           </ButtonLink>
-          {owner && lecture.status !== 'live' && data.segments.length > 0 && <ReplayControl lectureId={lecture.id} durationS={data.segments[data.segments.length - 1].end} />}
+          {lecture.status !== 'live' && data.segments.length > 0 && <ReplayControl lectureId={lecture.id} durationS={data.segments[data.segments.length - 1].end} />}
         </div>
       </header>
 
-      {lecture.status !== 'ready' && lecture.status !== 'live' && <BundleBanner lectureId={lecture.id} owner={owner} onDone={reload} />}
+      {lecture.status !== 'ready' && lecture.status !== 'live' && <BundleBanner lectureId={lecture.id} onDone={reload} />}
 
       <div className="grid gap-8 lg:grid-cols-[240px_1fr]">
         <nav className="space-y-8 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:self-start lg:overflow-y-auto">
@@ -165,9 +163,9 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
                       <div className="flex items-center gap-2">
                         <span className="min-w-0 flex-1 truncate text-sm group-hover:underline">{c.name}</span>
                         {c.examFlag && <ExamBadge />}
-                        {!guest && <span className="font-mono text-[11px] text-muted">{c.mastery == null ? 'new' : pct(c.mastery)}</span>}
+                        <span className="font-mono text-[11px] text-muted">{c.mastery == null ? 'new' : pct(c.mastery)}</span>
                       </div>
-                      {!guest && <MasteryBar value={c.mastery} />}
+                      <MasteryBar value={c.mastery} />
                     </Link>
                   </li>
                 ))}
@@ -227,7 +225,7 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
             </section>
           )}
 
-          {!guest && data.segments.length > 0 && <AskPanel lectureId={lecture.id} live={lecture.status === 'live'} jumpTo={jumpTo} />}
+          {data.segments.length > 0 && <AskPanel lectureId={lecture.id} live={lecture.status === 'live'} jumpTo={jumpTo} />}
 
           <section>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -402,7 +400,7 @@ function parseClock(s: string): number | null {
   return Number(m[1] ?? 0) * 60 + Number(m[2])
 }
 
-/** Demo replay (owner): plays this lecture's saved captions back through the live page, labelled as a replay.
+/** Demo replay: plays this lecture's saved captions back through the live page, labelled as a replay.
  *  Optional window (m:ss) and speed, so the dense five minutes can be shown without waiting an hour. */
 function ReplayControl({ lectureId, durationS }: { lectureId: string; durationS: number }) {
   const [open, setOpen] = useState(false)
@@ -462,7 +460,7 @@ function ReplayControl({ lectureId, durationS }: { lectureId: string; durationS:
   )
 }
 
-function BundleBanner({ lectureId, owner, onDone }: { lectureId: string; owner: boolean; onDone: () => Promise<void> }) {
+function BundleBanner({ lectureId, onDone }: { lectureId: string; onDone: () => Promise<void> }) {
   const [status, setStatus] = useState<StudyBundleStatus | null>(null)
   const [error, setError] = useState<unknown>(null)
   const [tick, setTick] = useState(0)
@@ -505,7 +503,7 @@ function BundleBanner({ lectureId, owner, onDone }: { lectureId: string; owner: 
           </span>
           <span className="text-sm text-muted">outline, concepts, cards and questions</span>
         </div>
-        {status?.status === 'failed' && owner && (
+        {status?.status === 'failed' && (
           <Button
             size="sm"
             onClick={async () => {

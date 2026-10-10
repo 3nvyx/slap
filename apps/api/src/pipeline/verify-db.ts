@@ -33,7 +33,6 @@ const count = async (table: string, where: string) =>
 
 const [cls] = await db.insert(schema.classes).values({ name: "Pipeline verify (throwaway)", code, ownerUserId: user }).returning();
 const classId = cls!.id;
-await db.insert(schema.enrollments).values({ userId: user, classId, role: "owner" });
 const jobRefs: string[] = [];
 try {
   const [lec] = await db.insert(schema.lectures).values({ classId, title: "CS229: Gaussians and the error model", date: "2026-10-06", status: "ended", source: "import" }).returning();
@@ -128,11 +127,11 @@ try {
   assert.deepEqual(today.nextExam, { name: "Midterm Exam", date: midterm });
   assert.ok(today.plan.flatMap(d => d.concepts).every(id => /^[0-9a-f-]{36}$/.test(id)), "plan concepts are ids");
 
-  // Route wiring: unauthenticated requests are rejected; paths exist under /api.
+  // Route wiring: paths exist under /api and need no sign-in.
   const { routes } = await import("../routes/index.ts");
   const res = await routes.request(`/classes/${classId}/today`);
-  console.log("GET /api/classes/:id/today without token ->", res.status, await res.text());
-  assert.equal(res.status, 401);
+  console.log("GET /api/classes/:id/today ->", res.status);
+  assert.equal(res.status, 200);
 
   console.log("bundle status:", await getBundleStatus(lectureId));
   console.log("OK");

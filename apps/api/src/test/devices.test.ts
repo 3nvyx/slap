@@ -1,6 +1,7 @@
-// Device ownership and active class, end to end against the real database: REST routes (signed in with
-// JWTs from a local JWKS), the /ws/device protocol from a fake device, and session start/stop with the mock STT.
-// Seeds throwaway users, classes and device rows and deletes them afterwards; skipped without DATABASE_URL.
+// Device pairing and active class, end to end against the real database: REST routes (no sign-in; devices are
+// shared by every caller), the /ws/device protocol from a fake device, and session start/stop with the mock STT.
+// Seeds throwaway classes and device rows and deletes them afterwards; skipped without DATABASE_URL.
+// The database is shared, so other devices and classes exist: assertions look only at this run's rows.
 import assert from "node:assert/strict";
 import http from "node:http";
 import { after, before, test } from "node:test";
@@ -15,8 +16,7 @@ const KEY1 = `devtest-key1-${run}`, KEY2 = `devtest-key2-${run}`, KEY3 = `devtes
 const userA = `devtest-a-${run}`, userB = `devtest-b-${run}`;
 const pairCode = (n: number) => `T${run.slice(-4)}${n}`.slice(0, 6).toUpperCase();
 
-let jwksServer: http.Server, wsServer: http.Server, wsPort = 0;
-let sign: (sub: string) => Promise<string>;
+let wsServer: http.Server, wsPort = 0;
 let m: {
   app: typeof import("../server.ts")["app"]; db: typeof import("../db/index.ts"); dz: typeof import("drizzle-orm");
   oled: typeof import("../oled.ts"); dev: typeof import("../ws/device.ts"); WS: typeof import("ws").default;
@@ -25,18 +25,10 @@ const cls: Record<"c1" | "c2" | "c3", { id: string; code: string }> = { c1: { id
 
 before(async () => {
   if (!hasDb) return;
-  const jose = await import("jose");
-  const { publicKey, privateKey } = await jose.generateKeyPair("EdDSA", { extractable: true });
-  const jwk = { ...(await jose.exportJWK(publicKey)), kid: "devtest", alg: "EdDSA", use: "sig" };
-  jwksServer = http.createServer((_req, res) => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ keys: [jwk] })); });
-  await new Promise<void>(r => jwksServer.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${(jwksServer.address() as AddressInfo).port}`;
   Object.assign(process.env, {
-    NEON_AUTH_BASE_URL: `${base}/auth`, NEON_AUTH_JWKS_URL: `${base}/jwks`, STT_BACKEND: "mock", TRANSLATE_BACKEND: "mock",
+    STT_BACKEND: "mock", TRANSLATE_BACKEND: "mock",
     LLM_BACKEND: "mock", FISH_DIARIZE: "0", DEVICE_KEYS: [KEY1, KEY2, KEY3].join(","), PUBLIC_URL: "http://slap.test",
   });
-  sign = (sub) => new jose.SignJWT({ email: `${sub}@example.com` }).setProtectedHeader({ alg: "EdDSA", kid: "devtest" })
-    .setSubject(sub).setIssuer(`${base}/auth`).setIssuedAt().setExpirationTime("10m").sign(privateKey);
 
   const [server, db, dz, oled, dev, ws] = await Promise.all([
     import("../server.ts"), import("../db/index.ts"), import("drizzle-orm"), import("../oled.ts"), import("../ws/device.ts"), import("ws"),
@@ -51,7 +43,6 @@ before(async () => {
   const seed = async (key: keyof typeof cls, owner: string) => {
     const code = `DT${key.toUpperCase()}${run}`.slice(0, 16);
     const [c] = await db.db.insert(schema.classes).values({ name: `Device test ${key} (throwaway)`, code, ownerUserId: owner }).returning();
-    await db.db.insert(schema.enrollments).values({ userId: owner, classId: c!.id, role: "owner" });
     cls[key] = { id: c!.id, code };
   };
   await seed("c1", userA);
@@ -67,12 +58,11 @@ after(async () => {
   const ids = Object.values(cls).map(c => c.id).filter(Boolean);
   if (ids.length) await db.delete(schema.classes).where(inArray(schema.classes.id, ids));
   wsServer?.close();
-  jwksServer?.close();
 });
 
 async function call<T = any>(user: string, method: string, path: string, body?: unknown): Promise<{ status: number; data: T }> {
   const res = await m.app.request(path, {
-    method, headers: { authorization: `Bearer ${await sign(user)}`, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
+    method, headers: { "x-slap-user": user, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   return { status: res.status, data: (await res.json()) as T };
@@ -114,9 +104,10 @@ function fakeDevice(key: string, code: string) {
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const same = (a: Uint8Array | null, b: Uint8Array) => !!a && Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
 let deviceId = "";
+const listed = async (user: string, id: string) => (await call(user, "GET", "/api/devices")).data.find((d: { id: string }) => d.id === id);
 let device: ReturnType<typeof fakeDevice>;
 
-test("pairing binds the device to the user; with several classes and no classId it has no active class", { skip }, async () => {
+test("pairing: every caller then sees the device; with several classes and no classId it has no active class", { skip }, async () => {
   device = fakeDevice(KEY1, pairCode(1));
   await device.hello();
   await device.until(s => s.state === "unpaired" && s.message === `pair code ${pairCode(1)}`, "unpaired with its code");
@@ -124,7 +115,7 @@ test("pairing binds the device to the user; with several classes and no classId 
   const r = await call(userA, "POST", "/api/devices/pair", { pairCode: pairCode(1).toLowerCase() });
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.equal(r.data.ownerUserId, userA);
-  assert.equal(r.data.activeClassId, null, "userA has two classes: nothing picked");
+  assert.equal(r.data.activeClassId, null, "more than one class exists: nothing picked");
   assert.equal(r.data.connected, true);
   deviceId = r.data.deviceId;
 
@@ -132,13 +123,11 @@ test("pairing binds the device to the user; with several classes and no classId 
   assert.equal(st.classCode, undefined);
   assert.equal(st.message, m.oled.PICK_COURSE);
 
-  const mine = await call(userA, "GET", "/api/devices");
-  assert.equal(mine.status, 200);
-  assert.deepEqual(mine.data.map((d: { id: string }) => d.id), [deviceId]);
-  assert.equal(mine.data[0].activeClass, null);
-  assert.equal(mine.data[0].connected, true);
-  assert.equal(mine.data[0].state, "idle");
-  assert.deepEqual((await call(userB, "GET", "/api/devices")).data, [], "other users do not see it");
+  const mine = await listed(userA, deviceId);
+  assert.equal(mine.activeClass, null);
+  assert.equal(mine.connected, true);
+  assert.equal(mine.state, "idle");
+  assert.deepEqual(await listed(userB, deviceId), mine, "devices are shared: another caller sees the same device");
   assert.equal((await call(userA, "POST", "/api/devices/pair", { pairCode: pairCode(1) })).status, 404, "the code is used up");
 });
 
@@ -154,11 +143,11 @@ test("a device start with no active class is ignored", { skip }, async () => {
   }
 });
 
-test("switching the active class: owner + member only; the device re-renders its idle screen at once", { skip }, async () => {
-  assert.equal((await call(userB, "POST", `/api/devices/${deviceId}/active-class`, { classId: cls.c3.id })).status, 404, "not B's device");
-  assert.equal((await call(userA, "POST", `/api/devices/${deviceId}/active-class`, { classId: cls.c3.id })).status, 403, "A is not in c3");
+test("switching the active class: any caller, existing class only; the device re-renders its idle screen at once", { skip }, async () => {
+  assert.equal((await call(userA, "POST", `/api/devices/${deviceId}/active-class`, { classId: crypto.randomUUID() })).status, 404, "no such class");
+  assert.equal((await call(userA, "POST", `/api/devices/${crypto.randomUUID()}/active-class`, { classId: cls.c1.id })).status, 404, "no such device");
 
-  const r = await call(userA, "POST", `/api/devices/${deviceId}/active-class`, { classId: cls.c1.id });
+  const r = await call(userB, "POST", `/api/devices/${deviceId}/active-class`, { classId: cls.c1.id });
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.deepEqual(r.data.activeClass, { id: cls.c1.id, name: "Device test c1 (throwaway)", code: cls.c1.code });
   const idle = m.oled.renderIdle(cls.c1.code, m.dev.joinUrl(cls.c1.code), true);
@@ -190,15 +179,15 @@ test("a device start records into the active class; switching while recording is
   await device.until(s => s.state === "idle" && s.classCode === cls.c1.code, "idle after stop");
 });
 
-test("a web start for another class switches the caller's device there and records", { skip }, async () => {
+test("a web start for another class switches the connected idle device there and records", { skip }, async () => {
   const r = await call(userA, "POST", `/api/classes/${cls.c2.id}/sessions/start`, { title: "Web start" });
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.equal(r.data.classId, cls.c2.id);
   const st = await device.until(s => s.state === "recording" && s.sessionId === r.data.id, "recording the web-started lecture");
   assert.equal(st.classCode, cls.c2.code);
-  const mine = await call(userA, "GET", "/api/devices");
-  assert.equal(mine.data[0].activeClass.id, cls.c2.id);
-  assert.equal(mine.data[0].state, "recording");
+  const mine = await listed(userA, deviceId);
+  assert.equal(mine.activeClass.id, cls.c2.id);
+  assert.equal(mine.state, "recording");
 
   const stop = await call(userA, "POST", `/api/lectures/${r.data.id}/stop`);
   assert.equal(stop.status, 200);
@@ -206,31 +195,30 @@ test("a web start for another class switches the caller's device there and recor
 });
 
 test("unpairing shows a pair code again", { skip }, async () => {
-  assert.equal((await call(userB, "DELETE", `/api/devices/${deviceId}`)).status, 404);
-  const r = await call(userA, "DELETE", `/api/devices/${deviceId}`);
+  const r = await call(userB, "DELETE", `/api/devices/${deviceId}`);
   assert.equal(r.status, 200);
   await device.until((s, f) => s.state === "unpaired" && s.message === `pair code ${pairCode(1)}` && same(f, m.oled.renderUnpaired(pairCode(1))), "unpaired screen");
-  assert.deepEqual((await call(userA, "GET", "/api/devices")).data, []);
+  assert.equal(await listed(userA, deviceId), undefined, "an unpaired device is not listed");
+  assert.equal((await call(userA, "POST", `/api/devices/${deviceId}/active-class`, { classId: cls.c1.id })).status, 404, "nor switchable");
   device.close();
 });
 
-test("a user with exactly one class gets it as the active class when pairing", { skip }, async () => {
+test("pairing with a classId sets the active class", { skip }, async () => {
   const d2 = fakeDevice(KEY2, pairCode(2));
   await d2.hello();
   await d2.until(s => s.state === "unpaired", "unpaired");
-  const r = await call(userB, "POST", "/api/devices/pair", { pairCode: pairCode(2) });
+  assert.equal((await call(userB, "POST", "/api/devices/pair", { pairCode: pairCode(2), classId: crypto.randomUUID() })).status, 404, "no such class");
+  const r = await call(userB, "POST", "/api/devices/pair", { pairCode: pairCode(2), classId: cls.c3.id });
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.equal(r.data.activeClassId, cls.c3.id);
   await d2.until(s => s.state === "idle" && s.classCode === cls.c3.code, "idle with c3");
   d2.close();
 });
 
-test("a device paired to a class before owners existed belongs to the class owner", { skip }, async () => {
+test("a device row with an active class but no owner counts as paired", { skip }, async () => {
   const { db, schema } = m.db;
   const [row] = await db.insert(schema.devices).values({ deviceKey: KEY3, name: "legacy", classId: cls.c1.id }).returning();
-  const mine = await call(userA, "GET", "/api/devices");
-  assert.deepEqual(mine.data.map((d: { id: string }) => d.id), [row!.id]);
-  assert.equal(mine.data[0].activeClass.code, cls.c1.code);
+  assert.equal((await listed(userB, row!.id)).activeClass.code, cls.c1.code);
 
   const d3 = fakeDevice(KEY3, pairCode(3));
   await d3.hello();

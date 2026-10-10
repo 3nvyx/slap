@@ -13,7 +13,6 @@ export function PretestPage() {
   const pretest = useApi(() => api.pretest(classId), [classId])
   const [score, setScore] = useState({ correct: 0, total: 0 })
   const [busy, setBusy] = useState(false)
-  const owner = detail.class.role === 'owner'
   const hasSyllabus = detail.documents.some((d) => d.kind === 'syllabus')
 
   const regenerate = async () => {
@@ -48,14 +47,12 @@ export function PretestPage() {
                 'Nothing left on the syllabus to pretest.'
               ) : (
                 <>
-                  The pretest comes from the syllabus’s weekly topics. {owner ? 'Upload the syllabus on the class page.' : 'Ask the lecturer to upload the syllabus.'}
-                  {owner && (
-                    <div className="mt-4">
-                      <ButtonLink variant="ink" to={`/c/${classId}`}>
-                        Class page
-                      </ButtonLink>
-                    </div>
-                  )}
+                  The pretest comes from the syllabus’s weekly topics. Upload the syllabus on the class page.
+                  <div className="mt-4">
+                    <ButtonLink variant="ink" to={`/c/${classId}`}>
+                      Class page
+                    </ButtonLink>
+                  </div>
                 </>
               )}
             </Empty>

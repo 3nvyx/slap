@@ -14,14 +14,14 @@ One small device per classroom. Slap it on the lecturer's desk and the whole roo
 ## Run locally
 
 ```bash
-# at the repo root: copy .env.example to .env.local and fill DATABASE_URL, NEON_AUTH_* and the API keys (or `neon env pull`)
+# at the repo root: copy .env.example to .env.local and fill DATABASE_URL and the API keys (or `neon env pull`)
 pnpm install
 pnpm db:push                      # apply the schema to the linked Neon branch
 pnpm dev                          # API on :8787 (serves apps/web/dist if built)
 pnpm dev:web                      # Vite dev server on :5173, proxies /api and /ws
 ```
 
-Environment (read only in `apps/api/src/settings.ts`): `DATABASE_URL`, `NEON_AUTH_BASE_URL`, `NEON_AUTH_JWKS_URL`, `DEEPGRAM_API_KEY`, optional `GOOGLE_TRANSLATE_API_KEY`, `ANTHROPIC_API_KEY` (or `GEMINI_API_KEY`), `PUBLIC_URL`, `DEVICE_KEYS`, `MODE=demo|local|cloud`. Missing keys fall back to mock backends so the whole UI runs.
+Environment (read only in `apps/api/src/settings.ts`): `DATABASE_URL`, `DEEPGRAM_API_KEY`, optional `GOOGLE_TRANSLATE_API_KEY`, `ANTHROPIC_API_KEY` (or `GEMINI_API_KEY`), `PUBLIC_URL`, `DEVICE_KEYS`, `MODE=demo|local|cloud`. Missing keys fall back to mock backends so the whole UI runs.
 
 ## Deploy (after the event)
 
@@ -29,8 +29,8 @@ Environment (read only in `apps/api/src/settings.ts`): `DATABASE_URL`, `NEON_AUT
 
 ## Demo run (what was verified on 6 October)
 
-1. `pnpm dev` (API on :8787, serving the built web app; `pnpm --filter @slap/web build` first), sign in at `/login` (Neon Auth: Google or email).
-2. Create a class (code `CS229`), then pair the device by typing its on-screen code in the Device panel. Turn on **Guest access** under the join QR so judges can browse the notes, graph and exam topics without an account (the landing page lists such classes).
+1. `pnpm dev` (API on :8787, serving the built web app; `pnpm --filter @slap/web build` first), then open `/classes`. There is no sign-in: every class and device is open to anyone who can reach the app, and study progress is kept per browser.
+2. Create a class (code `CS229`), then pair the device by typing its on-screen code in the Device panel. The landing page lists every class, so judges open one directly.
 3. Press the device's button (or double-slap it, or "Start session" in the app). Captions appear for anyone who opens `/j/CS229` (the page waits and opens them by itself if scanned early); pick a language in the top bar. The class home shows who is watching and in which languages.
 4. Open Partner in the class nav to practise out loud: hold the orange button and answer; the partner grades you and asks the next question in your chosen Fish voice. Needs `FISH_API_KEY` (and `FISH_VOICE_ID`).
 5. Stop the session: the study bundle runs (outline, concepts, cards, questions) and the lecture page, graph, review, practice, recall, exam topics, exam sheet, pretest and today pages fill in. Ask the lecture a question from its page; export the class as an Obsidian vault from the graph.

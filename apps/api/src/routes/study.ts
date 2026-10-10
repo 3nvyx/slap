@@ -2,15 +2,15 @@
  * Study routes (docs/api.md "Study"): study bundle status/re-run, FSRS review,
  * practice + grading, recall check, exam topics, Today page, the model-written study
  * plan, mastery, and course document upload. Mounted by routes/index.ts under /api, so paths here are relative
- * to /api. Every route needs a signed-in class member; re-running a bundle and
- * uploading documents need the class owner. Errors are { error } via HTTPException.
+ * to /api. Nothing is access-checked (there is no sign-in); per-student state is keyed
+ * by the caller's id from user.ts. Errors are { error } via HTTPException.
  */
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { optionalUser, requireClassRole, requireUser, type MaybeUserEnv, type UserEnv } from "../auth.ts";
+import { classOr404, type UserEnv } from "../user.ts";
 import { enqueueStudyBundle, getBundleStatus } from "../pipeline/bundle.ts";
 import { getDueCards, reviewCard } from "../pipeline/cards.ts";
 import { grade, pickPractice } from "../pipeline/practice.ts";
@@ -26,10 +26,9 @@ import { getSyllabus, nextExam } from "../pipeline/syllabus.ts";
 import { getDb } from "../pipeline/db.ts";
 
 type C = Context<UserEnv>;
-type MaybeC = Context<MaybeUserEnv>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function idParam(c: C | MaybeC, name: string, what: string): string {
+function idParam(c: C, name: string, what: string): string {
   const v = c.req.param(name) ?? "";
   if (!UUID.test(v)) throw new HTTPException(404, { message: `${what} not found` });
   return v;
@@ -50,68 +49,61 @@ function intQuery(c: C, name: string, def: number, min: number, max: number): nu
   return n;
 }
 
-/** Loads the class id of a row and checks the caller's role in it (`read` admits guests of a guest-access class). */
-async function classOf(c: C | MaybeC, table: "lectures" | "cards" | "questions" | "documents", id: string, need: "read" | "member" | "owner"): Promise<string> {
+/** The class id of a row (404 if the row does not exist). */
+async function classOf(table: "lectures" | "cards" | "questions" | "documents", id: string): Promise<string> {
   const { db, schema } = await getDb();
   const t = schema[table];
   const [row] = await db.select({ classId: t.classId }).from(t).where(eq(t.id, id)).limit(1);
   if (!row) throw new HTTPException(404, { message: `${table.replace(/s$/, "")} not found` });
-  await requireClassRole(c.var.user?.id ?? null, row.classId, need);
   return row.classId;
 }
 
-async function member(c: C, need: "member" | "owner" = "member"): Promise<string> {
+/** The `:classId` param of a class that exists. */
+async function classParam(c: C): Promise<string> {
   const classId = idParam(c, "classId", "class");
-  await requireClassRole(c.var.user.id, classId, need);
+  await classOr404(classId);
   return classId;
 }
 
-/** Class id plus whether the caller is a guest (read-only: no mastery or per-student state). */
-async function reader(c: MaybeC): Promise<{ classId: string; guest: boolean }> {
-  const classId = idParam(c, "classId", "class");
-  const role = await requireClassRole(c.var.user?.id ?? null, classId, "read");
-  return { classId, guest: role === "guest" };
-}
-
-// Untyped like coreRoutes: each route's middleware (requireUser / optionalUser) types `c.var.user`.
-export const studyRoutes = new Hono();
+// `user` is set by withUser in routes/index.ts.
+export const studyRoutes = new Hono<UserEnv>();
 
 // ---------- study bundle ----------
 
-studyRoutes.get("/lectures/:id/bundle", optionalUser, async c => {
+studyRoutes.get("/lectures/:id/bundle", async c => {
   const id = idParam(c, "id", "lecture");
-  await classOf(c, "lectures", id, "read");
+  await classOf("lectures", id);
   const s = await getBundleStatus(id);
   if (!s) return c.json({ error: "no study bundle has been run for this lecture yet" }, 404);
   return c.json(s);
 });
 
-studyRoutes.post("/lectures/:id/bundle", requireUser, async c => {
+studyRoutes.post("/lectures/:id/bundle", async c => {
   const id = idParam(c, "id", "lecture");
-  await classOf(c, "lectures", id, "owner");
+  await classOf("lectures", id);
   await enqueueStudyBundle(id);
   return c.json(await getBundleStatus(id), 202);
 });
 
 // ---------- flashcards ----------
 
-studyRoutes.get("/classes/:classId/review/due", requireUser, async c => {
-  const classId = await member(c);
+studyRoutes.get("/classes/:classId/review/due", async c => {
+  const classId = await classParam(c);
   return c.json(await getDueCards(c.var.user.id, classId, intQuery(c, "limit", 20, 1, 200)));
 });
 
 const ReviewBody = z.object({ rating: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]) });
-studyRoutes.post("/cards/:id/review", requireUser, async c => {
+studyRoutes.post("/cards/:id/review", async c => {
   const id = idParam(c, "id", "card");
-  await classOf(c, "cards", id, "member");
+  await classOf("cards", id);
   const { rating } = await jsonBody(c, ReviewBody);
   return c.json(await reviewCard(c.var.user.id, id, rating));
 });
 
 // ---------- practice ----------
 
-studyRoutes.get("/classes/:classId/practice", requireUser, async c => {
-  const classId = await member(c);
+studyRoutes.get("/classes/:classId/practice", async c => {
+  const classId = await classParam(c);
   const focus = c.req.query("conceptId");
   if (focus !== undefined && !UUID.test(focus)) throw new HTTPException(400, { message: "conceptId must be a concept id" });
   const lectureId = c.req.query("lectureId");
@@ -120,9 +112,9 @@ studyRoutes.get("/classes/:classId/practice", requireUser, async c => {
 });
 
 const AttemptBody = z.object({ answer: z.string().max(4000) });
-studyRoutes.post("/questions/:id/attempt", requireUser, async c => {
+studyRoutes.post("/questions/:id/attempt", async c => {
   const id = idParam(c, "id", "question");
-  await classOf(c, "questions", id, "member");
+  await classOf("questions", id);
   const { answer } = await jsonBody(c, AttemptBody);
   const a = await grade(c.var.user.id, id, answer);
   if (!a) throw new HTTPException(404, { message: "question not found" });
@@ -132,9 +124,9 @@ studyRoutes.post("/questions/:id/attempt", requireUser, async c => {
 // ---------- recall ----------
 
 const RecallBody = z.object({ text: z.string().trim().min(1, "write what you remember first").max(20_000) });
-studyRoutes.post("/lectures/:id/recall", requireUser, async c => {
+studyRoutes.post("/lectures/:id/recall", async c => {
   const id = idParam(c, "id", "lecture");
-  await classOf(c, "lectures", id, "member");
+  await classOf("lectures", id);
   const { text } = await jsonBody(c, RecallBody);
   const r = await recallCheck(c.var.user.id, id, text);
   if (!r) throw new HTTPException(404, { message: "lecture not found" });
@@ -144,9 +136,9 @@ studyRoutes.post("/lectures/:id/recall", requireUser, async c => {
 // ---------- ask the lecture ----------
 
 const AskBody = z.object({ question: z.string().trim().min(2, "ask a question").max(500) });
-studyRoutes.post("/lectures/:id/ask", requireUser, async c => {
+studyRoutes.post("/lectures/:id/ask", async c => {
   const id = idParam(c, "id", "lecture");
-  await classOf(c, "lectures", id, "member");
+  await classOf("lectures", id);
   const { question } = await jsonBody(c, AskBody);
   const a = await askLecture(id, question);
   if (!a) throw new HTTPException(404, { message: "lecture not found" });
@@ -155,12 +147,12 @@ studyRoutes.post("/lectures/:id/ask", requireUser, async c => {
 
 // ---------- pretest (before the next lecture) ----------
 
-studyRoutes.get("/classes/:classId/pretest", requireUser, async c => c.json(await getPretest(await member(c))));
+studyRoutes.get("/classes/:classId/pretest", async c => c.json(await getPretest(await classParam(c))));
 
-studyRoutes.post("/classes/:classId/pretest", requireUser, async c => c.json(await getPretest(await member(c), { fresh: true })));
+studyRoutes.post("/classes/:classId/pretest", async c => c.json(await getPretest(await classParam(c), { fresh: true })));
 
-studyRoutes.post("/classes/:classId/pretest/:questionId/attempt", requireUser, async c => {
-  const classId = await member(c);
+studyRoutes.post("/classes/:classId/pretest/:questionId/attempt", async c => {
+  const classId = await classParam(c);
   const questionId = idParam(c, "questionId", "question");
   const { answer } = await jsonBody(c, AttemptBody);
   const a = await gradePretest(classId, questionId, answer);
@@ -170,40 +162,40 @@ studyRoutes.post("/classes/:classId/pretest/:questionId/attempt", requireUser, a
 
 // ---------- derived pages ----------
 
-studyRoutes.get("/classes/:classId/exam-topics", optionalUser, async c => {
-  const { classId, guest } = await reader(c);
+studyRoutes.get("/classes/:classId/exam-topics", async c => {
+  const classId = await classParam(c);
   const exam = nextExam(await getSyllabus(classId));
-  return c.json(await getExamTopics(c.var.user?.id ?? "", classId, { syllabusTopics: exam?.topics ?? [], ...(guest ? { mastery: {} } : {}) }));
+  return c.json(await getExamTopics(c.var.user.id, classId, { syllabusTopics: exam?.topics ?? [] }));
 });
 
-studyRoutes.get("/classes/:classId/today", requireUser, async c => {
-  const classId = await member(c);
+studyRoutes.get("/classes/:classId/today", async c => {
+  const classId = await classParam(c);
   return c.json(await getToday(c.var.user.id, classId));
 });
 
 // The model-written plan (syllabus dates, lecture notes, concept notes, class pace); cached per student per day.
-studyRoutes.get("/classes/:classId/study-plan", requireUser, async c => {
-  const classId = await member(c);
+studyRoutes.get("/classes/:classId/study-plan", async c => {
+  const classId = await classParam(c);
   return c.json(await getStudyPlan(c.var.user.id, classId));
 });
 
-studyRoutes.post("/classes/:classId/study-plan", requireUser, async c => {
-  const classId = await member(c);
+studyRoutes.post("/classes/:classId/study-plan", async c => {
+  const classId = await classParam(c);
   return c.json(await getStudyPlan(c.var.user.id, classId, { fresh: true }));
 });
 
-studyRoutes.get("/classes/:classId/mastery", requireUser, async c => {
-  const classId = await member(c);
+studyRoutes.get("/classes/:classId/mastery", async c => {
+  const classId = await classParam(c);
   return c.json(await getMastery(c.var.user.id, classId));
 });
 
 // ---------- documents ----------
 
 const DocKind = z.enum(["book", "syllabus"]);
-studyRoutes.post("/classes/:classId/documents", requireUser,
+studyRoutes.post("/classes/:classId/documents",
   bodyLimit({ maxSize: MAX_UPLOAD_BYTES + 64 * 1024, onError: c => c.json({ error: "file too large (max 20 MB)" }, 413) }),
   async c => {
-    const classId = await member(c, "owner");
+    const classId = await classParam(c);
     const form = await c.req.parseBody().catch(() => { throw new HTTPException(400, { message: "expected multipart/form-data" }); });
     const kind = DocKind.safeParse(form["kind"]);
     if (!kind.success) throw new HTTPException(400, { message: "kind must be book or syllabus" });
@@ -216,11 +208,10 @@ studyRoutes.post("/classes/:classId/documents", requireUser,
     return c.json(await createDocument(classId, kind.data, title, bytes), 201);
   });
 
-studyRoutes.get("/documents/:id", requireUser, async c => {
+studyRoutes.get("/documents/:id", async c => {
   const id = idParam(c, "id", "document");
   const doc = await getDocument(id);
   if (!doc) throw new HTTPException(404, { message: "document not found" });
-  await requireClassRole(c.var.user.id, doc.classId, "member");
   return c.json({ id: doc.id, kind: doc.kind, title: doc.title, parsed: doc.parsed });
 });
 
