@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slap screen lab</title>
+<style>
+  :root { --bg: #0e0f12; --panel: #16181d; --line: #272a33; --text: #e8eaf0; --dim: #8d94a5; --accent: #ff7a1a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  [hidden] { display: none !important; }
+
+  header { display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font-size: 15px; font-weight: 650; }
+  h1 small { margin-left: 8px; color: var(--dim); font-weight: 400; font-size: 13px; }
+  #views { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  #views button { border: 0; background: none; padding: 6px 12px; cursor: pointer; color: var(--dim); }
+  #views button.on { background: var(--panel); color: var(--text); }
+  #play { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 14px; cursor: pointer; min-width: 84px; }
+  #play.on { border-color: var(--accent); color: var(--accent); }
+  #live { color: var(--dim); font-size: 12px; margin-left: auto; }
+
+  #error { display: flex; gap: 12px; align-items: flex-start; padding: 10px 16px; background: #3a1614; border-bottom: 1px solid #6b2a25; }
+  #error pre { margin: 0; white-space: pre-wrap; font: 12px/1.5 ui-monospace, Menlo, monospace; flex: 1; }
+  #error p { margin: 0 0 4px; font-weight: 600; }
+  #error button { border: 1px solid #6b2a25; background: none; border-radius: 6px; padding: 2px 10px; cursor: pointer; }
+
+  main { display: grid; grid-template-columns: 200px minmax(0, 1fr) 300px; min-height: calc(100vh - 51px); }
+  #screens { border-right: 1px solid var(--line); padding: 6px 8px 24px; }
+  #screens h2, #controls h2 { margin: 18px 8px 6px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+  .item { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+  .item:hover { background: var(--panel); }
+  .item.on { background: var(--panel); box-shadow: inset 2px 0 0 var(--accent); }
+
+  #stage { padding: 28px 24px; min-width: 0; }
+  #one { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+  .device { display: flex; align-items: stretch; gap: 18px; padding: 18px; max-width: 100%; background: #1b1c20; border-radius: 22px; box-shadow: inset 0 1px 0 #30323a, 0 22px 50px #0009; }
+  .glass { min-width: 0; padding: 10px; background: #000; border-radius: 6px; box-shadow: inset 0 0 0 1px #2a2c33; }
+  .glass canvas { display: block; max-width: 100%; height: auto; image-rendering: pixelated; }
+  .face { flex: none; width: 84px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 8px 0 4px; }
+  .grille { width: 40px; height: 40px; background: radial-gradient(circle, #050506 1.6px, transparent 2.1px) 0 0 / 8px 8px; }
+  .rec { display: flex; flex-direction: column; align-items: center; gap: 9px; }
+  .btn { width: 52px; height: 52px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ff9c52, #f26a0f 60%, #c8530a); box-shadow: 0 2px 0 #7a3305, 0 0 0 4px #121316; }
+  .led { width: 7px; height: 7px; border-radius: 50%; background: #3a1512; }
+  .led.on { background: #ff3b30; box-shadow: 0 0 8px #ff3b30; }
+  .eng { font-size: 10px; font-weight: 600; letter-spacing: .2em; color: #454852; }
+  .about { text-align: center; max-width: 560px; }
+  .about strong { font-size: 16px; }
+  .about p { margin: 4px 0 0; color: var(--dim); }
+  .about #stats { font-size: 12px; }
+  .real { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--dim); font-size: 12px; }
+  .real canvas { width: 55mm; height: auto; border: 2.5mm solid #000; border-radius: 3px; outline: 1px solid var(--line); }
+
+  #cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); gap: 16px; }
+  .cell { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); cursor: pointer; text-align: left; }
+  .cell:hover { border-color: #3c4150; }
+  .cell canvas { width: 100%; height: auto; image-rendering: pixelated; border-radius: 4px; }
+  .cell span { color: var(--dim); font-size: 13px; }
+
+  #controls { border-left: 1px solid var(--line); padding: 0 12px 28px; }
+  #controls h2 { margin-left: 0; }
+  label { display: block; margin: 0 0 10px; font-size: 12px; color: var(--dim); }
+  label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; }
+  label input:not([type=checkbox]), label select, label textarea { display: block; width: 100%; margin-top: 4px; padding: 6px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; color: var(--text); font-size: 13px; }
+  label input[type=range] { padding: 0; accent-color: var(--accent); }
+  textarea { resize: vertical; min-height: 58px; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; min-width: 0; }
+  .file, .plain { display: block; width: 100%; margin: 0 0 10px; padding: 6px 8px; text-align: center; border: 1px dashed #3c4150; border-radius: 6px; background: none; color: var(--text); font-size: 13px; cursor: pointer; }
+  .plain { border-style: solid; background: var(--panel); }
+  .file:hover, .plain:hover { border-color: var(--accent); }
+  label.file input { display: none; }
+  #imgOut textarea { font: 9px/1 ui-monospace, Menlo, monospace; height: 110px; white-space: pre; }
+  .hint { margin: -4px 0 10px; font-size: 12px; color: var(--dim); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  @media (max-width: 1000px) {
+    main { grid-template-columns: 1fr; }
+    #screens, #controls { border: 0; border-bottom: 1px solid var(--line); }
+    #screens { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 8px; }
+    #screens h2 { width: 100%; margin: 8px 8px 2px; }
+    .item { width: auto; }
+    #stage { padding: 20px 16px; }
+    .face { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Slap screen lab <small>the device's 128 × 64 screen, with made-up data</small></h1>
+  <nav id="views">
+    <button data-view="one">One screen</button>
+    <button data-view="screens">All screens</button>
+    <button data-view="langs">All languages</button>
+  </nav>
+  <button id="play" title="Run the clock, the sound level and the caption">▶ Play</button>
+  <span id="live">Opened as a file: refresh the page after a change</span>
+</header>
+
+<div id="error" hidden>
+  <div style="flex:1">
+    <p>Something in the lab's files is broken. Copy this to your AI helper:</p>
+    <pre id="errorText"></pre>
+  </div>
+  <button id="errorDismiss">Hide</button>
+</div>
+
+<main>
+  <aside id="screens"></aside>
+
+  <section id="stage">
+    <div id="one">
+      <div class="device">
+        <div class="glass"><canvas id="oled" width="640" height="320"></canvas></div>
+        <div class="face">
+          <div class="grille"></div>
+          <div class="rec"><span class="led" id="led"></span><span class="btn"></span><span class="eng">REC</span></div>
+          <span class="eng">SLAP</span>
+        </div>
+      </div>
+      <div class="about">
+        <strong id="name"></strong>
+        <p id="note"></p>
+        <p id="stats"></p>
+      </div>
+      <div class="real">
+        <canvas id="real" width="384" height="192"></canvas>
+        <span>About the real size (55 × 27 mm). Lean back to see what a student sees.</span>
+      </div>
+    </div>
+    <div id="cells" hidden></div>
+  </section>
+
+  <aside id="controls">
+    <h2>Made-up data</h2>
+    <label>Language <select id="lang" data-key="lang"></select></label>
+    <label>Caption <textarea data-key="caption" placeholder="Empty = the sample sentence for the language"></textarea></label>
+    <div class="row">
+      <label>Class code <input data-key="classCode" maxlength="12"></label>
+      <label>Pair code <input data-key="pairCode" maxlength="8"></label>
+    </div>
+    <label>Join link (before the class code) <input data-key="joinBase"></label>
+    <label>Error message <input data-key="message"></label>
+    <div class="row">
+      <label>Sound level <input type="range" min="0" max="1" step="0.01" data-key="level"></label>
+      <label>Seconds recorded <input type="number" min="0" step="1" data-key="seconds"></label>
+    </div>
+    <label class="check"><input type="checkbox" data-key="wifiOk"> Wi-Fi connected</label>
+
+    <h2>Font</h2>
+    <label>Font for every screen <select id="font" data-key="font"></select></label>
+    <label class="file">Try a font file… <input type="file" id="fontFile" accept=".ttf,.otf,.woff,.woff2"></label>
+
+    <h2>Avatar</h2>
+    <label>Avatar <select id="avatar" data-key="avatar"></select></label>
+    <label class="file">Turn a picture into an avatar… <input type="file" id="imgFile" accept="image/*"></label>
+    <div id="imgOut" hidden>
+      <div class="row">
+        <label>Size <select id="imgSize"><option>16</option><option>24</option><option selected>32</option><option>48</option><option>64</option></select></label>
+        <label class="check"><input type="checkbox" id="imgDither"> Dots for greys</label>
+      </div>
+      <label class="check"><input type="checkbox" id="imgInvert"> Swap light and dark</label>
+      <label>Paste this into sprites.js to keep it <textarea id="imgCode" readonly></textarea></label>
+      <button class="plain" id="imgCopy">Copy</button>
+    </div>
+
+    <h2>Display</h2>
+    <div class="row">
+      <label>Pixel colour <select data-key="color">
+        <option value="#f2f6ff">White</option>
+        <option value="#5cb8ff">Blue</option>
+        <option value="#ffd84a">Yellow</option>
+        <option value="#5dff9b">Green</option>
+      </select></label>
+      <label>Zoom <select data-key="zoom">
+        <option value="3">3×</option><option value="4">4×</option><option value="5">5×</option><option value="6">6×</option><option value="8">8×</option>
+      </select></label>
+    </div>
+    <label class="check"><input type="checkbox" data-key="grid"> Show gaps between pixels</label>
+    <button class="plain" id="png" style="margin-top:10px">Save this screen as a picture</button>
+  </aside>
+</main>
+
+<script src="vendor/qrcode.js"></script>
+<script src="lab.js"></script>
+<script src="data.js"></script>
+<script src="sprites.js"></script>
+<script src="screens.js"></script>
+</body>
+</html>
