@@ -49,6 +49,10 @@ before(async () => {
     { lectureId: ids.l1, summary: "s", sections: [], announcements: [{ kind: "other", text: "Slides are online", when: null }, { kind: "deadline", text: "Problem set 2", when: "2099-01-15" }] },
     { lectureId: ids.l2, summary: "s", sections: [], announcements: [{ kind: "exam", text: "Midterm", when: "2099-01-02" }] },
   ]);
+  await d.insert(s.documents).values({ classId: ids.cls, kind: "syllabus", title: "Syllabus", parsed: {
+    title: null, exams: [], deadlines: [],
+    weeks: [{ week: 1, topics: ["Intro"], date: null }, { week: 2, topics: ["Gradient descent"], date: null }, { week: 3, topics: ["Learning rate", "Momentum"], date: null }],
+  } });
   const [k] = await d.insert(s.concepts).values({ classId: ids.cls, slug: "gradient-descent", name: "Gradient descent", definition: "Iterative optimisation.", emphasis: 0.8 }).returning();
   ids.concept = k!.id;
   const q = (lectureId: string, prompt: string) => ({ classId: ids.cls, lectureId, conceptId: ids.concept, kind: "short" as const, prompt, answer: "a", explanation: "" });
@@ -175,6 +179,29 @@ test("practice ?lectureId puts that lecture's questions first; ?conceptId still 
   assert.equal(l1.data[0].id, ids.q1);
   assert.equal(l1.data.length, 3, "fills up from the rest of the class");
   assert.equal((await call(owner, "GET", `/api/classes/${ids.cls}/practice?lectureId=nope`)).status, 400);
+});
+
+test("pretest: the week after the lectures held, members only, graded attempts, regenerate", { skip }, async () => {
+  assert.equal((await call(null, "GET", `/api/classes/${ids.cls}/pretest`)).status, 401);
+  assert.equal((await call(stranger, "GET", `/api/classes/${ids.cls}/pretest`)).status, 403);
+  const r = await call(owner, "GET", `/api/classes/${ids.cls}/pretest`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.data.week, { week: 3, topics: ["Learning rate", "Momentum"], date: null }, "two lectures held → week 3");
+  assert.equal(r.data.questions.length, 3);
+  assert.ok(r.data.questions.every((q: any) => !("answer" in q)), "answers are not sent");
+  const again = await call(owner, "GET", `/api/classes/${ids.cls}/pretest`);
+  assert.deepEqual(again.data.questions.map((q: any) => q.id), r.data.questions.map((q: any) => q.id), "cached for the day");
+
+  const q = r.data.questions[0];
+  const a = await call(owner, "POST", `/api/classes/${ids.cls}/pretest/${q.id}/attempt`, { answer: "no idea" });
+  assert.equal(a.status, 200);
+  assert.equal(typeof a.data.correct, "boolean");
+  assert.ok(a.data.feedback.length > 0);
+  assert.equal((await call(owner, "POST", `/api/classes/${ids.cls}/pretest/${crypto.randomUUID()}/attempt`, { answer: "x" })).status, 404);
+
+  const fresh = await call(owner, "POST", `/api/classes/${ids.cls}/pretest`);
+  assert.equal(fresh.status, 200);
+  assert.notDeepEqual(fresh.data.questions.map((q: any) => q.id), r.data.questions.map((q: any) => q.id), "regenerated");
 });
 
 test("replay route: owner only; the replay is the class's live lecture, public and stoppable by its own id", { skip }, async () => {

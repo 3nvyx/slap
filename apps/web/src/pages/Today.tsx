@@ -22,7 +22,7 @@ export function TodayPage() {
           <div className="max-w-6xl">
             <PageTitle kicker={fmtDate(t.date, { weekday: 'long', month: 'long', day: 'numeric' })} title="Today" />
 
-            <div className="mb-6 grid gap-4 md:grid-cols-3">
+            <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="flex flex-col justify-between rounded-md bg-ink p-6 text-bg">
                 <div className="label !text-bg/60">Cards due</div>
                 <div className="mt-4 font-mono text-6xl font-bold">{t.cardsDue.length}</div>
@@ -53,6 +53,13 @@ export function TodayPage() {
                 <p className="mt-1 text-sm text-muted">questions, mixed across lectures</p>
                 <ButtonLink variant="ink" className="mt-5 w-full" to={`/c/${classId}/practice`}>
                   Practice now
+                </ButtonLink>
+              </div>
+              <div className="flex flex-col rounded-md border border-line bg-panel p-6">
+                <Label>Before the next lecture</Label>
+                <p className="mt-4 text-sm text-ink-2">Three questions on what the syllabus says is coming, so you know what to listen for.</p>
+                <ButtonLink className="mt-auto w-full pt-0" to={`/c/${classId}/pretest`}>
+                  Pretest
                 </ButtonLink>
               </div>
             </div>

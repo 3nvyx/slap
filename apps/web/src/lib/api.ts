@@ -9,6 +9,8 @@ import type {
   PartnerSession,
   PartnerTurn,
   PartnerVoice,
+  Pretest,
+  PretestAttempt,
   Question,
   Rating,
   RecallResult,
@@ -147,6 +149,11 @@ export const api = {
     ),
   attempt: (questionId: string, answer: string) => post<Attempt>(`/api/questions/${enc(questionId)}/attempt`, { answer }),
   recall: (lectureId: string, text: string) => post<RecallResult>(`/api/lectures/${enc(lectureId)}/recall`, { text }),
+  /** Before the next lecture: questions on the syllabus's upcoming week (generated once a day; not stored). */
+  pretest: (classId: string) => get<Pretest>(`/api/classes/${enc(classId)}/pretest`),
+  regeneratePretest: (classId: string) => post<Pretest>(`/api/classes/${enc(classId)}/pretest`),
+  pretestAttempt: (classId: string, questionId: string, answer: string) =>
+    post<PretestAttempt>(`/api/classes/${enc(classId)}/pretest/${enc(questionId)}/attempt`, { answer }),
   examTopics: (classId: string) => get<ExamTopic[]>(`/api/classes/${enc(classId)}/exam-topics`),
   today: (classId: string) => get<Today>(`/api/classes/${enc(classId)}/today`),
   mastery: (classId: string) => get<Record<string, number>>(`/api/classes/${enc(classId)}/mastery`),
