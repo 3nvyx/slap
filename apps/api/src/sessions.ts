@@ -573,8 +573,15 @@ export async function deviceForWebStart(userId: string, classId: string): Promis
 // ---------- session lifecycle ----------
 
 /** The live lecture of a class: in memory, else a recent `live` row in the database (resumed after a restart). */
-export async function findLiveLecture(classId: string): Promise<LiveLecture | null> {
+/** The class's live lecture if this process has it in memory (no database); viewers and languages are only known here. */
+export function liveLectureInMemory(classId: string): LiveLecture | undefined {
   for (const l of lectures.values()) if (l.classId === classId && l.status === "live") return l;
+  return undefined;
+}
+
+export async function findLiveLecture(classId: string): Promise<LiveLecture | null> {
+  const mem = liveLectureInMemory(classId);
+  if (mem) return mem;
   const [row] = await db.select({ id: schema.lectures.id }).from(schema.lectures)
     .where(and(eq(schema.lectures.classId, classId), eq(schema.lectures.status, "live"), gt(schema.lectures.startedAt, new Date(Date.now() - RESUME_WINDOW_MS))))
     .orderBy(desc(schema.lectures.startedAt)).limit(1);

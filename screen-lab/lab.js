@@ -101,6 +101,70 @@ function spriteFit(name, boxW, boxH) {
   return { w: s.w * scale, h: s.h * scale, scale };
 }
 
+// ---- Matching the server's text
+// The server draws with @napi-rs/canvas, which places text differently from a browser in two ways
+// that show at this size. matchServerText() makes the lab's canvas behave the same.
+//  1. textBaseline "top": the baseline sits at y + round(ascent) - (underline position + thickness),
+//     1 to 4 px higher than a browser puts it.
+//  2. Only the regular face of Helvetica and Menlo is loaded (the first face in the .ttc), so their
+//     bold is the regular outline thickened (Skia fake bold), with the regular widths.
+// Measured from @napi-rs/canvas 0.1.100 on macOS, as fractions of the font size. A font that is
+// not listed gets its ascent from the browser and a typical underline value: close, not exact.
+const SERVER_FONTS = {
+  "Helvetica": { ascent: 0.77, under: 0.125, fakeBold: true },
+  "Arial": { ascent: 0.9053, under: 0.1792 },
+  "Verdana": { ascent: 1.0054, under: 0.1465 },
+  "Georgia": { ascent: 0.917, under: 0.1377 },
+  "Menlo": { ascent: 0.9282, under: 0.1074, fakeBold: true },
+  "Courier New": { ascent: 0.8325, under: 0.2739 },
+};
+const FAKE_BOLD = 2;   // stroke width as a multiple of Skia's embolden amount; 2 is the closest match to the server's frames
+const BOLD = /(^|\s)(bold|[6-9]00)\s/;
+const guessed = {};
+const text = { px: 10, fake: false };   // font size and fake-bold flag of the font set on the canvas
+
+function serverFont() {
+  const name = LAB.fontFamily;
+  if (SERVER_FONTS[name]) return SERVER_FONTS[name];
+  if (guessed[name]) return guessed[name];
+  const ctx = document.createElement("canvas").getContext("2d");
+  ctx.font = `1000px "${name}"`;
+  const guess = { ascent: ctx.measureText("H").fontBoundingBoxAscent / 1000, under: 0.14 };
+  if (document.fonts.check(`12px "${name}"`)) guessed[name] = guess;   // not while a web font is still loading
+  return guess;
+}
+
+function matchServerText(ctx) {
+  if (ctx.matched) return;
+  ctx.matched = true;
+  const fontProp = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, "font");
+  Object.defineProperty(ctx, "font", {
+    get: () => fontProp.get.call(ctx),
+    set(v) {
+      text.fake = BOLD.test(v) && !!serverFont().fakeBold;
+      fontProp.set.call(ctx, text.fake ? v.replace(BOLD, "$1") : v);
+      text.px = parseFloat(/([\d.]+)px/.exec(fontProp.get.call(ctx))?.[1] ?? "10");
+    },
+  });
+  const native = { fillText: ctx.fillText.bind(ctx), strokeText: ctx.strokeText.bind(ctx) };
+  for (const fn of ["fillText", "strokeText"]) {
+    ctx[fn] = (str, x, y, ...rest) => {
+      const top = ctx.textBaseline === "top", f = serverFont();
+      if (top) { ctx.textBaseline = "alphabetic"; y += Math.round(f.ascent * text.px) - f.under * text.px; }
+      native[fn](str, x, y, ...rest);
+      if (text.fake && fn === "fillText") {
+        const { lineWidth, strokeStyle, lineJoin } = ctx;
+        // Skia's embolden amount: size/24 at 9 px and below, easing to size/32 at 36 px.
+        const k = Math.min(1, Math.max(0, (text.px - 9) / 27));
+        Object.assign(ctx, { lineWidth: FAKE_BOLD * text.px * (1 / 24 + k * (1 / 32 - 1 / 24)), strokeStyle: ctx.fillStyle, lineJoin: "miter" });
+        native.strokeText(str, x, y, ...rest);
+        Object.assign(ctx, { lineWidth, strokeStyle, lineJoin });
+      }
+      if (top) ctx.textBaseline = "top";
+    };
+  }
+}
+
 // ---- Engine
 
 /** Packs RGBA pixels into XBM bits: a pixel is lit when its red channel is >= threshold. */
@@ -122,6 +186,9 @@ function renderFrame(def, d) {
   offscreen.width = W;   // assigning the size also resets every canvas setting
   offscreen.height = H;
   const ctx = offscreen.getContext("2d", { willReadFrequently: true });
+  matchServerText(ctx);
+  text.px = 10;
+  text.fake = false;
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = "#fff";

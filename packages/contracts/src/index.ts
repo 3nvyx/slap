@@ -52,7 +52,8 @@ export type LiveClientMessage =
   | { type: "ping" };
 
 // ---------- API DTOs ----------
-export interface ClassSummary { id: string; name: string; code: string; role: "owner" | "student" | "guest"; lectureCount: number; nextExam?: string | null }
+/** `role: "guest"` = not a member, reading a class that has guest access on (read-only: no cards, practice, recall or mastery). */
+export interface ClassSummary { id: string; name: string; code: string; role: "owner" | "student" | "guest"; lectureCount: number; nextExam?: string | null; guestAccess?: boolean }
 export interface LectureSummary { id: string; classId: string; title: string; date: string; status: "live" | "ended" | "processing" | "ready"; durationS?: number }
 
 export interface Segment { id: number; idx: number; start: number; end: number; text: string; words?: CaptionWord[]; speaker?: number | null }

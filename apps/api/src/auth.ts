@@ -9,7 +9,10 @@ import { settings } from "./settings.ts";
 export interface AuthUser { id: string; email: string | null }
 export type UserEnv = { Variables: { user: AuthUser } };
 export type MaybeUserEnv = { Variables: { user: AuthUser | null } };
-export type ClassRole = "owner" | "student";
+/** `guest` = not a member of a class that has guest access on: read-only, and only through `need: "read"`. */
+export type ClassRole = "owner" | "student" | "guest";
+/** What a route needs: `read` (members, or guests of a guest-access class), `member`, or `owner`. */
+export type ClassNeed = "read" | "member" | "owner";
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
@@ -59,25 +62,32 @@ export const optionalUser = createMiddleware<MaybeUserEnv>(async (c, next) => {
   await next();
 });
 
-async function lookupRole(userId: string, classId: string): Promise<{ found: boolean; role: ClassRole | null }> {
-  const [cls] = await db.select({ owner: schema.classes.ownerUserId }).from(schema.classes).where(eq(schema.classes.id, classId)).limit(1);
-  if (!cls) return { found: false, role: null };
-  if (cls.owner === userId) return { found: true, role: "owner" };
+async function lookupRole(userId: string | null, classId: string): Promise<{ found: boolean; role: ClassRole | null; guestAccess: boolean }> {
+  const [cls] = await db.select({ owner: schema.classes.ownerUserId, guestAccess: schema.classes.guestAccess })
+    .from(schema.classes).where(eq(schema.classes.id, classId)).limit(1);
+  if (!cls) return { found: false, role: null, guestAccess: false };
+  if (!userId) return { found: true, role: null, guestAccess: cls.guestAccess };
+  if (cls.owner === userId) return { found: true, role: "owner", guestAccess: cls.guestAccess };
   const [en] = await db.select({ role: schema.enrollments.role }).from(schema.enrollments)
     .where(and(eq(schema.enrollments.userId, userId), eq(schema.enrollments.classId, classId))).limit(1);
-  return { found: true, role: en?.role ?? null };
+  return { found: true, role: en?.role ?? null, guestAccess: cls.guestAccess };
 }
 
-/** The caller's role in a class: owner (creator or owner enrollment), student, or null. */
-export async function classRole(userId: string, classId: string): Promise<ClassRole | null> {
-  return (await lookupRole(userId, classId)).role;
+/** The caller's membership role in a class: owner (creator or owner enrollment), student, or null. Never guest. */
+export async function classRole(userId: string, classId: string): Promise<Exclude<ClassRole, "guest"> | null> {
+  const { role } = await lookupRole(userId, classId);
+  return role === "guest" ? null : role;
 }
 
-/** Throws 404 for an unknown class, 403 for a non-member, or for a non-owner when `need` is owner. */
-export async function requireClassRole(userId: string, classId: string, need: "member" | "owner"): Promise<ClassRole> {
-  const { found, role } = await lookupRole(userId, classId);
+/** Throws 404 for an unknown class, 403 when the caller may not do what `need` says. With `need: "read"` a
+ *  non-member (signed in or not) of a guest-access class gets the role `guest`; otherwise non-members are 403. */
+export async function requireClassRole(userId: string | null, classId: string, need: ClassNeed): Promise<ClassRole> {
+  const { found, role, guestAccess } = await lookupRole(userId, classId);
   if (!found) throw new HTTPException(404, { message: "class not found" });
-  if (!role) throw new HTTPException(403, { message: "not a member of this class" });
+  if (!role) {
+    if (need === "read" && guestAccess) return "guest";
+    throw new HTTPException(userId ? 403 : 401, { message: userId ? "not a member of this class" : "sign-in required" });
+  }
   if (need === "owner" && role !== "owner") throw new HTTPException(403, { message: "only the class owner can do this" });
   return role;
 }
