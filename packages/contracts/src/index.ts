@@ -79,6 +79,14 @@ export interface RecallResult { got: string[]; missed: string[]; wrong: string[]
 export interface ExamTopic { conceptId: string; name: string; emphasis: number; examFlag: boolean; mastery: number | null; score: number }
 export interface StudyPlanDay { date: string; cardsDue: number; concepts: string[]; questions: string[]; reason: string }
 
+// "Ask the lecture": a question answered from the transcript, with the segments it rests on.
+export interface LectureAnswer {
+  answer: string;
+  citations: Array<{ segmentId: number; start: number; excerpt: string }>;
+  /** True when the transcript does not cover the question (the answer says so). */
+  notInLecture: boolean;
+}
+
 // Pretest before the next lecture: a few questions on what the syllabus says is coming (generated per class
 // per day, kept in memory, not tied to concept notes). Answers are graded but not stored.
 export interface PretestQuestion { id: string; topic: string; kind: "mcq" | "short"; prompt: string; options?: string[] | null }

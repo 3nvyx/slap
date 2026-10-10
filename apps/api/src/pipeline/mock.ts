@@ -6,8 +6,8 @@
  * concepts are frequent noun phrases, definitions are lecture quotes, grading is
  * keyword overlap.
  */
-import type { BookPayload, CardsPayload, ConceptsPayload, GradePayload, OutlinePayload, PretestPayload, PromptSeg, QuestionsPayload, RecallPayload, SyllabusPayload } from "./tasks.ts";
-import type { BookOut, CardsOut, ConceptsOut, GradeOut, OutlineOut, PretestOut, QuestionsOut, RecallOut, SyllabusOut } from "./schemas.ts";
+import type { AskPayload, BookPayload, CardsPayload, ConceptsPayload, GradePayload, OutlinePayload, PretestPayload, PromptSeg, QuestionsPayload, RecallPayload, SyllabusPayload } from "./tasks.ts";
+import type { AskOut, BookOut, CardsOut, ConceptsOut, GradeOut, OutlineOut, PretestOut, QuestionsOut, RecallOut, SyllabusOut } from "./schemas.ts";
 import { GLOSSARY } from "./mockGlossary.ts";
 import { STOPWORDS, contentWords, firstSentence, keywordOverlap, readInputBlock, seededShuffle, slugify, stem, titleCase, tokenize } from "./util.ts";
 
@@ -24,6 +24,7 @@ export function mockComplete(task: string, prompt: string, docText?: string): st
       case "book": return mockBook(input as unknown as BookPayload, docText ?? "");
       case "syllabus": return mockSyllabus(input as unknown as SyllabusPayload, docText ?? "");
       case "pretest": return mockPretest(input as unknown as PretestPayload);
+      case "ask": return mockAsk(input as unknown as AskPayload);
       default: return { text: `mock reply for ${task}` };
     }
   })();
@@ -307,6 +308,19 @@ function mockPretest(p: PretestPayload): PretestOut {
     }
   }
   return { questions: qs };
+}
+
+/** Ask the lecture: the transcript lines that share the most content words with the question, quoted back. */
+function mockAsk(p: AskPayload): AskOut {
+  const ranked = (p.segments ?? [])
+    .map(s => ({ s, shared: keywordOverlap(p.question ?? "", s.text).shared }))
+    .filter(x => x.shared > 0)
+    .sort((a, b) => b.shared - a.shared || a.s.i - b.s.i)
+    .slice(0, 3)
+    .sort((a, b) => a.s.i - b.s.i);
+  if (!ranked.length) return { answer: "The lecture does not seem to cover that; nothing in the transcript matches the question.", cites: [], notInLecture: true };
+  const quotes = ranked.map(x => `“${firstSentence(x.s.text, 220)}”`);
+  return { answer: `From the lecture: ${quotes.join(" … ")}`, cites: ranked.map(x => x.s.i), notInLecture: false };
 }
 
 // ---------- grading ----------

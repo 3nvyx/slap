@@ -630,6 +630,17 @@ const routes: Array<[string, RegExp, Handler]> = [
     plan: plan(),
     nextExam: { name: 'Midterm', date: EXAM_DATE },
   })],
+  ['POST', /^\/api\/lectures\/([^/]+)\/ask$/, (_m, body) => {
+    const q = String((body as { question: string }).question ?? '').toLowerCase()
+    const words = q.split(/\W+/).filter((w) => w.length > 3)
+    const hits = SEGMENTS.map((s) => ({ s, n: words.filter((w) => s.text.toLowerCase().includes(w)).length })).filter((x) => x.n > 0).sort((a, b) => b.n - a.n).slice(0, 3).sort((a, b) => a.s.idx - b.s.idx)
+    if (!hits.length) return { answer: 'The lecture does not seem to cover that; nothing in the transcript matches the question.', citations: [], notInLecture: true }
+    return {
+      answer: `From the lecture: ${hits.map((h) => `“${h.s.text.slice(0, 160)}”`).join(' … ')}`,
+      citations: hits.map((h) => ({ segmentId: h.s.id, start: h.s.start, excerpt: h.s.text.slice(0, 160) })),
+      notInLecture: false,
+    }
+  }],
   ['GET', /^\/api\/classes\/([^/]+)\/pretest$/, () => mockPretest()],
   ['POST', /^\/api\/classes\/([^/]+)\/pretest$/, () => mockPretest(true)],
   ['POST', /^\/api\/classes\/([^/]+)\/pretest\/([^/]+)\/attempt$/, (m, body) => {

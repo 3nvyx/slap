@@ -181,6 +181,20 @@ test("practice ?lectureId puts that lecture's questions first; ?conceptId still 
   assert.equal((await call(owner, "GET", `/api/classes/${ids.cls}/practice?lectureId=nope`)).status, 400);
 });
 
+test("ask the lecture: members only; answers cite the transcript's segments; empty transcript says so", { skip }, async () => {
+  assert.equal((await call(null, "POST", `/api/lectures/${ids.l1}/ask`, { question: "What is gradient descent?" })).status, 401);
+  assert.equal((await call(stranger, "POST", `/api/lectures/${ids.l1}/ask`, { question: "What is gradient descent?" })).status, 403);
+  assert.equal((await call(owner, "POST", `/api/lectures/${ids.l1}/ask`, { question: "x" })).status, 400);
+  const a = await call(owner, "POST", `/api/lectures/${ids.l1}/ask`, { question: "What does gradient descent do?" });
+  assert.equal(a.status, 200);
+  assert.equal(a.data.notInLecture, false);
+  assert.ok(a.data.answer.includes("Gradient descent takes a step"));
+  assert.ok(a.data.citations.length >= 1 && typeof a.data.citations[0].segmentId === "number" && a.data.citations[0].excerpt.length > 0);
+  const empty = await call(owner, "POST", `/api/lectures/${ids.l2}/ask`, { question: "Anything?" });
+  assert.equal(empty.data.notInLecture, true);
+  assert.equal(empty.data.citations.length, 0);
+});
+
 test("pretest: the week after the lectures held, members only, graded attempts, regenerate", { skip }, async () => {
   assert.equal((await call(null, "GET", `/api/classes/${ids.cls}/pretest`)).status, 401);
   assert.equal((await call(stranger, "GET", `/api/classes/${ids.cls}/pretest`)).status, 403);
