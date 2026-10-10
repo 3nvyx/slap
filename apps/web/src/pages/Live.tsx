@@ -174,8 +174,13 @@ export function LivePage() {
                 >
                   Take the 3-minute recall check
                 </Link>
+                {meta.data && (user || meta.data.guestAccess) && (
+                  <Link to={`/c/${meta.data.classId}/lecture/${lectureId}`} className="inline-flex h-10 items-center rounded-md border border-white/20 px-4 text-sm">
+                    {user ? 'Open the lecture notes' : 'Browse the notes as a guest'}
+                  </Link>
+                )}
                 {!user && (
-                  <Link to={loginPath('/classes')} className="inline-flex h-10 items-center rounded-md border border-white/20 px-4 text-sm">
+                  <Link to={loginPath(meta.data ? `/c/${meta.data.classId}` : '/classes')} className="inline-flex h-10 items-center rounded-md border border-white/20 px-4 text-sm">
                     Sign in
                   </Link>
                 )}

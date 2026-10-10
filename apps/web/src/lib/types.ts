@@ -22,6 +22,8 @@ export interface JoinInfo {
   className: string
   lectureId: string | null
   live: boolean
+  /** The class can be browsed (notes, graph, exam topics) without signing in. */
+  guestAccess: boolean
 }
 
 export interface PublicFinal {
@@ -35,6 +37,8 @@ export interface PublicFinal {
 export interface PublicLecture {
   title: string
   className: string
+  classId: string
+  guestAccess: boolean
   status: LectureSummary['status']
   finals: PublicFinal[]
 }
@@ -58,12 +62,27 @@ export interface ClassDevice {
   name?: string | null
 }
 
+/** Who is watching the live lecture right now; null when nothing is live. */
+export interface ClassLive {
+  lectureId: string
+  viewers: number
+  languages: string[]
+}
+
 export interface ClassDetail {
   class: ClassSummary
   lectures: LectureSummary[]
   device: ClassDevice
+  live?: ClassLive | null
   nextExam: NextExam
   documents: ClassDocument[]
+}
+
+/** One announcement with the lecture it was made in (`GET /api/classes/:id/announcements`, dated ones first). */
+export interface ClassAnnouncement extends Announcement {
+  lectureId: string
+  lectureTitle: string
+  lectureDate: string
 }
 
 export interface LectureDetail {

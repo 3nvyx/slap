@@ -92,8 +92,8 @@ const CLASS2_ID = 'cls_stats116'
 const EXAM_DATE = iso(daysFromNow(12))
 
 const classes: ClassSummary[] = [
-  { id: CLASS_ID, name: 'CS229 Machine Learning', code: 'CS229', role: 'owner', lectureCount: 4, nextExam: EXAM_DATE },
-  { id: CLASS2_ID, name: 'STATS116 Probability', code: 'STAT116', role: 'student', lectureCount: 1, nextExam: null },
+  { id: CLASS_ID, name: 'CS229 Machine Learning', code: 'CS229', role: 'owner', lectureCount: 4, nextExam: EXAM_DATE, guestAccess: true },
+  { id: CLASS2_ID, name: 'STATS116 Probability', code: 'STAT116', role: 'student', lectureCount: 1, nextExam: null, guestAccess: false },
 ]
 
 const lectures: LectureSummary[] = [
@@ -423,14 +423,25 @@ const routes: Array<[string, RegExp, Handler]> = [
     const cls = classes.find((c) => c.code.toUpperCase() === code)
     if (!cls) throw new ApiError(404, 'unknown class code')
     const live = lectures.find((l) => l.classId === cls.id && l.status === 'live')
-    return { classId: cls.id, className: cls.name, lectureId: live?.id ?? null, live: !!live }
+    return { classId: cls.id, className: cls.name, lectureId: live?.id ?? null, live: !!live, guestAccess: !!cls.guestAccess }
   }],
   ['GET', /^\/api\/lectures\/([^/]+)\/public$/, (m): PublicLecture => {
     const lec = lectures.find((l) => l.id === m[1])
     if (!lec) throw new ApiError(404, 'lecture not found')
     const cls = classes.find((c) => c.id === lec.classId)!
-    return { title: lec.title, className: cls.name, status: lec.status, finals: [] }
+    return { title: lec.title, className: cls.name, classId: cls.id, guestAccess: !!cls.guestAccess, status: lec.status, finals: [] }
   }],
+  ['POST', /^\/api\/classes\/([^/]+)\/guest-access$/, (m, body): ClassSummary => {
+    const cls = classes.find((c) => c.id === m[1])
+    if (!cls) throw new ApiError(404, 'class not found')
+    cls.guestAccess = !!(body as { enabled: boolean }).enabled
+    return cls
+  }],
+  ['GET', /^\/api\/classes\/([^/]+)\/announcements$/, (m) =>
+    lectures
+      .filter((l) => l.classId === m[1] && l.status === 'ready')
+      .flatMap((l) => lectureDetail(l.id).announcements.map((a) => ({ ...a, lectureId: l.id, lectureTitle: l.title, lectureDate: l.date })))
+      .sort((a, b) => (a.when && b.when ? a.when.localeCompare(b.when) : a.when ? -1 : b.when ? 1 : 0))],
   ['GET', /^\/api\/me$/, (): Me => ({ userId: 'usr_demo', email: 'demo@slap.dev', classes })],
   ['POST', /^\/api\/classes$/, (_m, body): ClassSummary => {
     const { name, code } = body as { name: string; code: string }
@@ -457,6 +468,7 @@ const routes: Array<[string, RegExp, Handler]> = [
         const d = deviceIn(cls.id)
         return d ? { paired: true, state: d.state, name: d.name } : { paired: false, state: 'offline', name: null }
       })(),
+      live: ls.some((l) => l.status === 'live') ? { lectureId: ls.find((l) => l.status === 'live')!.id, viewers: 23, languages: ['en', 'es', 'zh'] } : null,
       nextExam: cls.id === CLASS_ID ? { name: 'Midterm', date: EXAM_DATE } : null,
       documents: cls.id === CLASS_ID ? documents : [],
     }

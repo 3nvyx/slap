@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
+import { AnnouncementList } from '../components/Announcements'
 import { useClass } from '../components/ClassLayout'
 import { Async, ButtonLink, Empty, ExamBadge, Label, MasteryBar, PageTitle, Panel } from '../components/ui'
 import { api } from '../lib/api'
@@ -10,6 +11,7 @@ export function TodayPage() {
   const { classId } = useClass()
   const today = useApi(() => api.today(classId), [classId])
   const concepts = useApi(() => api.concepts(classId), [classId])
+  const announcements = useApi(() => api.announcements(classId), [classId])
   const names = useMemo(() => new Map((concepts.data ?? []).map((c) => [c.id, c.name])), [concepts.data])
 
   return (
@@ -57,6 +59,11 @@ export function TodayPage() {
 
             <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
               <div className="space-y-6">
+                {announcements.data && announcements.data.some((a) => a.when) && (
+                  <Panel title="Coming up">
+                    <AnnouncementList items={announcements.data} classId={classId} upcomingOnly limit={5} />
+                  </Panel>
+                )}
                 <Panel title="Weak spots">
                   {t.weakConcepts.length === 0 ? (
                     <p className="text-sm text-muted">No weak spots yet. Practise to find them.</p>

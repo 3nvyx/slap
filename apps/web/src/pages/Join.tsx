@@ -36,9 +36,12 @@ export function JoinPage() {
                 <span className="font-medium text-ink">{join.data.className}</span> isn’t recording. Captions appear here as soon as the lecturer starts a session.
               </p>
               <div className="mt-6 flex flex-wrap gap-2">
-                <ButtonLink variant="ink" to={user ? `/c/${join.data.classId}` : loginPath(`/c/${join.data.classId}`)}>
-                  {user ? 'Open class notes' : 'Sign in for notes and practice'}
+                <ButtonLink variant="ink" to={user || join.data.guestAccess ? `/c/${join.data.classId}` : loginPath(`/c/${join.data.classId}`)}>
+                  {user ? 'Open class notes' : join.data.guestAccess ? 'Browse notes and graph' : 'Sign in for notes and practice'}
                 </ButtonLink>
+                {!user && join.data.guestAccess && (
+                  <ButtonLink to={loginPath(`/c/${join.data.classId}`)}>Sign in</ButtonLink>
+                )}
                 <button className="h-10 cursor-pointer rounded-md px-4 text-sm text-ink-2 hover:bg-panel-2" onClick={() => void join.reload()}>
                   Check again
                 </button>

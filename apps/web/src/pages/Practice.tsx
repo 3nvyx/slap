@@ -8,15 +8,17 @@ import { useApi } from '../lib/useApi'
 
 export function PracticePage() {
   const { classId } = useClass()
+  const { detail } = useClass()
   const [params, setParams] = useSearchParams()
   const focus = params.get('concept') ?? undefined
+  const lectureId = params.get('lecture') ?? undefined
   const [round, setRound] = useState(0)
-  const set = useApi(() => api.practice(classId, 5, focus), [classId, focus, round])
+  const set = useApi(() => api.practice(classId, 5, { conceptId: focus, lectureId }), [classId, focus, lectureId, round])
   const concepts = useApi(() => api.concepts(classId), [classId])
   const byId = useMemo(() => new Map((concepts.data ?? []).map((c) => [c.id, c])), [concepts.data])
   const [score, setScore] = useState({ correct: 0, total: 0 })
 
-  const focusName = focus ? byId.get(focus)?.name : undefined
+  const focusName = focus ? byId.get(focus)?.name : lectureId ? detail.lectures.find((l) => l.id === lectureId)?.title : undefined
 
   return (
     <div className="max-w-3xl">
@@ -30,10 +32,10 @@ export function PracticePage() {
         </div>
       </PageTitle>
 
-      {focus && (
+      {(focus || lectureId) && (
         <div className="mb-6 flex items-center gap-3 text-sm">
-          <span className="label">Focus</span>
-          <span className="font-medium">{focusName ?? 'this concept'}</span>
+          <span className="label">{focus ? 'Focus' : 'Lecture first'}</span>
+          <span className="font-medium">{focusName ?? (focus ? 'this concept' : 'this lecture')}</span>
           <button className="cursor-pointer text-muted underline" onClick={() => setParams({})}>
             clear
           </button>

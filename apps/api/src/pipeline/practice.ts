@@ -141,8 +141,9 @@ export function toQuestionDto(q: QuestionRow): Question {
   return { id: q.id, conceptId: q.conceptId, kind: q.kind, prompt: q.prompt, options: (q.options as string[] | null) ?? null, styleSource: q.styleSource, relateTo: q.relateToId };
 }
 
-/** Practice set for a user; with `focusConceptId`, that concept's questions come first (weakest-first order for the rest). */
-export async function pickPractice(userId: string, classId: string, n = 5, mastery?: Record<string, number>, focusConceptId?: string): Promise<Question[]> {
+/** Practice set for a user; with `focusConceptId`, that concept's questions come first, then with `lectureId` that
+ *  lecture's questions, then the usual weakest-first interleaved pick for the rest. */
+export async function pickPractice(userId: string, classId: string, n = 5, mastery?: Record<string, number>, focusConceptId?: string, lectureId?: string): Promise<Question[]> {
   const { db, schema } = await getDb();
   const { questions, attempts, concepts } = schema;
   const since = new Date(Date.now() - 12 * 3600_000);
@@ -158,8 +159,12 @@ export async function pickPractice(userId: string, classId: string, n = 5, maste
     recent: new Set(recentRows.map(r => r.id)), seed: userId + isoDate(new Date()),
   };
   const focus = focusConceptId ? selectPractice(pool.filter(q => q.conceptId === focusConceptId), opts) : [];
-  const rest = selectPractice(pool.filter(q => !focus.includes(q)), { ...opts, n: opts.n - focus.length });
-  return [...focus, ...rest].map(toQuestionDto);
+  const fromLecture = lectureId && focus.length < opts.n
+    ? selectPractice(pool.filter(q => q.lectureId === lectureId && !focus.includes(q)), { ...opts, n: opts.n - focus.length })
+    : [];
+  const taken = new Set([...focus, ...fromLecture]);
+  const rest = selectPractice(pool.filter(q => !taken.has(q)), { ...opts, n: opts.n - taken.size });
+  return [...focus, ...fromLecture, ...rest].map(toQuestionDto);
 }
 
 /** Grades one answer without touching the DB. */

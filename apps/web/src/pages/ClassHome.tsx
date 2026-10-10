@@ -3,22 +3,26 @@ import { QRCodeSVG } from 'qrcode.react'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useClass } from '../components/ClassLayout'
-import { Button, Empty, ErrorBox, inputCls, Label, PageTitle, Panel, Pill, textareaCls } from '../components/ui'
+import { AnnouncementList } from '../components/Announcements'
+import { Button, cx, Empty, ErrorBox, inputCls, Label, PageTitle, Panel, Pill, textareaCls } from '../components/ui'
 import { api } from '../lib/api'
 import { useMicStreamer } from '../lib/micStream'
 import { examInfo, fmtDate, fmtTime } from '../lib/format'
-import type { ClassDevice } from '../lib/types'
+import { LANGUAGES } from '../lib/languages'
+import type { ClassDevice, ClassLive } from '../lib/types'
 import { deviceLabel, useAction, useMyDevices } from '../lib/devices'
+import { useApi } from '../lib/useApi'
 import { PairForm } from './Devices'
 
 export function ClassHome() {
-  const { classId, detail, reloadClass } = useClass()
+  const { classId, detail, guest, reloadClass } = useClass()
   const cls = detail.class
   const owner = cls.role === 'owner'
   const live = detail.lectures.find((l) => l.status === 'live')
   const exam = examInfo(detail.nextExam)
   const lectures = [...detail.lectures].sort((a, b) => b.date.localeCompare(a.date))
   const latestReady = lectures.find((l) => l.status === 'ready')
+  const announcements = useApi(() => api.announcements(classId), [classId, lectures.filter((l) => l.status === 'ready').length])
 
   return (
     <div>
@@ -36,10 +40,10 @@ export function ClassHome() {
 
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <div className="space-y-6">
-          <SessionPanel classId={classId} owner={owner} live={live} device={detail.device} onChange={reloadClass} latestReady={latestReady} />
+          <SessionPanel classId={classId} owner={owner} guest={guest} live={live} liveInfo={detail.live ?? null} device={detail.device} onChange={reloadClass} latestReady={latestReady} />
           <Panel title={`Lectures · ${lectures.length}`}>
             {lectures.length === 0 ? (
-              <Empty>No lectures yet. Start a session, or import a transcript below.</Empty>
+              <Empty>No lectures yet. {owner ? 'Start a session, or import a transcript below.' : 'They appear here once the lecturer records one.'}</Empty>
             ) : (
               <ol className="divide-y divide-line">
                 {lectures.map((l) => (
@@ -48,12 +52,26 @@ export function ClassHome() {
               </ol>
             )}
           </Panel>
+          {announcements.data && announcements.data.length > 0 && (
+            <Panel title={`Announcements · ${announcements.data.length}`}>
+              <AnnouncementList items={announcements.data} classId={classId} limit={6} />
+            </Panel>
+          )}
           {owner && <ImportPanel classId={classId} onDone={reloadClass} />}
         </div>
 
         <div className="space-y-6">
-          <JoinPanel code={cls.code} />
-          <DevicePanel classId={classId} device={detail.device} onChange={reloadClass} />
+          <JoinPanel code={cls.code} classId={classId} owner={owner} guestAccess={!!cls.guestAccess} onChange={reloadClass} />
+          {guest ? (
+            <Panel title="Device">
+              <div className="flex items-center gap-2 text-sm">
+                <Pill status={detail.device.paired ? (detail.device.state ?? 'idle') : 'unpaired'} />
+                <span>{detail.device.paired ? `${detail.device.name ?? 'A device'} records into this course` : 'No device paired'}</span>
+              </div>
+            </Panel>
+          ) : (
+            <DevicePanel classId={classId} owner={owner} device={detail.device} onChange={reloadClass} />
+          )}
           {owner && <UploadPanel classId={classId} onDone={reloadClass} />}
           <Panel title="Documents">
             {detail.documents.length === 0 ? (
@@ -88,17 +106,31 @@ function LectureRow({ classId, l }: { classId: string; l: LectureSummary }) {
   )
 }
 
+/** "3 watching · EN, ES" while a lecture is live (in-memory viewer counts from the API). */
+function Watching({ info }: { info: ClassLive }) {
+  const names = info.languages.map((code) => LANGUAGES.find((l) => l.code === code)?.native ?? code.toUpperCase())
+  return (
+    <span className="text-muted">
+      <span className="font-mono text-ink">{info.viewers}</span> watching{names.length > 0 && <> · {names.join(', ')}</>}
+    </span>
+  )
+}
+
 function SessionPanel({
   classId,
   owner,
+  guest,
   live,
+  liveInfo,
   device,
   onChange,
   latestReady,
 }: {
   classId: string
   owner: boolean
+  guest: boolean
   live?: LectureSummary
+  liveInfo: ClassLive | null
   device: ClassDevice
   onChange: () => Promise<void>
   latestReady?: LectureSummary
@@ -138,6 +170,7 @@ function SessionPanel({
                 <Link className="underline" to={`/live/${live.id}`}>
                   Open captions
                 </Link>
+                {liveInfo && liveInfo.lectureId === live.id && <Watching info={liveInfo} />}
                 <span className="text-muted">Recording light on · audio never stored</span>
               </div>
             </>
@@ -187,7 +220,7 @@ function SessionPanel({
           devicePaired={device.paired}
         />
       )}
-      <PartnerRow classId={classId} latestReady={latestReady} />
+      {!guest && <PartnerRow classId={classId} latestReady={latestReady} />}
       {error != null && (
         <div className="px-5 pb-5">
           <ErrorBox error={error} />
@@ -280,8 +313,9 @@ function MicRow({
   )
 }
 
-/** The caller's device for this course: its state, a switch to this course, or the pair form when none is paired. */
-function DevicePanel({ classId, device, onChange }: { classId: string; device: ClassDevice; onChange: () => Promise<void> }) {
+/** The caller's device for this course: its state, a switch to this course, or the pair form when none is paired.
+ *  Students see the status only; the pair form opens on request so it is not in the way. */
+function DevicePanel({ classId, owner, device, onChange }: { classId: string; owner: boolean; device: ClassDevice; onChange: () => Promise<void> }) {
   const devices = useMyDevices()
   const [pairing, setPairing] = useState(false)
   const a = useAction()
@@ -340,15 +374,15 @@ function DevicePanel({ classId, device, onChange }: { classId: string; device: C
       </div>
     )
   }
-  const showForm = devices.data !== undefined && (mine.length === 0 || pairing)
+  const showForm = devices.data !== undefined && (pairing || (owner && mine.length === 0))
 
   return (
     <Panel
       title="Device"
       action={
-        mine.length > 0 && !pairing ? (
+        devices.data !== undefined && !showForm ? (
           <button className="cursor-pointer text-xs text-muted underline hover:text-ink" onClick={() => setPairing(true)}>
-            Pair another
+            {mine.length > 0 ? 'Pair another' : 'Pair a device'}
           </button>
         ) : null
       }
@@ -370,10 +404,11 @@ function DevicePanel({ classId, device, onChange }: { classId: string; device: C
   )
 }
 
-function JoinPanel({ code }: { code: string }) {
+function JoinPanel({ code, classId, owner, guestAccess, onChange }: { code: string; classId: string; owner: boolean; guestAccess: boolean; onChange: () => Promise<void> }) {
   const url = `${window.location.origin}/j/${code}`
   const short = url.replace(/^https?:\/\//, '')
   const [copied, setCopied] = useState(false)
+  const a = useAction()
   return (
     <Panel title="Join captions">
       <div className="flex flex-col items-center gap-4">
@@ -395,9 +430,33 @@ function JoinPanel({ code }: { code: string }) {
               {copied ? 'Copied' : 'Copy link'}
             </Button>
           </div>
-          <p className="mt-3 text-xs text-muted">No sign-in needed. The link only shows live captions.</p>
+          <p className="mt-3 text-xs text-muted">
+            No sign-in needed. The link shows live captions{guestAccess ? ', and anyone can browse the notes, graph and exam topics.' : '.'}
+          </p>
         </div>
       </div>
+      {owner && (
+        <div className="mt-4 flex items-center gap-3 border-t border-line pt-4">
+          <button
+            role="switch"
+            aria-checked={guestAccess}
+            disabled={a.busy}
+            onClick={() => void a.run(async () => {
+              await api.setGuestAccess(classId, !guestAccess)
+              await onChange()
+            })}
+            className={cx('relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition disabled:opacity-50', guestAccess ? 'bg-accent' : 'bg-panel-2 ring-1 ring-line')}
+          >
+            <span className={cx('absolute top-0.5 size-5 rounded-full bg-white shadow transition-all', guestAccess ? 'left-[22px]' : 'left-0.5')} />
+            <span className="sr-only">Guest access</span>
+          </button>
+          <div className="min-w-0">
+            <div className="text-sm font-medium">Guest access</div>
+            <div className="text-xs text-muted">Let anyone with the link read the notes without an account (for judges and visitors). They can’t practise or review.</div>
+            {a.error != null && <div className="mt-1 text-xs text-bad">{String(a.error instanceof Error ? a.error.message : a.error)}</div>}
+          </div>
+        </div>
+      )}
     </Panel>
   )
 }
