@@ -1,4 +1,4 @@
-# Slap API image: builds the web app, then runs the Node API which serves it.
+# Slap API image: builds the web app, then runs the Node API which serves it and the landing page (website/).
 # The runtime stage keeps the workspace layout (apps/api, packages/contracts) so that
 # @slap/contracts resolves through its workspace symlink to packages/contracts, outside
 # node_modules: Node refuses to strip types from TypeScript under node_modules.
@@ -28,6 +28,7 @@ COPY --from=prod-deps /app ./
 COPY packages/contracts ./packages/contracts
 COPY apps/api ./apps/api
 COPY --from=web /app/apps/web/dist ./apps/web/dist
+COPY website ./website
 # Uploaded PDFs are kept here until parsed; the rest of the image is read-only to `node`.
 RUN mkdir apps/api/.uploads && chown node:node apps/api/.uploads
 WORKDIR /app/apps/api

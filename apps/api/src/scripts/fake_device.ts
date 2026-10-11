@@ -1,7 +1,7 @@
 // Pretends to be the desk device, speaking the real /ws/device protocol:
 // hello -> (wait for idle) -> button -> PCM frames from a WAV in real time -> button -> close.
 //   node src/scripts/fake_device.ts [file.wav] [--url ws://localhost:8787/ws/device] [--key dev-device-key]
-//        [--id fake-device-1] [--pair-code ABC123] [--seconds 60] [--speed 1] [--no-start] [--show-oled]
+//        [--id fake-device-1] [--seconds 60] [--speed 1] [--no-start] [--show-oled]
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import WebSocket from "ws";
@@ -14,7 +14,6 @@ const { values: opt, positionals } = parseArgs({
     url: { type: "string", default: process.env.DEVICE_WS ?? "ws://localhost:8787/ws/device" },
     key: { type: "string", default: process.env.DEVICE_KEY ?? "dev-device-key" },
     id: { type: "string", default: "fake-device-1" },
-    "pair-code": { type: "string" },   // the real firmware derives one from its MAC
     seconds: { type: "string", default: "60" },
     speed: { type: "string", default: "1" },
     "no-start": { type: "boolean", default: false },
@@ -76,9 +75,7 @@ ws.on("message", (data, isBinary) => {
 
 ws.on("open", async () => {
   console.log(`${ts()} connected to ${opt.url} as ${opt.id}; ${seconds.toFixed(0)} s of audio at ${speed}x`);
-  send({ type: "hello", deviceId: opt.id!, fw: "fake-0.2", ...(opt["pair-code"] ? { pairCode: opt["pair-code"] } : {}) });
-  await new Promise(r => setTimeout(r, 1500));
-  if (state === "unpaired") console.log("device is unpaired: enter the code shown above in the app (POST /api/devices/pair); waiting...");
+  send({ type: "hello", deviceId: opt.id!, fw: "fake-0.2" });
   await waitFor("idle", "recording");
   if (opt["no-start"]) { console.log("--no-start: idling (Ctrl-C to quit)"); return; }
   if (state === "recording") console.log(`${ts()} server resumed a live lecture; streaming without pressing start`);

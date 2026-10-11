@@ -6,7 +6,13 @@ export const settings = {
   port: Number(env("PORT", "8787")),
   publicUrl: env("PUBLIC_URL", "http://localhost:8787")!,       // fixed tunnel hostname in demo
   databaseUrl: env("DATABASE_URL"),
-  stt: { backend: env("STT_BACKEND", "deepgram") as "deepgram" | "mock", deepgramKey: env("DEEPGRAM_API_KEY") },
+  stt: {
+    // deepgram = Nova-3 (the default); fast = Deepgram Flux; accurate = Soniox. The mode can also be switched at runtime (sessions.ts setSttBackend).
+    backend: ({ fast: "flux", accurate: "soniox" }[env("STT_BACKEND", "deepgram")!] ?? env("STT_BACKEND", "deepgram")) as "deepgram" | "flux" | "soniox" | "mock",
+    deepgramKey: env("DEEPGRAM_API_KEY"),
+    sonioxKey: env("SONIOX_API_KEY"),
+    sonioxModel: env("SONIOX_MODEL", "stt-rt-v5")!,
+  },
   translate: { backend: env("TRANSLATE_BACKEND", env("GOOGLE_TRANSLATE_API_KEY") ? "google" : "mock") as "google" | "mock", googleKey: env("GOOGLE_TRANSLATE_API_KEY") },
   llm: {
     backend: env("LLM_BACKEND", env("ANTHROPIC_API_KEY") ? "claude" : env("OPENAI_API_KEY") ? "openai" : env("GEMINI_API_KEY") ? "gemini" : "mock") as "claude" | "openai" | "gemini" | "mock",
@@ -28,4 +34,5 @@ export const settings = {
   },
   deviceKeys: (env("DEVICE_KEYS", "dev-device-key") ?? "").split(",").map(s => s.trim()).filter(Boolean),
   webDist: env("WEB_DIST", "../web/dist")!,
+  siteDir: env("SITE_DIR", "../../website")!,       // the public landing page: plain files, served at /
 };

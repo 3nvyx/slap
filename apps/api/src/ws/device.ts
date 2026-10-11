@@ -3,18 +3,17 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { AUDIO_FRAME_BYTES, type DeviceToServer, type ServerToDevice } from "@slap/contracts";
-import { and, eq, ne } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { db, schema } from "../db/index.ts";
-import { PICK_COURSE, renderIdle, renderPickCourse, renderRecording, renderText, renderUnpaired } from "../oled.ts";
+import { PICK_COURSE, renderIdle, renderPickCourse, renderRecording, renderText } from "../oled.ts";
 import { pcmRms } from "../pipeline/stt.ts";
-import { attachDevice, detachDevice, effectiveOwner, getLecture, pushAudio, startSession, stopSession, type DeviceLink } from "../sessions.ts";
+import { attachDevice, detachDevice, getLecture, pushAudio, startSession, stopSession, type DeviceLink } from "../sessions.ts";
 import { settings } from "../settings.ts";
 
 const PING_MS = 10_000;
 const DEAD_MS = 30_000;
 const SEEN_WRITE_MS = 60_000;
-const PAIR_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";   // no 0/O/1/I
 const MAX_BUFFERED = 256 * 1024;                            // skip OLED frames if the device is not draining
 const FRAME_REFRESH_MS = 3000;   // firmware shows a server frame for 5 s (OLED_SERVER_FRAME_TTL_MS), so resend before that
 
@@ -38,7 +37,8 @@ export function joinUrl(classCode: string): string {
   return `${settings.publicUrl.replace(/\/+$/, "")}/j/${encodeURIComponent(classCode)}`;
 }
 
-/** Known key: a devices row, or one of settings.deviceKeys (row created on first hello). */
+/** Known key: a devices row, or one of settings.deviceKeys (row created on first hello). The key is all a
+ *  device needs: once it says hello it is online, listed in the app and ready to record. */
 async function authorize(key: string | null): Promise<DeviceAuth | null> {
   if (!key) return null;
   try {
@@ -60,33 +60,6 @@ export async function handleDeviceUpgrade(req: IncomingMessage, socket: Duplex, 
   wss.handleUpgrade(req, socket, head, ws => onConnection(ws, auth));
 }
 
-function randomPairCode(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(6));
-  return [...bytes].map(b => PAIR_ALPHABET[b % PAIR_ALPHABET.length]).join("");
-}
-
-/** The firmware derives its pair code from the MAC and shows it locally, so a valid proposed code always
- *  wins (taking it from any stale row that holds it); otherwise keep the stored code or make one. */
-async function ensurePairCode(row: DeviceRow, proposed?: string): Promise<string> {
-  const p = proposed?.trim().toUpperCase();
-  if (p && /^[A-Z0-9]{6}$/.test(p)) {
-    if (row.pairCode === p) return p;
-    await db.update(schema.devices).set({ pairCode: null }).where(and(eq(schema.devices.pairCode, p), ne(schema.devices.id, row.id)));
-    await db.update(schema.devices).set({ pairCode: p }).where(eq(schema.devices.id, row.id));
-    return p;
-  }
-  if (row.pairCode) return row.pairCode;
-  for (let attempt = 0, code = randomPairCode(); attempt < 5; attempt++, code = randomPairCode()) {
-    try {
-      await db.update(schema.devices).set({ pairCode: code }).where(eq(schema.devices.id, row.id));
-      return code;
-    } catch (e) {
-      if (!/unique|duplicate/i.test((e as Error).message)) throw e;
-    }
-  }
-  throw new Error("could not allocate a pair code");
-}
-
 /** dB-scaled meter: -50 dBFS -> 0, -6 dBFS -> 1. */
 function meter(rms: number): number {
   if (rms <= 0) return 0;
@@ -95,7 +68,6 @@ function meter(rms: number): number {
 
 function screen(d: DeviceLink, message?: string): Uint8Array {
   switch (d.state) {
-    case "unpaired": return renderUnpaired(d.pairCode ?? "------");
     case "idle": return d.classCode ? renderIdle(d.classCode, joinUrl(d.classCode), true) : renderPickCourse();
     case "recording": {
       const l = d.lectureId ? getLecture(d.lectureId) : undefined;
@@ -151,25 +123,23 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
     clearTimeout(errorTimer);
     errorTimer = setTimeout(() => {
       if (!link || link.state !== "error") return;
-      link.state = link.lectureId ? "recording" : link.ownerUserId ? "idle" : "unpaired";
+      link.state = link.lectureId ? "recording" : "idle";
       errorMessage = undefined;
       link.refresh();
     }, 3000);
   }
 
-  function makeLink(row: DeviceRow, owner: string | null, cls: { code: string; name: string } | null, pairCode: string | null, proposedCode?: string): DeviceLink {
+  function makeLink(row: DeviceRow, cls: { code: string; name: string } | null): DeviceLink {
     let lastState = "";
     let lastFrame: Uint8Array | null = null;
     let lastFrameAt = 0;
     const d: DeviceLink = {
       id: row.id,
       name: row.name,
-      state: owner ? "idle" : "unpaired",
-      ownerUserId: owner,
-      classId: owner && cls ? row.classId : null,
+      state: "idle",
+      classId: cls ? row.classId : null,
       classCode: cls?.code ?? null,
       className: cls?.name ?? null,
-      pairCode,
       lectureId: null,
       level: 0,
       lastCaption: "",
@@ -179,7 +149,6 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
           type: "state", state: d.state,
           ...(d.lectureId ? { sessionId: d.lectureId } : {}),
           ...(d.classCode ? { classCode: d.classCode } : {}),
-          ...(d.state === "unpaired" && d.pairCode ? { message: `pair code ${d.pairCode}` } : {}),
           ...(d.state === "idle" && !d.classCode ? { message: PICK_COURSE } : {}),
           ...(d.state === "error" && errorMessage ? { message: errorMessage } : {}),
         };
@@ -192,11 +161,6 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
           lastFrame = frame;
           lastFrameAt = Date.now();
         }
-      },
-      async unpaired() {
-        d.pairCode = await ensurePairCode({ ...row, pairCode: null }, proposedCode);
-        d.state = "unpaired";
-        d.refresh();
       },
     };
     return d;
@@ -212,20 +176,19 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
       if (!row) throw new Error("device row could not be created");
       log(`registered device ${row.id} (${m.deviceId})`);
     }
-    const [cls] = row.classId ? await db.select({ code: schema.classes.code, name: schema.classes.name, owner: schema.classes.ownerUserId }).from(schema.classes).where(eq(schema.classes.id, row.classId)).limit(1) : [];
-    // Rows paired before devices had owners belong to their class's owner; record that now.
-    const owner = effectiveOwner(row, cls?.owner);
-    if (owner && !row.ownerUserId) {
-      await db.update(schema.devices).set({ ownerUserId: owner }).where(eq(schema.devices.id, row.id));
-      log(`device ${row.id}: owner set to ${owner} (from its class)`);
+    // The row belongs to the key, so it is listed under the id of whichever device is using the key now.
+    const name = typeof m.deviceId === "string" ? m.deviceId.trim().slice(0, 64) : "";
+    if (name && name !== row.name) {
+      await db.update(schema.devices).set({ name }).where(eq(schema.devices.id, row.id));
+      row = { ...row, name };
     }
-    const pairCode = owner ? null : await ensurePairCode(row, m.pairCode);
+    const [cls] = row.classId ? await db.select({ code: schema.classes.code, name: schema.classes.name }).from(schema.classes).where(eq(schema.classes.id, row.classId)).limit(1) : [];
     const old = sockets.get(row.id);
     if (old && old !== ws) old.close(4000, "replaced by a newer connection");
     sockets.set(row.id, ws);
     if (ws.readyState !== WebSocket.OPEN) return;
-    link = makeLink(row, owner, cls ?? null, pairCode, m.pairCode);
-    log(`hello ${m.deviceId} fw=${m.fw} -> ${row.id} ${!owner ? `unpaired (${pairCode})` : cls ? `class ${cls.code}` : "paired, no active class"}`);
+    link = makeLink(row, cls ?? null);
+    log(`hello ${m.deviceId} fw=${m.fw} -> ${row.id} online, ${cls ? `class ${cls.code}` : "no active class"}`);
     await attachDevice(link);
     firmwareDeviceId = m.deviceId;
     usbTargets.set(m.deviceId, { socket: ws, press: onButton });
@@ -239,7 +202,6 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
     if (Date.now() - lastPress < 1000) return;   // debounce double reports
     lastPress = Date.now();
     const d = link;
-    if (d.state === "unpaired" || !d.ownerUserId) { d.refresh(); return; }
     if (!d.lectureId && !d.classId) {
       log(`${d.id} start ignored: no active class (pick a course in the app)`);
       d.refresh();

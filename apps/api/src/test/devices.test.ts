@@ -1,5 +1,6 @@
-// Device pairing and active class, end to end against the real database: REST routes (no sign-in; devices are
-// shared by every caller), the /ws/device protocol from a fake device, and session start/stop with the mock STT.
+// Online devices and their active class, end to end against the real database: REST routes (no sign-in and no
+// pairing; an online device is listed for every caller), the /ws/device protocol from a fake device, and session
+// start/stop with the mock STT.
 // Seeds throwaway classes and device rows and deletes them afterwards; skipped without DATABASE_URL.
 // The database is shared, so other devices and classes exist: assertions look only at this run's rows.
 import assert from "node:assert/strict";
@@ -12,9 +13,8 @@ const hasDb = !!process.env.DATABASE_URL && !process.env.DATABASE_URL.includes("
 const skip = hasDb ? false : "DATABASE_URL not set";
 
 const run = Date.now().toString(36).toUpperCase();
-const KEY1 = `devtest-key1-${run}`, KEY2 = `devtest-key2-${run}`, KEY3 = `devtest-key3-${run}`;
+const KEY1 = `devtest-key1-${run}`, KEY2 = `devtest-key2-${run}`;
 const userA = `devtest-a-${run}`, userB = `devtest-b-${run}`;
-const pairCode = (n: number) => `T${run.slice(-4)}${n}`.slice(0, 6).toUpperCase();
 
 let wsServer: http.Server, wsPort = 0;
 let m: {
@@ -27,7 +27,7 @@ before(async () => {
   if (!hasDb) return;
   Object.assign(process.env, {
     STT_BACKEND: "mock", TRANSLATE_BACKEND: "mock",
-    LLM_BACKEND: "mock", FISH_DIARIZE: "0", DEVICE_KEYS: [KEY1, KEY2, KEY3].join(","), PUBLIC_URL: "http://slap.test",
+    LLM_BACKEND: "mock", FISH_DIARIZE: "0", DEVICE_KEYS: [KEY1, KEY2].join(","), PUBLIC_URL: "http://slap.test",
   });
 
   const [server, db, dz, oled, dev, ws] = await Promise.all([
@@ -54,7 +54,7 @@ after(async () => {
   if (!hasDb || !m) return;
   const { db, schema } = m.db;
   const { inArray } = m.dz;
-  await db.delete(schema.devices).where(inArray(schema.devices.deviceKey, [KEY1, KEY2, KEY3]));
+  await db.delete(schema.devices).where(inArray(schema.devices.deviceKey, [KEY1, KEY2]));
   const ids = Object.values(cls).map(c => c.id).filter(Boolean);
   if (ids.length) await db.delete(schema.classes).where(inArray(schema.classes.id, ids));
   wsServer?.close();
@@ -69,7 +69,7 @@ async function call<T = any>(user: string, method: string, path: string, body?: 
 }
 
 /** A fake device on the real protocol: records every state message and the latest OLED frame. */
-function fakeDevice(key: string, code: string) {
+function fakeDevice(key: string, id = `devtest-${key.slice(-6)}`) {
   const ws = new m.WS(`ws://127.0.0.1:${wsPort}/ws/device?key=${encodeURIComponent(key)}`);
   const states: Extract<ServerToDevice, { type: "state" }>[] = [];
   let frame: Buffer | null = null;
@@ -95,7 +95,7 @@ function fakeDevice(key: string, code: string) {
   const opened = new Promise<void>((res, rej) => { ws.on("open", () => res()); ws.on("error", rej); });
   return {
     states, last, until, get frame() { return frame; },
-    hello: async () => { await opened; ws.send(JSON.stringify({ type: "hello", deviceId: `devtest-${key.slice(-6)}`, fw: "test", pairCode: code })); },
+    hello: async () => { await opened; ws.send(JSON.stringify({ type: "hello", deviceId: id, fw: "test" })); },
     press: () => ws.send(JSON.stringify({ type: "button", button: "slap" })),
     close: () => ws.close(),
   };
@@ -107,28 +107,21 @@ let deviceId = "";
 const listed = async (user: string, id: string) => (await call(user, "GET", "/api/devices")).data.find((d: { id: string }) => d.id === id);
 let device: ReturnType<typeof fakeDevice>;
 
-test("pairing: every caller then sees the device; with several classes and no classId it has no active class", { skip }, async () => {
-  device = fakeDevice(KEY1, pairCode(1));
+test("a device that connects is listed for every caller at once, with no active class", { skip }, async () => {
+  device = fakeDevice(KEY1);
   await device.hello();
-  await device.until(s => s.state === "unpaired" && s.message === `pair code ${pairCode(1)}`, "unpaired with its code");
-
-  const r = await call(userA, "POST", "/api/devices/pair", { pairCode: pairCode(1).toLowerCase() });
-  assert.equal(r.status, 200, JSON.stringify(r.data));
-  assert.equal(r.data.ownerUserId, userA);
-  assert.equal(r.data.activeClassId, null, "more than one class exists: nothing picked");
-  assert.equal(r.data.connected, true);
-  deviceId = r.data.deviceId;
-
   const st = await device.until((s, f) => s.state === "idle" && same(f, m.oled.renderPickCourse()), "idle 'pick a course' screen");
   assert.equal(st.classCode, undefined);
   assert.equal(st.message, m.oled.PICK_COURSE);
 
-  const mine = await listed(userA, deviceId);
-  assert.equal(mine.activeClass, null);
-  assert.equal(mine.connected, true);
-  assert.equal(mine.state, "idle");
+  const name = `devtest-${KEY1.slice(-6)}`;
+  const all = (await call(userA, "GET", "/api/devices")).data as { id: string; name: string }[];
+  const mine = all.find(d => d.name === name);
+  assert.ok(mine, "the device is listed without any pairing step");
+  deviceId = mine.id;
+  assert.deepEqual(mine, { id: deviceId, name, activeClass: null, state: "idle" });
   assert.deepEqual(await listed(userB, deviceId), mine, "devices are shared: another caller sees the same device");
-  assert.equal((await call(userA, "POST", "/api/devices/pair", { pairCode: pairCode(1) })).status, 404, "the code is used up");
+  assert.equal((await call(userA, "POST", "/api/devices/pair", { pairCode: "ABC123" })).status, 404, "the pair route is gone");
 });
 
 test("a device start with no active class is ignored", { skip }, async () => {
@@ -139,7 +132,7 @@ test("a device start with no active class is ignored", { skip }, async () => {
   for (const c of [cls.c1, cls.c2]) {
     const d = await call(userA, "GET", `/api/classes/${c.id}`);
     assert.ok(!d.data.lectures.some((l: { status: string }) => l.status === "live"), "no lecture was started");
-    assert.equal(d.data.device.paired, false, "no device points at this class yet");
+    assert.equal(d.data.device, null, "no device points at this class yet");
   }
 });
 
@@ -154,9 +147,7 @@ test("switching the active class: any caller, existing class only; the device re
   await device.until((s, f) => s.state === "idle" && s.classCode === cls.c1.code && same(f, idle), "idle with c1's code");
 
   const d = await call(userA, "GET", `/api/classes/${cls.c1.id}`);
-  assert.equal(d.data.device.paired, true);
-  assert.equal(d.data.device.state, "idle");
-  assert.equal(d.data.device.name, `devtest-${KEY1.slice(-6)}`);
+  assert.deepEqual(d.data.device, { id: deviceId, name: `devtest-${KEY1.slice(-6)}`, state: "idle" });
 });
 
 test("a device start records into the active class; switching while recording is refused", { skip }, async () => {
@@ -172,7 +163,6 @@ test("a device start records into the active class; switching while recording is
   assert.equal(row!.source, "device");
 
   assert.equal((await call(userA, "POST", `/api/devices/${deviceId}/active-class`, { classId: cls.c2.id })).status, 409);
-  assert.equal((await call(userA, "DELETE", `/api/devices/${deviceId}`)).status, 409);
 
   await sleep(1100);
   device.press();
@@ -194,37 +184,41 @@ test("a web start for another class switches the connected idle device there and
   await device.until(s => s.state === "idle" && s.classCode === cls.c2.code, "idle in c2");
 });
 
-test("unpairing shows a pair code again", { skip }, async () => {
-  const r = await call(userB, "DELETE", `/api/devices/${deviceId}`);
-  assert.equal(r.status, 200);
-  await device.until((s, f) => s.state === "unpaired" && s.message === `pair code ${pairCode(1)}` && same(f, m.oled.renderUnpaired(pairCode(1))), "unpaired screen");
-  assert.equal(await listed(userA, deviceId), undefined, "an unpaired device is not listed");
+test("a device that goes offline is no longer listed; it comes back with its active class", { skip }, async () => {
+  device.close();
+  for (let i = 0; i < 40 && await listed(userA, deviceId); i++) await sleep(100);
+  assert.equal(await listed(userA, deviceId), undefined, "an offline device is not listed");
+  assert.equal((await call(userA, "GET", `/api/classes/${cls.c2.id}`)).data.device, null);
   assert.equal((await call(userA, "POST", `/api/devices/${deviceId}/active-class`, { classId: cls.c1.id })).status, 404, "nor switchable");
+
+  device = fakeDevice(KEY1, `devtest-other-${run}`);
+  await device.hello();
+  await device.until(s => s.state === "idle" && s.classCode === cls.c2.code, "idle in c2 again");
+  const back = await listed(userB, deviceId);
+  assert.equal(back.activeClass.id, cls.c2.id);
+  assert.equal(back.name, `devtest-other-${run}`, "listed under the id it announced this time");
   device.close();
 });
 
-test("pairing with a classId sets the active class", { skip }, async () => {
-  const d2 = fakeDevice(KEY2, pairCode(2));
+test("a web start with every online device recording elsewhere is refused; with none online it starts for the browser", { skip }, async () => {
+  const d2 = fakeDevice(KEY2);
   await d2.hello();
-  await d2.until(s => s.state === "unpaired", "unpaired");
-  assert.equal((await call(userB, "POST", "/api/devices/pair", { pairCode: pairCode(2), classId: crypto.randomUUID() })).status, 404, "no such class");
-  const r = await call(userB, "POST", "/api/devices/pair", { pairCode: pairCode(2), classId: cls.c3.id });
-  assert.equal(r.status, 200, JSON.stringify(r.data));
-  assert.equal(r.data.activeClassId, cls.c3.id);
+  await d2.until(s => s.state === "idle", "idle");
+  const id2 = ((await call(userA, "GET", "/api/devices")).data as { id: string; name: string }[]).find(d => d.name === `devtest-${KEY2.slice(-6)}`)!.id;
+  assert.equal((await call(userB, "POST", `/api/devices/${id2}/active-class`, { classId: cls.c3.id })).status, 200);
   await d2.until(s => s.state === "idle" && s.classCode === cls.c3.code, "idle with c3");
+  d2.press();
+  const rec = await d2.until(s => s.state === "recording" && !!s.sessionId, "recording c3");
+  assert.equal((await call(userA, "POST", `/api/classes/${cls.c1.id}/sessions/start`, {})).status, 409, "the only online device is busy");
+  assert.equal((await call(userA, "POST", `/api/lectures/${rec.sessionId}/stop`)).status, 200);
+  await d2.until(s => s.state === "idle", "idle after stop");
   d2.close();
-});
+  for (let i = 0; i < 40 && await listed(userA, id2); i++) await sleep(100);
 
-test("a device row with an active class but no owner counts as paired", { skip }, async () => {
-  const { db, schema } = m.db;
-  const [row] = await db.insert(schema.devices).values({ deviceKey: KEY3, name: "legacy", classId: cls.c1.id }).returning();
-  assert.equal((await listed(userB, row!.id)).activeClass.code, cls.c1.code);
-
-  const d3 = fakeDevice(KEY3, pairCode(3));
-  await d3.hello();
-  await d3.until(s => s.state === "idle" && s.classCode === cls.c1.code, "idle with c1 (no pairing needed)");
-  const [after] = await db.select().from(schema.devices).where(m.dz.eq(schema.devices.id, row!.id));
-  assert.equal(after!.ownerUserId, userA, "owner recorded on hello");
-  assert.equal(after!.pairCode, null);
-  d3.close();
+  const r = await call(userA, "POST", `/api/classes/${cls.c1.id}/sessions/start`, { title: "No device" });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const [row] = await m.db.db.select().from(m.db.schema.lectures).where(m.dz.eq(m.db.schema.lectures.id, r.data.id));
+  assert.equal(row!.deviceId, null);
+  assert.equal(row!.source, "browser");
+  assert.equal((await call(userA, "POST", `/api/lectures/${r.data.id}/stop`)).status, 200);
 });

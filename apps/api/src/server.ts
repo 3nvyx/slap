@@ -1,4 +1,4 @@
-// One process: Hono REST API + two ws WebSocket paths + the built web app, from one origin.
+// One process: Hono REST API + two ws WebSocket paths + the landing page + the built web app, from one origin.
 // In-memory session state lives in sessions.ts, so run exactly one instance.
 import { existsSync, readFileSync } from "node:fs";
 import type { Server } from "node:http";
@@ -21,12 +21,13 @@ import { startArduinoBridge } from "./arduino.ts";
 
 const apiDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const webDist = path.resolve(apiDir, settings.webDist);
+const siteDir = path.resolve(apiDir, settings.siteDir);
 
 function backends(dbUp: boolean): Health["backends"] {
   const has = (k: string | undefined) => !!k;
   const llm = settings.llm.backend;
   return {
-    stt: settings.stt.backend === "deepgram" && has(settings.stt.deepgramKey) ? "live" : "mock",
+    stt: settings.stt.backend !== "mock" && has(settings.stt.backend === "soniox" ? settings.stt.sonioxKey : settings.stt.deepgramKey) ? "live" : "mock",
     translate: settings.translate.backend === "google" ? (has(settings.translate.googleKey) ? "live" : "down") : "mock",
     llm: llm === "mock" ? "mock" : has(llm === "claude" ? settings.llm.anthropicKey : llm === "openai" ? settings.llm.openaiKey : settings.llm.geminiKey) ? "live" : "down",
     db: dbUp ? "live" : "down",
@@ -51,7 +52,9 @@ app.route("/api", routes);
 app.all("/api/*", c => c.json({ error: "not found" }, 404));
 app.all("/ws/*", c => c.json({ error: "WebSocket upgrade required" }, 426));
 
-// Built web app, then SPA fallback for client routes (paths without a file extension).
+// The landing page (website/) owns "/" and its own files; then the built web app, then SPA fallback for
+// client routes (paths without a file extension). Without website/, "/" falls through to the web app.
+app.use("/*", serveStatic({ root: path.relative(process.cwd(), siteDir) || "." }));
 app.use("/*", serveStatic({ root: path.relative(process.cwd(), webDist) || "." }));
 app.get("*", (c) => {
   if (path.extname(c.req.path)) return c.text("not found", 404);

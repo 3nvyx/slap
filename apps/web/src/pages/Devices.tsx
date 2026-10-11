@@ -1,57 +1,29 @@
-// Device UI: paired devices are shared by everyone (there is no sign-in) and each records into its active class.
-// Shared by the class list ("Device" card) and the class home device panel.
+// Device UI: there is no pairing. A device that is online is listed for everyone (there is no sign-in) and
+// records into its active class. Shared by the class list ("Devices" card) and the class home device panel.
 import type { ClassSummary } from '@slap/contracts'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, ErrorBox, inputCls, Label, Panel, Pill } from '../components/ui'
 import { api } from '../lib/api'
-import { deviceLabel, useAction, useMyDevices } from '../lib/devices'
+import { deviceLabel, useAction, useOnlineDevices } from '../lib/devices'
 import type { DeviceSummary } from '../lib/types'
 
-/** 6-character pair code form. `classId` makes that class the active class. */
-export function PairForm({ classId, onPaired, onCancel }: { classId?: string; onPaired: () => Promise<void>; onCancel?: () => void }) {
-  const [code, setCode] = useState('')
-  const a = useAction()
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    if (await a.run(() => api.pairDevice(code.trim().toUpperCase(), classId))) {
-      setCode('')
-      await onPaired()
-    }
-  }
+/** Shown when no device is connected to the server. */
+export function NoDeviceOnline() {
   return (
-    <form onSubmit={submit} className="space-y-3">
-      <label className="block text-sm text-ink-2" htmlFor={classId ? `pair-code-${classId}` : 'pair-code'}>
-        Enter the 6-character code shown on the device’s screen.
-      </label>
-      <div className="flex gap-2">
-        <input
-          id={classId ? `pair-code-${classId}` : 'pair-code'}
-          className={inputCls + ' font-mono text-lg uppercase tracking-[0.3em]'}
-          placeholder="AB12CD"
-          value={code}
-          maxLength={6}
-          autoComplete="off"
-          onChange={(e) => setCode(e.target.value.replace(/[^a-z0-9]/gi, '').toUpperCase())}
-        />
-        <Button variant="ink" disabled={a.busy || code.length !== 6}>
-          {a.busy ? 'Pairing…' : 'Pair'}
-        </Button>
+    <>
+      <div className="flex items-center gap-2 text-sm">
+        <Pill status="offline" />
+        <span>No device online</span>
       </div>
-      {a.error != null && <ErrorBox error={a.error} />}
-      {onCancel && (
-        <button type="button" className="cursor-pointer text-xs text-muted underline" onClick={onCancel}>
-          Cancel
-        </button>
-      )}
-    </form>
+      <p className="mt-2 text-xs text-muted">Switch a Slap on. It shows up here by itself once it connects.</p>
+    </>
   )
 }
 
-/** `/classes`: pair a device, or pick the course it records into (or create one). */
-export function YourDeviceCard({ classes, onClassesChanged }: { classes: ClassSummary[]; onClassesChanged: () => Promise<void> }) {
-  const devices = useMyDevices()
-  const [pairing, setPairing] = useState(false)
+/** `/classes`: every device that is online, each with the course it records into (pick or create one). */
+export function OnlineDevicesCard({ classes, onClassesChanged }: { classes: ClassSummary[]; onClassesChanged: () => Promise<void> }) {
+  const devices = useOnlineDevices()
   const list = devices.data ?? []
   const reload = async () => {
     await devices.reload()
@@ -59,42 +31,16 @@ export function YourDeviceCard({ classes, onClassesChanged }: { classes: ClassSu
   }
 
   return (
-    <Panel
-      title="Device"
-      action={
-        list.length > 0 && !pairing ? (
-          <button className="cursor-pointer text-xs text-muted underline hover:text-ink" onClick={() => setPairing(true)}>
-            Pair another
-          </button>
-        ) : null
-      }
-    >
+    <Panel title="Devices">
       {devices.data === undefined ? (
         devices.error ? <ErrorBox error={devices.error} onRetry={() => void devices.reload()} /> : <p className="text-sm text-muted">Loading…</p>
       ) : list.length === 0 ? (
-        <>
-          <div className="mb-4 flex items-center gap-2 text-sm">
-            <Pill status="unpaired" />
-            <span>No device paired</span>
-          </div>
-          <PairForm onPaired={reload} />
-        </>
+        <NoDeviceOnline />
       ) : (
         <div className="space-y-5">
           {list.map((d) => (
             <DeviceRow key={d.id} device={d} classes={classes} onChange={reload} />
           ))}
-          {pairing && (
-            <div className="border-t border-line pt-4">
-              <PairForm
-                onPaired={async () => {
-                  setPairing(false)
-                  await reload()
-                }}
-                onCancel={() => setPairing(false)}
-              />
-            </div>
-          )}
         </div>
       )}
     </Panel>
@@ -121,22 +67,11 @@ function DeviceRow({ device: d, classes, onChange }: { device: DeviceSummary; cl
     })
   }
 
-  const unpair = () => {
-    if (!window.confirm(`Unpair ${deviceLabel(d)}? It will show a pair code again.`)) return
-    void a.run(async () => {
-      await api.unpairDevice(d.id)
-      await onChange()
-    })
-  }
-
   return (
     <div>
       <div className="flex items-center gap-2 text-sm">
         <Pill status={d.state} />
         <span className="min-w-0 flex-1 truncate font-medium">{deviceLabel(d)}</span>
-        <button className="cursor-pointer text-xs text-muted underline hover:text-ink disabled:opacity-45" onClick={unpair} disabled={a.busy || recording}>
-          Unpair
-        </button>
       </div>
       <label className="mt-4 block" htmlFor={`active-${d.id}`}>
         <Label>Recording into</Label>

@@ -121,12 +121,12 @@ export function LivePage() {
   return (
     <div className="flex h-dvh flex-col bg-[#0d0d0d] text-white [color-scheme:dark]">
       <header className="flex items-center gap-3 border-b border-white/10 px-4 py-3 md:px-8">
-        <Link to="/" className="flex items-center gap-2 font-bold tracking-tight" aria-label="Slap home">
+        <a href="/" className="flex items-center gap-2 font-bold tracking-tight" aria-label="Slap home">
           <span className="inline-flex h-4 w-6 items-center rounded-[3px] bg-white">
             <span className="ml-auto mr-0.5 size-1.5 rounded-full bg-[#ff6a00]" />
           </span>
           <span className="hidden sm:inline">slap</span>
-        </Link>
+        </a>
         <div className="min-w-0 flex-1 truncate text-sm text-white/60">
           {replay && (
             <span className="mr-2 inline-flex h-5 items-center rounded-sm border border-yellow-400/70 px-1.5 font-mono text-[10px] uppercase tracking-wider text-yellow-300" title="A saved lecture played back, not live audio">

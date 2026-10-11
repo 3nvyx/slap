@@ -1,4 +1,6 @@
 import type {
+  Assessment,
+  AssessmentKind,
   Attempt,
   Card,
   ClassSummary,
@@ -28,7 +30,6 @@ import type {
   Graph,
   JoinInfo,
   LectureDetail,
-  PairResult,
   PublicLecture,
   ReplayOpts,
   ReviewResult,
@@ -111,13 +112,15 @@ export const api = {
   replay: (lectureId: string, opts: ReplayOpts = {}) => post<LectureSummary>(`/api/lectures/${enc(lectureId)}/replay`, opts),
   importLecture: (classId: string, input: { title: string; date: string; transcript: string }) =>
     post<LectureSummary>(`/api/classes/${enc(classId)}/lectures/import`, input),
-  /** Pairs the device showing the code. `classId` becomes the active class (omitted: the only class, if exactly one exists). */
-  pairDevice: (pairCode: string, classId?: string) =>
-    post<PairResult>('/api/devices/pair', classId ? { pairCode, classId } : { pairCode }),
+  /** Exam, quiz and assignment dates entered by hand; they count next to the dates read from a syllabus. */
+  assessments: (classId: string) => get<Assessment[]>(`/api/classes/${enc(classId)}/assessments`),
+  addAssessment: (classId: string, input: { kind: AssessmentKind; name: string; date: string }) =>
+    post<Assessment>(`/api/classes/${enc(classId)}/assessments`, input),
+  removeAssessment: (id: string) => request<{ ok: true }>('DELETE', `/api/assessments/${enc(id)}`),
+  /** Devices that are online now. */
   devices: () => get<DeviceSummary[]>('/api/devices'),
   setActiveClass: (deviceId: string, classId: string) =>
     post<DeviceSummary>(`/api/devices/${enc(deviceId)}/active-class`, { classId }),
-  unpairDevice: (deviceId: string) => request<{ ok: boolean }>('DELETE', `/api/devices/${enc(deviceId)}`),
   lecture: (id: string) => get<LectureDetail>(`/api/lectures/${enc(id)}`),
   translations: (id: string, lang: string) =>
     get<Record<string, string>>(`/api/lectures/${enc(id)}/translations?lang=${enc(lang)}`),

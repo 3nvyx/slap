@@ -29,14 +29,14 @@ const NAV: Array<{ to: string; label: string; key: string; end?: boolean }> = [
 ]
 
 export function DeviceChip({ device }: { device: ClassDetail['device'] }) {
-  const state = device.paired ? (device.state ?? 'idle') : 'unpaired'
+  const state = device?.state ?? 'offline'
   const live = state === 'recording'
   return (
     <div className="flex items-center gap-2 rounded-md border border-line bg-panel px-3 py-2">
       <Dot live={live} className={state === 'error' ? '!bg-bad' : state === 'idle' ? '!bg-good' : undefined} />
       <div className="min-w-0">
         <div className="label leading-none">Device</div>
-        <div className="mt-1 text-sm font-medium capitalize leading-none">{live ? 'Recording' : device.paired ? state : 'None here'}</div>
+        <div className="mt-1 text-sm font-medium capitalize leading-none">{live ? 'Recording' : device ? state : 'None here'}</div>
       </div>
     </div>
   )

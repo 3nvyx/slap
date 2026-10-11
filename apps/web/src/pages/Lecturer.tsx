@@ -27,7 +27,7 @@ export function LecturerPage() {
   }, [current, reloadLecture])
 
   const device = detail.device
-  const state = device.paired ? (device.state ?? 'idle') : 'unpaired'
+  const state = device?.state ?? 'offline'
   const languages = (liveInfo?.languages ?? []).map((code) => LANGUAGES.find((l) => l.code === code)?.native ?? code.toUpperCase())
   const questions = lecture.data?.questionsAsked ?? []
 
@@ -50,9 +50,9 @@ export function LecturerPage() {
           <Label>Device</Label>
           <div className="mt-3 flex items-center gap-2">
             <Dot live={state === 'recording'} className={state === 'error' ? '!bg-bad' : state === 'idle' ? '!bg-good' : undefined} />
-            <span className="text-xl font-bold capitalize tracking-tight">{device.paired ? state : 'None'}</span>
+            <span className="text-xl font-bold capitalize tracking-tight">{device ? state : 'None'}</span>
           </div>
-          <div className="mt-1 truncate text-xs text-muted">{device.paired ? (device.name ?? 'Paired device') : 'Pair one on the class page'}</div>
+          <div className="mt-1 truncate text-xs text-muted">{device ? (device.name ?? 'Online') : 'Switch one on and pick this course'}</div>
         </div>
         <div className={'rounded-md p-5 ' + (current ? 'bg-ink text-bg' : 'border border-line bg-panel')}>
           <div className={'label ' + (current ? '!text-bg/60' : '')}>Session</div>

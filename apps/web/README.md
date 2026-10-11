@@ -17,11 +17,12 @@ Env (Vite, build time): `VITE_API_BASE` (empty = same origin), `VITE_MOCK`.
 
 | Route | What |
 |---|---|
-| `/` | Landing: class-code box, every class ("open a class") |
+| `/` | Not this app: the landing page in `website/`, served ahead of it by the API and by the Vite dev server (`vite.config.ts`). Links to it are plain `<a href="/">`. If `website/` is missing, `/` redirects to `/classes` |
+| `/demo` | The landing page's "Demo" button. Two courses, found by code (`pages/Demo.tsx`): `OCCHACKS` live (its device, a join QR, every device recording now) and `CS229` recorded (its first ready lecture with a transcript snippet per outline section, the course's exam and quiz dates, links into the course) |
 | `/j/:code` | Join by class code: redirects to the live captions, polls every 5 s until the lecturer starts; otherwise links to the class |
 | `/live/:lectureId` | Captions: two lines (source word-by-word, translation per segment), language and size pickers, reconnect with `since`; labelled *Replay* for a replay; ended state links to recall / notes |
 | `/classes` | Class cards (every class), create, device |
-| `/c/:classId` | Class home: session panel (start/stop, laptop mic, who is watching, replay state), lectures, announcements feed, join QR, device, uploads, import |
+| `/c/:classId` | Class home: session panel (start/stop, laptop mic, who is watching, replay state), lectures, announcements feed, join QR, device, exam and quiz dates (`pages/Assessments.tsx`), uploads, import |
 | `/c/:classId/lecture/:id` | Outline, concepts weakest-first, summary, questions asked in class, announcements, ask-the-lecture box, transcript with hover notes and a saved-translation toggle, replay captions |
 | `/c/:classId/graph` | Force graph coloured by mastery; export as an Obsidian vault |
 | `/c/:classId/concept/:id` | Concept note: definition, exam quote, mentions, cards, related |

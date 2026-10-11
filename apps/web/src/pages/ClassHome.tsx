@@ -10,9 +10,10 @@ import { useMicStreamer } from '../lib/micStream'
 import { examInfo, fmtDate, fmtTime } from '../lib/format'
 import { LANGUAGES } from '../lib/languages'
 import type { ClassDevice, ClassLive } from '../lib/types'
-import { deviceLabel, useAction, useMyDevices } from '../lib/devices'
+import { deviceLabel, useAction, useOnlineDevices } from '../lib/devices'
 import { useApi } from '../lib/useApi'
-import { PairForm } from './Devices'
+import { DatesPanel } from './Assessments'
+import { NoDeviceOnline } from './Devices'
 
 export function ClassHome() {
   const { classId, detail, reloadClass } = useClass()
@@ -36,6 +37,7 @@ export function ClassHome() {
           </div>
         )}
       </PageTitle>
+      {cls.description && <p className="-mt-4 mb-8 max-w-3xl text-ink-2">{cls.description}</p>}
 
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <div className="space-y-6">
@@ -61,7 +63,8 @@ export function ClassHome() {
 
         <div className="space-y-6">
           <JoinPanel code={cls.code} />
-          <DevicePanel classId={classId} device={detail.device} onChange={reloadClass} />
+          <DevicePanel classId={classId} onChange={reloadClass} />
+          <DatesPanel classId={classId} onChange={reloadClass} />
           <UploadPanel classId={classId} onDone={reloadClass} />
           <Panel title="Documents">
             {detail.documents.length === 0 ? (
@@ -181,7 +184,7 @@ function SessionPanel({
             <>
               <div className="mt-2 text-lg font-semibold">Not recording</div>
               <div className="mt-1 text-sm text-muted">
-                Device {device.paired ? <>{device.name ? `${device.name} · ` : ''}{device.state ?? 'idle'}</> : 'not recording into this course'}. Double-slap the device or press start.
+                {device ? <>Device {device.name ? `${device.name} · ` : ''}{device.state}. Double-slap it or press start.</> : 'No device records into this course yet. Press start to switch an online device here, or use the laptop microphone.'}
               </div>
               <input className={inputCls + ' mt-3 max-w-sm'} placeholder="Title (optional)" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Lecture title" />
             </>
@@ -220,7 +223,7 @@ function SessionPanel({
         state={mic.state}
         level={mic.level}
         error={mic.error}
-        devicePaired={device.paired}
+        deviceOnline={!!device}
       />
       <PartnerRow classId={classId} latestReady={latestReady} />
       {error != null && (
@@ -259,7 +262,7 @@ function MicRow({
   state,
   level,
   error,
-  devicePaired,
+  deviceOnline,
 }: {
   on: boolean
   onToggle: () => void
@@ -267,7 +270,7 @@ function MicRow({
   state: string
   level: number
   error: string | null
-  devicePaired: boolean
+  deviceOnline: boolean
 }) {
   const active = on && live && state === 'live'
   const label = !on
@@ -299,7 +302,7 @@ function MicRow({
         <div className={'text-xs ' + (active ? 'font-semibold text-accent' : state === 'error' && on ? 'text-bad' : 'text-muted')}>
           {active && <span className="pulse mr-1.5 inline-block size-1.5 rounded-full bg-accent align-middle" />}
           {label}
-          {!on && devicePaired ? ' · use it when the device isn’t available' : ''}
+          {!on && deviceOnline ? ' · use it when the device isn’t available' : ''}
         </div>
         {on && error && <div className="text-xs text-bad">{error}</div>}
       </div>
@@ -315,90 +318,54 @@ function MicRow({
   )
 }
 
-/** The device for this course: its state, a switch to this course, or the pair form when none is paired. */
-function DevicePanel({ classId, device, onChange }: { classId: string; device: ClassDevice; onChange: () => Promise<void> }) {
-  const devices = useMyDevices()
-  const [pairing, setPairing] = useState(false)
+/** Devices that are online: the one recording into this course, and a switch to this course for the others. */
+function DevicePanel({ classId, onChange }: { classId: string; onChange: () => Promise<void> }) {
+  const devices = useOnlineDevices()
   const a = useAction()
-  const mine = devices.data ?? []
-  const here = mine.find((d) => d.activeClass?.id === classId)
-  const other = here ? undefined : mine[0]
+  const online = devices.data ?? []
   const reload = async () => {
     await devices.reload()
     await onChange()
   }
 
-  let body
-  if (devices.data === undefined) {
-    body = devices.error ? <ErrorBox error={devices.error} onRetry={() => void devices.reload()} /> : <p className="text-sm text-muted">Loading…</p>
-  } else if (here) {
-    body = (
-      <div className="flex items-center gap-2 text-sm">
-        <Pill status={here.state} />
-        <span className="min-w-0 truncate">{deviceLabel(here)} records into this course</span>
-      </div>
-    )
-  } else if (other) {
-    const busy = other.state === 'recording'
-    body = (
-      <>
-        <div className="flex items-center gap-2 text-sm">
-          <Pill status={other.state} />
-          <span className="min-w-0 truncate">
-            {deviceLabel(other)} {other.activeClass ? <>records into <span className="font-mono">{other.activeClass.code}</span></> : 'has no course picked'}
-          </span>
-        </div>
-        <Button
-          variant="ink"
-          className="mt-4 w-full"
-          disabled={a.busy || busy}
-          onClick={() => void a.run(async () => {
-            await api.setActiveClass(other.id, classId)
-            await reload()
-          })}
-        >
-          {a.busy ? 'Switching…' : 'Record into this course'}
-        </Button>
-        {busy && <p className="mt-2 text-xs text-muted">It is recording now. Stop that lecture first.</p>}
-        {a.error != null && (
-          <div className="mt-3">
-            <ErrorBox error={a.error} />
-          </div>
-        )}
-      </>
-    )
-  } else {
-    body = (
-      <div className="flex items-center gap-2 text-sm">
-        <Pill status={device.paired ? (device.state ?? 'idle') : 'unpaired'} />
-        <span>{device.paired ? `${device.name ?? 'A device'} records into this course` : 'No device paired'}</span>
-      </div>
-    )
-  }
-  const showForm = devices.data !== undefined && (pairing || mine.length === 0)
-
   return (
-    <Panel
-      title="Device"
-      action={
-        devices.data !== undefined && !showForm ? (
-          <button className="cursor-pointer text-xs text-muted underline hover:text-ink" onClick={() => setPairing(true)}>
-            {mine.length > 0 ? 'Pair another' : 'Pair a device'}
-          </button>
-        ) : null
-      }
-    >
-      {body}
-      {showForm && (
-        <div className="mt-4">
-          <PairForm
-            classId={classId}
-            onPaired={async () => {
-              setPairing(false)
-              await reload()
-            }}
-            onCancel={pairing ? () => setPairing(false) : undefined}
-          />
+    <Panel title="Devices">
+      {devices.data === undefined ? (
+        devices.error ? <ErrorBox error={devices.error} onRetry={() => void devices.reload()} /> : <p className="text-sm text-muted">Loading…</p>
+      ) : online.length === 0 ? (
+        <NoDeviceOnline />
+      ) : (
+        <div className="space-y-4">
+          {online.map((d) => {
+            const here = d.activeClass?.id === classId
+            const recording = d.state === 'recording'
+            return (
+              <div key={d.id}>
+                <div className="flex items-center gap-2 text-sm">
+                  <Pill status={d.state} />
+                  <span className="min-w-0 truncate">
+                    {deviceLabel(d)}{' '}
+                    {here ? 'records into this course' : d.activeClass ? <>records into <span className="font-mono">{d.activeClass.code}</span></> : 'has no course picked'}
+                  </span>
+                </div>
+                {!here && (
+                  <Button
+                    variant="ink"
+                    className="mt-3 w-full"
+                    disabled={a.busy || recording}
+                    onClick={() => void a.run(async () => {
+                      await api.setActiveClass(d.id, classId)
+                      await reload()
+                    })}
+                  >
+                    {a.busy ? 'Switching…' : 'Record into this course'}
+                  </Button>
+                )}
+                {!here && recording && <p className="mt-2 text-xs text-muted">It is recording now. Stop that lecture first.</p>}
+              </div>
+            )
+          })}
+          {a.error != null && <ErrorBox error={a.error} />}
         </div>
       )}
     </Panel>

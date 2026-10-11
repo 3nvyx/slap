@@ -1,6 +1,7 @@
 // Slap database schema (Drizzle, Postgres on Neon). There are no accounts: every `user_id` / `owner_user_id`
 // is the unverified per-browser id from user.ts (rows from before sign-in was removed hold Neon Auth user ids).
-// The database still has the `enrollments` table and `classes.guest_access` from then; nothing reads them.
+// The database still has the `enrollments` table and `classes.guest_access` from then, and `devices.pair_code` /
+// `devices.owner_user_id` from when devices were paired by code; nothing reads them.
 import { pgTable, text, uuid, timestamp, integer, real, boolean, jsonb, date, serial, primaryKey, uniqueIndex, index } from "drizzle-orm/pg-core";
 
 export const classes = pgTable("classes", {
@@ -8,18 +9,19 @@ export const classes = pgTable("classes", {
   name: text("name").notNull(),
   code: text("code").notNull().unique(),          // short join code, e.g. CS229
   ownerUserId: text("owner_user_id").notNull(),   // the caller that created it; informational only
+  description: text("description"),               // one or two sentences shown under the course name
+  instructor: text("instructor"),
+  term: text("term"),                              // e.g. "Autumn 2026"
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const devices = pgTable("devices", {
   id: uuid("id").primaryKey().defaultRandom(),
   deviceKey: text("device_key").notNull().unique(),   // shared secret flashed into firmware
-  pairCode: text("pair_code").unique(),                // 6 chars shown on OLED until paired
-  ownerUserId: text("owner_user_id"),                  // the caller that paired it; null = unpaired (legacy rows: the active class's owner)
   classId: uuid("class_id").references(() => classes.id, { onDelete: "set null" }),   // ACTIVE class: where a start records; null = none picked
   name: text("name"),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
-}, (t) => [index("devices_owner").on(t.ownerUserId)]);
+});
 
 export const lectures = pgTable("lectures", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -95,6 +97,18 @@ export const documents = pgTable("documents", {
   parsed: jsonb("parsed"),            // syllabus: {exams:[{name,date}], weeks:[...], deadlines:[...]}; book: {concepts:[...], exercises:[...]}
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// Exam, quiz and assignment dates entered by hand. They count next to the dates read from a syllabus
+// (documents.parsed): the next exam, exam topics, Today and the study plan all see both (pipeline/syllabus.ts).
+export const assessments = pgTable("assessments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  classId: uuid("class_id").notNull().references(() => classes.id, { onDelete: "cascade" }),
+  kind: text("kind", { enum: ["exam", "quiz", "assignment"] }).notNull().default("exam"),
+  name: text("name").notNull(),
+  date: date("date").notNull(),
+  topics: jsonb("topics").notNull().default([]),     // string[]: what it covers, if known
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [index("assessments_class_date").on(t.classId, t.date)]);
 
 export const cards = pgTable("cards", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -173,3 +187,13 @@ export const jobs = pgTable("jobs", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [index("jobs_ref").on(t.refId)]);
+
+// The latest model-written study plan per student per class (pipeline/studyPlan.ts), so a restart does not
+// throw it away. `fingerprint` is what it was written from; a different one means it is out of date.
+export const studyPlans = pgTable("study_plans", {
+  userId: text("user_id").notNull(),
+  classId: uuid("class_id").notNull().references(() => classes.id, { onDelete: "cascade" }),
+  plan: jsonb("plan").notNull(),                     // StudyPlan
+  fingerprint: text("fingerprint").notNull(),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.classId] })]);

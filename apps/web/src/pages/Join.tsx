@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Link, Navigate, useParams } from 'react-router-dom'
+import { Navigate, useParams } from 'react-router-dom'
 import { ButtonLink, ErrorBox, Label, Logo, Spinner } from '../components/ui'
 import { ApiError, api } from '../lib/api'
 import { useApi } from '../lib/useApi'
@@ -24,9 +24,9 @@ export function JoinPage() {
   return (
     <div className="dotgrid grid min-h-dvh place-items-center px-4">
       <div className="w-full max-w-md rounded-md border border-line bg-panel p-8">
-        <Link to="/">
+        <a href="/">
           <Logo className="text-lg" />
-        </Link>
+        </a>
         <Label className="mt-8">Class code</Label>
         <div className="mt-1 font-mono text-2xl font-semibold uppercase">{code}</div>
         <div className="mt-6">

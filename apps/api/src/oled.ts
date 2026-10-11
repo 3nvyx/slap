@@ -83,17 +83,6 @@ export function drawQr(ctx: SKRSContext2D, text: string, x: number, y: number, b
   return true;
 }
 
-export function renderUnpaired(code: string): Uint8Array {
-  return render(ctx => {
-    ctx.font = font(11);
-    centered(ctx, "Pair this Slap", 1);
-    ctx.font = font(fitFont(ctx, code, 124, 26), true);
-    centered(ctx, code, 19);
-    ctx.font = font(10);
-    centered(ctx, "enter code in the app", 52);
-  });
-}
-
 export function renderIdle(classCode: string, joinUrl: string, wifiOk = true): Uint8Array {
   return render(ctx => {
     if (!drawQr(ctx, joinUrl, 0, 0, 64)) { ctx.font = font(10); ctx.fillText("URL too", 2, 20); ctx.fillText("long", 2, 32); }
@@ -107,7 +96,7 @@ export function renderIdle(classCode: string, joinUrl: string, wifiOk = true): U
   });
 }
 
-/** Idle screen of a paired device with no active class (PICK_COURSE is also sent as the state message). */
+/** Idle screen of a device with no active class (PICK_COURSE is also sent as the state message). */
 export const PICK_COURSE = "Pick a course in the app";
 export function renderPickCourse(): Uint8Array {
   return render(ctx => {

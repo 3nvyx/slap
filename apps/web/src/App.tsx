@@ -1,14 +1,14 @@
 import { lazy, Suspense, useEffect } from 'react'
-import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { ClassLayout } from './components/ClassLayout'
 import { Spinner } from './components/ui'
 import { ClassesPage } from './pages/Classes'
 import { ClassHome } from './pages/ClassHome'
 import { ConceptPage } from './pages/Concept'
+import { DemoPage } from './pages/Demo'
 import { ExamSheetPage } from './pages/ExamSheet'
 import { ExamTopicsPage } from './pages/ExamTopics'
 import { JoinPage } from './pages/Join'
-import { Landing } from './pages/Landing'
 import { LecturePage } from './pages/Lecture'
 import { LecturerPage } from './pages/Lecturer'
 import { LivePage } from './pages/Live'
@@ -45,7 +45,9 @@ export default function App() {
       >
         <Routes>
           {/* No sign-in anywhere: every page is open. */}
-          <Route path="/" element={<Landing />} />
+          {/* "/" is the landing page (website/), served ahead of this app; if it is missing, start at the class list. */}
+          <Route path="/" element={<Navigate to="/classes" replace />} />
+          <Route path="/demo" element={<DemoPage />} />
           <Route path="/j/:code" element={<JoinPage />} />
           <Route path="/live/:lectureId" element={<LivePage />} />
           <Route path="/classes" element={<ClassesPage />} />

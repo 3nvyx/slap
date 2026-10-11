@@ -1,11 +1,18 @@
 // Speech-to-text behind one small interface: 16 kHz s16le mono PCM in, interim/final captions out.
-// `deepgram` talks raw WebSocket to Deepgram live (no SDK, see spikes/smoke); `mock` replays the
-// fixture transcript, paced by how loud the incoming audio is, so the system runs without a key.
+// `deepgram` talks raw WebSocket to Deepgram live (no SDK, see spikes/smoke); `flux` (fast mode,
+// sttFlux.ts) and `soniox` (accurate mode, sttSoniox.ts) are the two alternatives measured in
+// spikes/README.md; `mock` replays the fixture transcript, paced by how loud the incoming audio
+// is, so the system runs without a key.
 import { readFileSync } from "node:fs";
 import WebSocket from "ws";
 import type { CaptionWord } from "@slap/contracts";
 import { AUDIO_SAMPLE_RATE } from "@slap/contracts";
 import { settings } from "../settings.ts";
+import { createFluxStt } from "./sttFlux.ts";
+import { emitter } from "./sttLink.ts";
+import { createSonioxStt } from "./sttSoniox.ts";
+
+export type SttBackend = "deepgram" | "flux" | "soniox" | "mock";
 
 export interface SttResult {
   text: string;
@@ -18,7 +25,7 @@ export type SttEvent = "interim" | "final";
 export type SttListener = (r: SttResult) => void;
 
 export interface SttSession {
-  readonly backend: "deepgram" | "mock";
+  readonly backend: SttBackend;
   sendAudio(buf: Buffer): void;
   /** Flushes pending audio and resolves once the last finals have been emitted (or after a timeout). */
   close(): Promise<void>;
@@ -26,7 +33,7 @@ export interface SttSession {
 }
 
 export interface SttOptions {
-  backend?: "deepgram" | "mock";
+  backend?: SttBackend;
   /** Added to every timestamp, e.g. when a lecture resumes after a reconnect. */
   offsetS?: number;
   label?: string;
@@ -52,20 +59,16 @@ export function pcmRms(buf: Buffer): number {
   return Math.sqrt(sum / n);
 }
 
-function emitter() {
-  const ls: Record<SttEvent, SttListener[]> = { interim: [], final: [] };
-  return {
-    on(e: SttEvent, cb: SttListener) { ls[e].push(cb); },
-    emit(e: SttEvent, r: SttResult) { for (const cb of ls[e]) { try { cb(r); } catch (err) { console.error("[stt] listener", err); } } },
-  };
-}
-
 export function createStt(opts: SttOptions = {}): SttSession {
   const backend = opts.backend ?? settings.stt.backend;
-  if (backend === "deepgram") {
+  if (backend === "soniox") {
+    if (settings.stt.sonioxKey) return createSonioxStt(settings.stt.sonioxKey, opts);
+    console.warn("[stt] soniox selected but SONIOX_API_KEY is missing; falling back to deepgram");
+  }
+  if (backend !== "mock") {
     const key = settings.stt.deepgramKey;
-    if (key) return createDeepgramStt(key, opts);
-    console.warn("[stt] STT_BACKEND=deepgram but DEEPGRAM_API_KEY is missing; using mock");
+    if (key) return backend === "flux" ? createFluxStt(key, opts) : createDeepgramStt(key, opts);
+    console.warn(`[stt] ${backend} selected but DEEPGRAM_API_KEY is missing; using mock`);
   }
   return createMockStt(opts);
 }

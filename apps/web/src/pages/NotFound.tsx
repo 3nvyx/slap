@@ -7,8 +7,8 @@ export function NotFound() {
         <Logo className="text-xl" />
         <div className="mt-8 font-mono text-6xl font-bold">404</div>
         <p className="mt-2 text-ink-2">This page isn’t here.</p>
-        <ButtonLink className="mt-6" variant="ink" to="/">
-          Home
+        <ButtonLink className="mt-6" variant="ink" to="/classes">
+          All classes
         </ButtonLink>
       </div>
     </div>

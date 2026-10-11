@@ -1,6 +1,7 @@
 // VITE_MOCK=1: typed fixture data for every endpoint in docs/api.md plus a fake caption stream,
 // so every page can be visited before the API exists. State lives in memory for the tab.
 import type {
+  Assessment,
   Announcement,
   Attempt,
   CaptionEvent,
@@ -27,7 +28,7 @@ import type {
 } from '@slap/contracts'
 import sample from '../fixtures/lecture_sample.txt?raw'
 import { ApiError } from './api'
-import type { ClassDetail, ClassDocument, ConceptDetail, DeviceSummary, Graph, JoinInfo, LectureDetail, PairResult, PublicLecture, Today } from './types'
+import type { ClassDetail, ClassDocument, ConceptDetail, DeviceSummary, Graph, JoinInfo, LectureDetail, PublicLecture, Today } from './types'
 
 const delay = (ms = 180 + Math.random() * 220) => new Promise((r) => setTimeout(r, ms))
 const iso = (d: Date) => d.toLocaleDateString('en-CA')
@@ -95,6 +96,13 @@ const EXAM_DATE = iso(daysFromNow(12))
 const classes: ClassSummary[] = [
   { id: CLASS_ID, name: 'CS229 Machine Learning', code: 'CS229', lectureCount: 4, nextExam: EXAM_DATE },
   { id: CLASS2_ID, name: 'STATS116 Probability', code: 'STAT116', lectureCount: 1, nextExam: null },
+  { id: 'cls_occ', name: 'OCC Hacks', code: 'OCCHACKS', lectureCount: 0, nextExam: null, description: 'Live demo course. Slap the device and the captions for whatever is said next appear here.' },
+]
+
+// Dates entered by hand (the "Exams and quizzes" panel).
+const assessments: Assessment[] = [
+  { id: 'as_quiz1', classId: CLASS_ID, kind: 'quiz', name: 'Quiz 1', date: iso(daysFromNow(5)), topics: [] },
+  { id: 'as_mid', classId: CLASS_ID, kind: 'exam', name: 'Midterm', date: EXAM_DATE, topics: [] },
 ]
 
 const lectures: LectureSummary[] = [
@@ -106,9 +114,9 @@ const lectures: LectureSummary[] = [
 ]
 
 const documents: ClassDocument[] = [{ id: 'doc_syl', kind: 'syllabus', title: 'CS229 syllabus, autumn' }]
-// The demo user's device: it belongs to the user and records into its active class.
+// The demo device: online, recording into its active class.
 const devices: DeviceSummary[] = [
-  { id: 'dev_slap01', name: 'Slap on the desk', pairCode: null, activeClass: { id: CLASS_ID, name: 'CS229 Machine Learning', code: 'CS229' }, connected: true, state: 'recording', lastSeenAt: new Date().toISOString() },
+  { id: 'dev_slap01', name: 'Slap on the desk', activeClass: { id: CLASS_ID, name: 'CS229 Machine Learning', code: 'CS229' }, state: 'recording' },
 ]
 const activeOf = (c: ClassSummary) => ({ id: c.id, name: c.name, code: c.code })
 const deviceIn = (classId: string) => devices.find((d) => d.activeClass?.id === classId)
@@ -517,7 +525,7 @@ const routes: Array<[string, RegExp, Handler]> = [
       lectures: ls,
       device: (() => {
         const d = deviceIn(cls.id)
-        return d ? { paired: true, state: d.state, name: d.name } : { paired: false, state: 'offline', name: null }
+        return d ? { id: d.id, name: d.name, state: d.state } : null
       })(),
       live: (() => {
         const live = ls.find((l) => l.status === 'live')
@@ -527,36 +535,30 @@ const routes: Array<[string, RegExp, Handler]> = [
       documents: cls.id === CLASS_ID ? documents : [],
     }
   }],
-  ['POST', /^\/api\/devices\/pair$/, (_m, body) => {
-    const code = String((body as { pairCode: string }).pairCode ?? '').trim().toUpperCase()
-    if (!/^[A-Z0-9]{6}$/.test(code)) throw new ApiError(400, 'pair code must be 6 characters')
-    if (code === '000000') throw new ApiError(404, 'no device is showing that code')
-    const classId = (body as { classId?: string }).classId ?? (classes.length === 1 ? classes[0].id : undefined)
-    const cls = classes.find((c) => c.id === classId)
-    const d: DeviceSummary = { id: `dev_${code.toLowerCase()}`, name: `Slap ${code}`, pairCode: null, activeClass: cls ? activeOf(cls) : null, connected: true, state: 'idle', lastSeenAt: new Date().toISOString() }
-    devices.push(d)
-    const r: PairResult = { deviceId: d.id, ownerUserId: 'usr_demo', activeClassId: cls?.id ?? null, connected: true, state: 'idle' }
-    return r
+  ['GET', /^\/api\/classes\/([^/]+)\/assessments$/, (m) => assessments.filter((a) => a.classId === m[1]).sort((a, b) => a.date.localeCompare(b.date))],
+  ['POST', /^\/api\/classes\/([^/]+)\/assessments$/, (m, body): Assessment => {
+    const a = { id: `as_${Date.now().toString(36)}`, classId: m[1], topics: [], ...(body as Pick<Assessment, 'kind' | 'name' | 'date'>) }
+    assessments.push(a)
+    return a
+  }],
+  ['DELETE', /^\/api\/assessments\/([^/]+)$/, (m) => {
+    const i = assessments.findIndex((a) => a.id === m[1])
+    if (i < 0) throw new ApiError(404, 'not found')
+    assessments.splice(i, 1)
+    return { ok: true }
   }],
   ['GET', /^\/api\/devices$/, () => devices],
   ['POST', /^\/api\/devices\/([^/]+)\/active-class$/, (m, body) => {
     const d = devices.find((x) => x.id === m[1])
-    if (!d) throw new ApiError(404, 'device not found')
+    if (!d) throw new ApiError(404, 'device is not online')
     pointAt(d, String((body as { classId?: string }).classId ?? ''))
     return d
-  }],
-  ['DELETE', /^\/api\/devices\/([^/]+)$/, (m) => {
-    const i = devices.findIndex((x) => x.id === m[1])
-    if (i < 0) throw new ApiError(404, 'device not found')
-    if (devices[i].state === 'recording') throw new ApiError(409, 'the device is recording; stop the lecture first')
-    devices.splice(i, 1)
-    return { ok: true }
   }],
   ['POST', /^\/api\/classes\/([^/]+)\/sessions\/start$/, (m, body): LectureSummary => {
     if (lectures.some((l) => l.classId === m[1] && l.status === 'live')) throw new ApiError(400, 'a session is already live')
     const n = lectures.filter((l) => l.classId === m[1]).length + 1
     const lec: LectureSummary = { id: `lec_${Date.now().toString(36)}`, classId: m[1], title: (body as { title?: string })?.title || `Lecture ${n}`, date: iso(new Date()), status: 'live' }
-    // The web start records with the user's device, switching it to this course first.
+    // The web start records with an online device, switching it to this course first.
     const d = deviceIn(m[1]) ?? devices.find((x) => x.state !== 'recording')
     if (!deviceIn(m[1]) && !d && devices.length) throw new ApiError(409, 'the device is recording another course; stop that lecture first')
     lectures.unshift(lec)
