@@ -32,7 +32,7 @@ Env (Vite, build time): `VITE_API_BASE` (empty = same origin), `VITE_MOCK`.
 | `/c/:classId/partner` | Spoken learning partner (hold to talk) |
 | `/c/:classId/pretest` | Three questions on the syllabus's upcoming week |
 | `/c/:classId/lecturer` | Lecturer view: device, session, who is watching and in which languages, live caption tail, questions asked in class |
-| `/c/:classId/today` | Cards due, next exam, practice set, pretest, coming-up announcements, weak spots, and the model-written study plan (overview, class pace, key dates, day by day with tasks; regenerate button) |
+| `/c/:classId/today` | Cards due, next exam, practice set, pretest, coming-up announcements, weak spots, and the model-written study plan (`pages/StudyPlan.tsx`: overview, class pace, what each exam and quiz covers with a readiness bar, other dates, then day by day as typed tasks, each a link to the page that does it: recall check, practice, review, lecture notes, pretest; regenerate button) |
 | `/recall/:lectureId` | 3-minute free recall, compared into got / missed / wrong |
 
 Who you are: `lib/user.ts` keeps a random id in `localStorage` (`slap.user`) and `api.ts` sends it as `X-Slap-User` on every request. Cards, attempts, recall checks and mastery follow that id, so they are per browser; another browser or cleared site data starts fresh. The id is not a login and gives no access that others lack.

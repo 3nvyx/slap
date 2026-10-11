@@ -12,8 +12,9 @@ import { SYSTEM_TUTOR, syllabusPrompt } from "./tasks.ts";
 import { isoDate } from "./util.ts";
 import { getDb } from "./db.ts";
 
-export type Syllabus = SyllabusOut;
-export interface NextExam { name: string; date: string; topics: string[]; daysLeft: number }
+/** A parsed syllabus; hand-entered dates added by `withAssessments` carry their `kind` (a syllabus's own exams have none). */
+export type Syllabus = Omit<SyllabusOut, "exams"> & { exams: Array<SyllabusOut["exams"][number] & { kind?: "exam" | "quiz" }> };
+export interface NextExam { name: string; date: string; topics: string[]; daysLeft: number; kind: "exam" | "quiz" }
 
 export async function parseSyllabus(doc: { pdf: Buffer } | { text: string }, today = new Date()): Promise<Syllabus> {
   const out = await completeJson("syllabus", syllabusPrompt({ today: isoDate(today) }), SyllabusOut,
@@ -34,7 +35,7 @@ export function nextExam(s: Pick<Syllabus, "exams"> | null | undefined, today = 
 export function upcomingExams(s: Pick<Syllabus, "exams"> | null | undefined, today = new Date()): NextExam[] {
   const day = isoDate(today);
   return (s?.exams ?? []).filter(x => x.date >= day).sort((a, b) => a.date.localeCompare(b.date)).map(e => ({
-    name: e.name, date: e.date, topics: e.topics,
+    name: e.name, date: e.date, topics: e.topics, kind: e.kind ?? "exam",
     daysLeft: Math.round((Date.parse(e.date + "T00:00:00Z") - Date.parse(day + "T00:00:00Z")) / 86_400_000),
   }));
 }
@@ -49,7 +50,7 @@ export function withAssessments(syllabus: Syllabus | null, rows: AssessmentDate[
   const has = (list: Array<{ name: string; date: string }>, r: AssessmentDate) => list.some(x => x.date === r.date && x.name.toLowerCase() === r.name.toLowerCase());
   for (const r of rows) {
     if (r.kind === "assignment") { if (!has(deadlines, r)) deadlines.push({ name: r.name, date: r.date }); }
-    else if (!has(exams, r)) exams.push({ name: r.name, date: r.date, topics: r.topics });
+    else if (!has(exams, r)) exams.push({ name: r.name, date: r.date, topics: r.topics, kind: r.kind });
   }
   const byDate = (a: { date: string }, b: { date: string }) => a.date.localeCompare(b.date);
   return { title: syllabus?.title ?? null, weeks: syllabus?.weeks ?? [], exams: exams.sort(byDate), deadlines: deadlines.sort(byDate) };

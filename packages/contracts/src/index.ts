@@ -103,11 +103,34 @@ export interface Pretest {
 }
 export interface PretestAttempt { questionId: string; answer: string; correct: boolean; feedback: string }
 
-// Study plan written by the model from the syllabus dates, lecture notes, concept notes and the class's pace
+// Study plan written by the model from the exam and quiz dates with what each covers, the lectures and their
+// concepts, the uploaded materials, the concept notes and the class's pace, as typed tasks the app can open
 // (generated per student per class per day, kept in the `study_plans` table). `concepts[].id` is null when a name did not match a note.
 export interface StudyPlanKeyDate { date: string; daysLeft: number; name: string; kind: "exam" | "deadline" | "lecture" | "other"; note: string }
+/** What a plan task asks for. Each kind opens one page: recall check, practice, flashcards, a lecture's notes,
+ *  an uploaded document, or the pretest. */
+export type StudyTaskKind = "recall" | "practice" | "cards" | "notes" | "material" | "pretest";
+export interface StudyPlanTask {
+  kind: StudyTaskKind;
+  title: string;
+  minutes: number;
+  lecture: { id: string; title: string } | null;                                   // the lecture it is about
+  concepts: Array<{ id: string | null; name: string }>;
+  material: { id: string; kind: "book" | "syllabus"; title: string } | null;       // the uploaded document it works from
+  exam: string | null;                                                             // the exam or quiz it prepares for
+}
+/** `concepts` is the union of the day's task concepts; `minutes` the sum of its task minutes. */
 export interface StudyPlanDayDetail {
-  date: string; focus: string; concepts: Array<{ id: string | null; name: string }>; tasks: string[]; minutes: number; cardsDue: number; reason: string;
+  date: string; focus: string; concepts: Array<{ id: string | null; name: string }>; tasks: StudyPlanTask[]; minutes: number; cardsDue: number; reason: string;
+}
+/** One upcoming exam or quiz with what it covers: the concepts (with the student's mastery), the lectures that
+ *  taught them and `readiness`, the mean mastery over those concepts (never practised counts as 0; null with no concepts). */
+export interface StudyPlanExam {
+  name: string; date: string; daysLeft: number; kind: "exam" | "quiz";
+  concepts: Array<{ id: string; name: string; mastery: number | null }>;
+  lectures: Array<{ id: string; title: string }>;
+  readiness: number | null;
+  strategy: string;             // the model's one sentence on how to prepare for it
 }
 export interface StudyPlanPace {
   lecturesHeld: number; lecturesPerWeek: number | null; currentWeek: number | null; totalWeeks: number;
@@ -121,6 +144,8 @@ export interface StudyPlan {
   pace: string;                 // the model's one-liner on the class pace
   paceData: StudyPlanPace;      // the numbers it was given
   nextExam: { name: string; date: string; daysLeft: number } | null;
+  exams: StudyPlanExam[];       // upcoming, soonest first
+  materials: Array<{ id: string; kind: "book" | "syllabus"; title: string }>;   // the uploads it was written from
   keyDates: StudyPlanKeyDate[];
   days: StudyPlanDayDetail[];
 }

@@ -113,9 +113,23 @@ export const SyllabusOut = z.object({
 });
 export type SyllabusOut = z.infer<typeof SyllabusOut>;
 
+export const STUDY_TASK_KINDS = ["recall", "practice", "cards", "notes", "material", "pretest"] as const;
+/** One task of a plan day. A bare string (the old shape) is read as a practice task with that title. */
+const StudyTaskOut = z.preprocess(v => (typeof v === "string" ? { title: v } : v), z.object({
+  kind: z.enum(STUDY_TASK_KINDS).catch("practice"),
+  title: nonEmpty,
+  minutes: z.coerce.number().min(0).max(600).catch(10),
+  lecture: str.nullish(),         // a lecture key from the input ("L3")
+  concepts: names,
+  material: str.nullish(),        // a material key from the input ("M1")
+  exam: str.nullish(),            // an exam or quiz name from the input
+}));
+export type StudyTaskOut = z.infer<typeof StudyTaskOut>;
+
 export const StudyPlanOut = z.object({
   overview: str.default(""),
   pace: str.default(""),
+  exams: z.array(z.object({ name: nonEmpty, strategy: str.default("") })).default([]),
   keyDates: z.array(z.object({
     date: isoDay,
     name: nonEmpty,
@@ -125,9 +139,7 @@ export const StudyPlanOut = z.object({
   days: z.array(z.object({
     date: isoDay,
     focus: str.default(""),
-    concepts: names,
-    tasks: names,
-    minutes: z.coerce.number().min(0).max(600).catch(45),
+    tasks: z.array(StudyTaskOut).default([]),
     reason: str.default(""),
   })).default([]),
 });

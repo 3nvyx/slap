@@ -1,7 +1,7 @@
 // Hand-entered dates joining the syllabus (pure; no database).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { nextExam, withAssessments, type Syllabus } from "./syllabus.ts";
+import { nextExam, upcomingExams, withAssessments, type Syllabus } from "./syllabus.ts";
 
 const syllabus: Syllabus = {
   title: "CS229",
@@ -24,10 +24,12 @@ test("exams and quizzes become exams, assignments become deadlines, in date orde
   assert.deepEqual(s.exams.map(e => e.name), ["Quiz 1", "Midterm"]);
   assert.deepEqual(s.deadlines.map(d => d.name), ["Project proposal", "Problem set 1"]);
   assert.equal(s.weeks.length, 1);
-  assert.equal(nextExam(s, new Date("2026-10-11T12:00:00Z"))?.name, "Quiz 1");
+  const next = nextExam(s, new Date("2026-10-11T12:00:00Z"))!;
+  assert.deepEqual([next.name, next.kind], ["Quiz 1", "quiz"], "a quiz stays a quiz");
+  assert.equal(upcomingExams(s, new Date("2026-10-11T12:00:00Z"))[1]!.kind, "exam", "a syllabus exam has no kind of its own");
 });
 
 test("a class with dates but no syllabus still gets them", () => {
   const s = withAssessments(null, [{ kind: "exam", name: "Final", date: "2026-12-10", topics: ["Everything"] }])!;
-  assert.deepEqual(s, { title: null, weeks: [], exams: [{ name: "Final", date: "2026-12-10", topics: ["Everything"] }], deadlines: [] });
+  assert.deepEqual(s, { title: null, weeks: [], exams: [{ name: "Final", date: "2026-12-10", topics: ["Everything"], kind: "exam" }], deadlines: [] });
 });

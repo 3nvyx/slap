@@ -1,18 +1,18 @@
 /**
- * Study plan written by the model (PLAN "Study plan principles", the LLM version of plan.ts):
- * `gatherStudyPlanInput` collects the syllabus dates (exams, deadlines), the lecturer's dated
- * announcements, every lecture's outline (the notes), the concept notes with the student's
- * mastery, and the class's pace (`computePace`, pure: lectures a week, the syllabus week the
- * class is in, per-week topic coverage); `generateStudyPlan` asks the model for key dates and a
- * day-by-day plan back-scheduled from the next exam and matched to that pace; `getStudyPlan`
- * keeps one plan per student, class and day, in memory and in the `study_plans` table so a
- * restart does not throw it away (regenerated on `fresh`, when a lecture lands or the dates
- * change). Concept names in the reply are mapped back to concept ids.
+ * Study plan written by the model as typed tasks the app can open (the rules are in tasks.ts `studyPlanPrompt`,
+ * from reports/"Evidence based study plans.md"). `gatherStudyPlanInput` collects what it is written from: the
+ * upcoming exams and quizzes with what each covers (`examScope`), deadlines, the lecturer's dated announcements,
+ * every lecture's outline and the concepts it taught, the uploaded materials (book chapters with their concepts,
+ * the syllabus), the concept notes with the student's mastery, and the class's pace (`computePace`, pure).
+ * `generateStudyPlan` asks the model and normalises the reply: consecutive days, lecture and material keys and
+ * concept names mapped back to ids, task kinds repaired when they point at nothing, due cards always scheduled.
+ * `getStudyPlan` keeps one plan per student, class and day, in memory and in the `study_plans` table so a
+ * restart does not throw it away (regenerated on `fresh`, when a lecture or an upload lands or the dates change).
  */
 import { and, asc, desc, eq } from "drizzle-orm";
-import type { StudyPlan, StudyPlanDayDetail, StudyPlanKeyDate, StudyPlanPace } from "@slap/contracts";
+import type { StudyPlan, StudyPlanDayDetail, StudyPlanExam, StudyPlanKeyDate, StudyPlanPace, StudyPlanTask } from "@slap/contracts";
 import { completeJson } from "./llm.ts";
-import { StudyPlanOut } from "./schemas.ts";
+import { BookOut, StudyPlanOut, type StudyTaskOut } from "./schemas.ts";
 import { SYSTEM_TUTOR, studyPlanPrompt, type StudyPlanPayload } from "./tasks.ts";
 import { getSyllabus, upcomingExams, type Syllabus } from "./syllabus.ts";
 import { matchesTopics } from "./examTopics.ts";
@@ -27,6 +27,11 @@ export const MAX_PLAN_DAYS = 21;
 export const DEFAULT_PLAN_DAYS = 14;
 const MAX_CONCEPTS = 40;
 const MAX_LECTURES = 30;
+const MAX_MATERIALS = 6;
+const MAX_EXAM_CONCEPTS = 12;
+const MAX_DAY_TASKS = 5;
+/** Minutes a day the plan fills: about what students report spending per course, and more in the week before an exam. */
+export const PLAN_BUDGET = { normal: 30, examWeek: 75 };
 
 /** Days to plan: through the next exam (7..21), else two weeks. */
 export function planHorizon(exam: { daysLeft: number } | null): number {
@@ -66,61 +71,168 @@ export function computePace(lectureDates: string[], syllabus: Pick<Syllabus, "we
   };
 }
 
-export interface GatheredInput { payload: StudyPlanPayload; conceptIds: Map<string, string>; nextExam: StudyPlan["nextExam"]; fingerprint: string }
+type Material = StudyPlan["materials"][number];
+type LectureRef = { id: string; title: string };
+
+/** The concepts an exam covers: those its topics name; with no topics (or none matching), those taught in the
+ *  lectures held after the previous exam, up to this one (every lecture when that window is empty). */
+export function examScope<C extends { name: string; lectures: string[] }>(
+  exam: { date: string; topics: string[] }, examDates: string[], lectures: Array<{ key: string; date: string }>, concepts: C[],
+): C[] {
+  const byTopic = exam.topics.length ? concepts.filter(c => matchesTopics(c.name, exam.topics)) : [];
+  if (byTopic.length) return byTopic;
+  const prev = examDates.filter(d => d < exam.date).sort().at(-1) ?? "";
+  const window = lectures.filter(l => l.date > prev && l.date <= exam.date);
+  const keys = new Set((window.length ? window : lectures).map(l => l.key));
+  return concepts.filter(c => c.lectures.some(k => keys.has(k)));
+}
+
+/** What the model's reply is resolved against: concept names, lecture keys and material keys to the real rows. */
+export interface GatheredInput {
+  payload: StudyPlanPayload;
+  conceptIds: Map<string, string>;          // lower-case name and slug -> concept id
+  lectures: Map<string, LectureRef>;        // lower-case key and title -> lecture
+  materials: Map<string, Material>;         // lower-case key and title -> document
+  exams: StudyPlanExam[];                   // what each upcoming exam covers (strategy filled from the reply)
+  nextExam: StudyPlan["nextExam"];
+  fingerprint: string;
+}
 
 export async function gatherStudyPlanInput(userId: string, classId: string, now = new Date()): Promise<GatheredInput> {
   const { db, schema } = await getDb();
   const today = isoDate(now);
-  const [syllabus, mastery, lectureRows, conceptRows] = await Promise.all([
+  const [syllabus, mastery, lectureRows, conceptRows, mentionRows, docRows] = await Promise.all([
     getSyllabus(classId),
     getMastery(userId, classId),
     db.select({ id: schema.lectures.id, title: schema.lectures.title, date: schema.lectures.date, status: schema.lectures.status, summary: schema.outlines.summary, sections: schema.outlines.sections, announcements: schema.outlines.announcements })
       .from(schema.lectures).leftJoin(schema.outlines, eq(schema.outlines.lectureId, schema.lectures.id))
       .where(eq(schema.lectures.classId, classId)).orderBy(asc(schema.lectures.date), asc(schema.lectures.startedAt)),
     db.select().from(schema.concepts).where(eq(schema.concepts.classId, classId)).orderBy(desc(schema.concepts.emphasis)).limit(MAX_CONCEPTS),
+    db.select({ conceptId: schema.conceptMentions.conceptId, lectureId: schema.conceptMentions.lectureId })
+      .from(schema.conceptMentions).innerJoin(schema.lectures, eq(schema.lectures.id, schema.conceptMentions.lectureId))
+      .where(eq(schema.lectures.classId, classId)).groupBy(schema.conceptMentions.conceptId, schema.conceptMentions.lectureId),
+    db.select({ id: schema.documents.id, kind: schema.documents.kind, title: schema.documents.title, parsed: schema.documents.parsed })
+      .from(schema.documents).where(eq(schema.documents.classId, classId)).orderBy(desc(schema.documents.createdAt)).limit(MAX_MATERIALS),
   ]);
-  const exams = upcomingExams(syllabus, now);
-  const nextExam = exams[0] ? { name: exams[0].name, date: exams[0].date, daysLeft: exams[0].daysLeft } : null;
-  const horizonDays = planHorizon(nextExam);
+  const upcoming = upcomingExams(syllabus, now).slice(0, 4);
+  const nextExam = upcoming[0] ? { name: upcoming[0].name, date: upcoming[0].date, daysLeft: upcoming[0].daysLeft } : null;
+  // The window runs to the next real exam; a quiz on the way does not cut it short.
+  const horizonDays = planHorizon(upcoming.find(e => e.kind === "exam") ?? upcoming[0] ?? null);
   const dueByDay = await dueForecast(userId, classId, horizonDays, now);
   const daysLeft = (date: string) => Math.round((Date.parse(date + "T00:00:00Z") - Date.parse(today + "T00:00:00Z")) / 86_400_000);
+  const m2 = (x: number | undefined) => (x === undefined ? null : Math.round(x * 100) / 100);
 
-  const lectures = lectureRows.filter(l => l.status !== "live");
+  // Lectures get the keys the model points at: "L1" is the first lecture held.
+  const held = lectureRows.filter(l => l.status !== "live").map((l, i) => ({ ...l, key: `L${i + 1}` }));
+  const keyOf = new Map(held.map(l => [l.id, l.key]));
+  const taughtIn = new Map<string, string[]>();   // concept id -> lecture keys, oldest first
+  for (const m of mentionRows) { const k = keyOf.get(m.lectureId); if (k) taughtIn.set(m.conceptId, [...(taughtIn.get(m.conceptId) ?? []), k]); }
+  for (const keys of taughtIn.values()) keys.sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
+
+  const concepts = conceptRows.map(c => ({ id: c.id, name: c.name, lectures: taughtIn.get(c.id) ?? [], mastery: m2(mastery[c.id]), row: c }));
   const conceptIds = new Map<string, string>();
   for (const c of conceptRows) { conceptIds.set(c.name.toLowerCase(), c.id); conceptIds.set(c.slug, c.id); }
+  const lectures = new Map<string, LectureRef>();
+  for (const l of held) { lectures.set(l.title.toLowerCase(), { id: l.id, title: l.title }); lectures.set(l.key.toLowerCase(), { id: l.id, title: l.title }); }
+
+  const materialList = docRows.map((d, i) => {
+    const book = d.kind === "book" ? BookOut.safeParse(d.parsed) : null;
+    return { key: `M${i + 1}`, ref: { id: d.id, kind: d.kind, title: d.title } satisfies Material, concepts: book?.success ? book.data.concepts.map(c => c.name).slice(0, 12) : [], exercises: book?.success ? book.data.exercises.length : 0 };
+  });
+  const materials = new Map<string, Material>();
+  for (const m of materialList) { materials.set(m.ref.title.toLowerCase(), m.ref); materials.set(m.key.toLowerCase(), m.ref); }
+
+  const examDates = (syllabus?.exams ?? []).map(e => e.date);
+  const scoped = upcoming.map(e => ({ e, covers: examScope(e, examDates, held, concepts).slice(0, MAX_EXAM_CONCEPTS) }));
+  const exams: StudyPlanExam[] = scoped.map(({ e, covers }) => {
+    const keys = new Set(covers.flatMap(c => c.lectures));
+    return {
+      name: e.name, date: e.date, daysLeft: e.daysLeft, kind: e.kind,
+      concepts: covers.map(c => ({ id: c.id, name: c.name, mastery: c.mastery })),
+      lectures: held.filter(l => keys.has(l.key)).map(l => ({ id: l.id, title: l.title })),
+      readiness: covers.length ? Math.round((covers.reduce((n, c) => n + (c.mastery ?? 0), 0) / covers.length) * 100) / 100 : null,
+      strategy: "",
+    };
+  });
+
+  const sent = held.slice(-MAX_LECTURES);
   const payload: StudyPlanPayload = {
     today,
     horizonDays,
-    exams: exams.slice(0, 4).map(e => ({ name: e.name, date: e.date, daysLeft: e.daysLeft, topics: e.topics.slice(0, 12) })),
+    budget: PLAN_BUDGET,
+    exams: scoped.map(({ e, covers }) => ({
+      name: e.name, date: e.date, daysLeft: e.daysLeft, kind: e.kind, topics: e.topics.slice(0, 12),
+      concepts: covers.map(c => c.name), lectures: [...new Set(covers.flatMap(c => c.lectures))],
+    })),
     deadlines: (syllabus?.deadlines ?? []).filter(d => d.date >= today).slice(0, 8).map(d => ({ name: d.name, date: d.date, daysLeft: daysLeft(d.date) })),
-    announcements: lectures.flatMap(l => unpackAnnouncements(l.announcements).announcements
+    announcements: sent.flatMap(l => unpackAnnouncements(l.announcements).announcements
       .filter(a => a.when)
       .map(a => ({ lecture: l.title, lectureDate: l.date, kind: a.kind, text: a.text.slice(0, 200), when: a.when ?? null }))).slice(0, 12),
-    lectures: lectures.slice(-MAX_LECTURES).map(l => ({
-      title: l.title, date: l.date, summary: (l.summary ?? "").slice(0, 400),
+    lectures: sent.map(l => ({
+      key: l.key, title: l.title, date: l.date, daysAgo: -daysLeft(l.date), summary: (l.summary ?? "").slice(0, 400),
       sections: ((l.sections ?? []) as Array<{ title: string }>).map(s => s.title).slice(0, 10),
+      concepts: concepts.filter(c => c.lectures.includes(l.key)).map(c => c.name).slice(0, 10),
     })),
-    concepts: conceptRows.map(c => ({
-      name: c.name, definition: c.definition.slice(0, 240), emphasis: Math.round(c.emphasis * 100) / 100, examFlag: c.examFlag,
-      mastery: mastery[c.id] === undefined ? null : Math.round(mastery[c.id]! * 100) / 100,
+    materials: materialList.map(m => ({ key: m.key, kind: m.ref.kind, title: m.ref.title, concepts: m.concepts, exercises: m.exercises })),
+    concepts: concepts.map(({ row: c, mastery: m, lectures: ls }) => ({
+      name: c.name, definition: c.definition.slice(0, 240), emphasis: Math.round(c.emphasis * 100) / 100, examFlag: c.examFlag, mastery: m, lectures: ls,
     })),
-    pace: computePace(lectures.map(l => l.date), syllabus, conceptRows.map(c => c.name), now),
+    pace: computePace(held.map(l => l.date), syllabus, conceptRows.map(c => c.name), now),
     cardsDueByDay: dueByDay,
   };
-  const fingerprint = [today, lectures.length, conceptRows.length, exams.map(e => `${e.date} ${e.name}`).join(","), (syllabus?.deadlines ?? []).map(d => `${d.date} ${d.name}`).join(",")].join("|");
-  return { payload, conceptIds, nextExam, fingerprint };
+  // "v2": plans saved in the older free-text shape are never served.
+  const fingerprint = ["v2", today, held.length, conceptRows.length, upcoming.map(e => `${e.date} ${e.name}`).join(","),
+    (syllabus?.deadlines ?? []).map(d => `${d.date} ${d.name}`).join(","), docRows.map(d => d.id).join(",")].join("|");
+  return { payload, conceptIds, lectures, materials, exams, nextExam, fingerprint };
 }
 
-/** Asks the model and normalises the reply: consecutive dates inside the window (missing days become light
- *  review days), concept names mapped to ids, key dates deduplicated with days-left. */
+const clampMinutes = (n: number, cardsDue: number, kind: string) => Math.max(3, Math.min(60, Math.round(n) || (kind === "cards" ? cardsMinutes(cardsDue) : 10)));
+/** About a minute per three cards, five at least. */
+const cardsMinutes = (n: number) => Math.max(5, Math.min(20, Math.ceil(n / 3)));
+const cardsTask = (n: number): StudyPlanTask =>
+  ({ kind: "cards", title: `Review ${n} due card${n === 1 ? "" : "s"}`, minutes: cardsMinutes(n), lecture: null, concepts: [], material: null, exam: null });
+
+/** Asks the model for the plan and normalises its reply (`buildStudyPlan`). */
 export async function generateStudyPlan(input: GatheredInput, now = new Date()): Promise<StudyPlan> {
+  const out = await completeJson("studyplan", studyPlanPrompt(input.payload), StudyPlanOut, { system: SYSTEM_TUTOR, maxTokens: 12000 });
+  return buildStudyPlan(out, input, now);
+}
+
+/** The model's reply made safe to show: consecutive dates inside the window (missing days become light review
+ *  days), keys and names mapped to rows, a task kind that points at nothing turned into one that works, the due
+ *  cards on every day that has them, key dates deduplicated with days-left. Pure. */
+export function buildStudyPlan(out: StudyPlanOut, input: GatheredInput, now = new Date()): StudyPlan {
   const { payload, conceptIds, nextExam } = input;
-  const out = await completeJson("studyplan", studyPlanPrompt(payload), StudyPlanOut, { system: SYSTEM_TUTOR, maxTokens: 6000 });
   const today = payload.today;
   const end = isoDate(addDays(new Date(today + "T00:00:00Z"), payload.horizonDays - 1));
   const daysLeft = (date: string) => Math.round((Date.parse(date + "T00:00:00Z") - Date.parse(today + "T00:00:00Z")) / 86_400_000);
   const nameOf = new Map<string, string>();
   for (const c of payload.concepts) nameOf.set(c.name.toLowerCase(), c.name);
+  const examNames = new Map(payload.exams.map(e => [e.name.toLowerCase(), e.name]));
+
+  const toConcepts = (raw: string[], max: number) => {
+    const seen = new Set<string>();
+    return raw.flatMap(r => {
+      const key = r.toLowerCase();
+      const id = conceptIds.get(key) ?? conceptIds.get(slugify(r)) ?? null;
+      const name = nameOf.get(key) ?? r;
+      const dedupe = id ?? name.toLowerCase();
+      if (seen.has(dedupe)) return [];
+      seen.add(dedupe);
+      return [{ id, name }];
+    }).slice(0, max);
+  };
+  const toTask = (t: StudyTaskOut, cardsDue: number): StudyPlanTask => {
+    const lecture = (t.lecture && input.lectures.get(t.lecture.trim().toLowerCase())) || null;
+    const material = (t.material && input.materials.get(t.material.trim().toLowerCase())) || null;
+    let kind = t.kind;
+    if (kind === "material" && !material) kind = lecture ? "notes" : "practice";
+    if ((kind === "recall" || kind === "notes") && !lecture) kind = "practice";
+    return {
+      kind, title: t.title.slice(0, 120), minutes: clampMinutes(t.minutes, cardsDue, kind), lecture, concepts: toConcepts(t.concepts, 4),
+      material: kind === "material" ? material : null, exam: (t.exam && examNames.get(t.exam.trim().toLowerCase())) || null,
+    };
+  };
 
   const byDate = new Map<string, StudyPlanOut["days"][number]>();
   for (const d of out.days) if (d.date >= today && d.date <= end && !byDate.has(d.date)) byDate.set(d.date, d);
@@ -129,21 +241,15 @@ export async function generateStudyPlan(input: GatheredInput, now = new Date()):
     const date = isoDate(addDays(new Date(today + "T00:00:00Z"), i));
     const cardsDue = payload.cardsDueByDay[i] ?? 0;
     const d = byDate.get(date);
-    if (!d) {
-      days.push({ date, focus: "Review", concepts: [], tasks: cardsDue ? [`Review ${cardsDue} card${cardsDue === 1 ? "" : "s"}`] : ["Light review"], minutes: cardsDue ? 20 : 10, cardsDue, reason: "Light day: nothing new scheduled." });
-      continue;
-    }
-    const seen = new Set<string>();
-    const concepts = d.concepts.flatMap(raw => {
-      const key = raw.toLowerCase();
-      const id = conceptIds.get(key) ?? conceptIds.get(slugify(raw)) ?? null;
-      const name = nameOf.get(key) ?? raw;
-      const dedupe = id ?? name.toLowerCase();
-      if (seen.has(dedupe)) return [];
-      seen.add(dedupe);
-      return [{ id, name }];
+    let tasks = (d?.tasks ?? []).map(t => toTask(t, cardsDue));
+    if (cardsDue && !tasks.some(t => t.kind === "cards")) tasks.unshift(cardsTask(cardsDue));
+    tasks = tasks.slice(0, MAX_DAY_TASKS);
+    if (!tasks.length) tasks = [{ kind: "practice", title: "Three mixed practice questions", minutes: 10, lecture: null, concepts: [], material: null, exam: null }];
+    const concepts = toConcepts(tasks.flatMap(t => t.concepts.map(c => c.name)), 6);
+    days.push({
+      date, focus: d?.focus || concepts[0]?.name || "Review", concepts, tasks, minutes: tasks.reduce((n, t) => n + t.minutes, 0), cardsDue,
+      reason: d?.reason || "Light day: nothing new scheduled.",
     });
-    days.push({ date, focus: d.focus || concepts[0]?.name || "Review", concepts, tasks: d.tasks.slice(0, 6), minutes: Math.round(d.minutes), cardsDue, reason: d.reason });
   }
 
   const seenKeys = new Set<string>();
@@ -157,11 +263,17 @@ export async function generateStudyPlan(input: GatheredInput, now = new Date()):
     keyDates.sort((a, b) => a.date.localeCompare(b.date));
   }
 
+  const strategies = new Map(out.exams.map(e => [e.name.toLowerCase(), e.strategy]));
   const paceData: StudyPlanPace = {
     lecturesHeld: payload.pace.lecturesHeld, lecturesPerWeek: payload.pace.lecturesPerWeek, currentWeek: payload.pace.currentWeek,
     totalWeeks: payload.pace.totalWeeks, lastLectureDate: payload.pace.lastLectureDate,
   };
-  return { date: today, generatedAt: now.toISOString(), horizonDays: payload.horizonDays, overview: out.overview, pace: out.pace, paceData, nextExam, keyDates, days };
+  return {
+    date: today, generatedAt: now.toISOString(), horizonDays: payload.horizonDays, overview: out.overview, pace: out.pace, paceData, nextExam,
+    exams: input.exams.map(e => ({ ...e, strategy: strategies.get(e.name.toLowerCase()) ?? "" })),
+    materials: [...new Set(input.materials.values())],
+    keyDates, days,
+  };
 }
 
 interface Cached { fingerprint: string; plan: StudyPlan }

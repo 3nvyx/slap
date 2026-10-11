@@ -25,6 +25,7 @@ import type {
   StudyBundleStatus,
   StudyPlan,
   StudyPlanDay,
+  StudyPlanTask,
 } from '@slap/contracts'
 import sample from '../fixtures/lecture_sample.txt?raw'
 import { ApiError } from './api'
@@ -272,6 +273,7 @@ function plan(): StudyPlanDay[] {
 }
 
 let studyPlanSeq = 0
+const PLAN_DOC = { id: 'doc_syl', kind: 'syllabus' as const, title: 'CS229 syllabus, autumn' }
 function studyPlan(fresh = false): StudyPlan {
   if (fresh) studyPlanSeq++
   const today = iso(new Date())
@@ -279,21 +281,37 @@ function studyPlan(fresh = false): StudyPlan {
   const horizon = examDays + 1
   const ranked = [...concepts].sort((a, b) => Number(b.examFlag) - Number(a.examFlag) || (a.mastery ?? 0) - (b.mastery ?? 0) || b.emphasis - a.emphasis)
   const weakest = ranked.slice(0, 3)
+  const ready = lectures.filter((l) => l.classId === CLASS_ID && l.status === 'ready')
+  const shortTitle = (l: LectureSummary) => l.title.split(':')[0]
   const days = Array.from({ length: horizon }, (_, i) => {
     const date = iso(daysFromNow(i))
     const cardsDue = Math.max(2, 14 - i * 2)
     const pick = i === examDays ? ranked.filter((c) => c.examFlag).slice(0, 2) : i === examDays - 1 ? weakest : [0, 1, 2].map((j) => ranked[((i + studyPlanSeq) * 3 + j) % ranked.length])
     const reason = i === examDays ? 'Midterm today: light review of flagged concepts only.' : i === examDays - 1 ? 'Day before the midterm: retrieval practice on your weakest flagged concepts.' : i >= examDays - 2 ? `${examDays - i} days to the midterm: no new material, mixed review.` : `${examDays - i} days to the midterm: three concepts mixed across lectures, keeping pace with two lectures a week.`
+    const ref = (c: Concept) => ({ id: c.id, name: c.name })
+    const exam = i <= examDays ? 'Midterm' : null
+    const none = { lecture: null, material: null, exam: null }
+    const newest = ready[0]
+    const again = ready.find((_, n) => [2, 5, 9].includes(i + 2 + n * 3))
+    const tasks: StudyPlanTask[] = [
+      { kind: 'cards', title: `Review ${cardsDue} due cards`, minutes: Math.max(5, Math.ceil(cardsDue / 3)), concepts: [], ...none },
+      ...(i === 0 && newest ? [{ kind: 'recall' as const, title: `Recall ${shortTitle(newest)} from memory`, minutes: 5, concepts: [], ...none, lecture: { id: newest.id, title: newest.title } }] : []),
+      ...(pick.length ? [{ kind: 'practice' as const, title: `Practice ${pick.slice(0, 2).map((c) => c.name).join(' and ')}`, minutes: 12, concepts: pick.slice(0, 2).map(ref), ...none, exam }] : []),
+      ...(again && i > 0 ? [{ kind: 'practice' as const, title: `Practice ${shortTitle(again)} again`, minutes: 8, concepts: [], ...none, lecture: { id: again.id, title: again.title }, exam }] : []),
+      ...(pick[2] && i % 3 === 1 ? [{ kind: 'material' as const, title: `Find ${pick[2].name} on the syllabus`, minutes: 5, concepts: [ref(pick[2])], ...none, material: PLAN_DOC }] : []),
+      ...(i === 2 ? [{ kind: 'pretest' as const, title: 'Pretest before the next lecture', minutes: 4, concepts: [], ...none }] : []),
+    ]
     return {
       date,
       focus: pick[0]?.name ?? 'Review',
-      concepts: pick.map((c) => ({ id: c.id, name: c.name })),
-      tasks: [`Review ${cardsDue} cards`, ...pick.slice(0, 2).map((c) => `Practice: 3 questions on ${c.name}`), ...(pick[2] ? [`Re-read the notes on ${pick[2].name}`] : [])],
-      minutes: 20 + 15 * pick.length + Math.min(30, cardsDue),
+      concepts: pick.map(ref),
+      tasks,
+      minutes: tasks.reduce((n, t) => n + t.minutes, 0),
       cardsDue,
       reason,
     }
   })
+  const covered = ranked.filter((c) => c.examFlag || c.emphasis >= 0.6).slice(0, 10)
   return {
     date: today,
     generatedAt: new Date().toISOString(),
@@ -302,6 +320,22 @@ function studyPlan(fresh = false): StudyPlan {
     pace: 'Four lectures in two weeks, about two a week; the syllabus is in week 5 of 10 and your notes cover every topic so far.',
     paceData: { lecturesHeld: 4, lecturesPerWeek: 2, currentWeek: 5, totalWeeks: 10, lastLectureDate: iso(daysFromNow(-2)) },
     nextExam: { name: 'Midterm', date: EXAM_DATE, daysLeft: examDays },
+    exams: [
+      {
+        name: 'Quiz 1', date: iso(daysFromNow(5)), daysLeft: 5, kind: 'quiz', readiness: 0.48,
+        concepts: weakest.map((c) => ({ id: c.id, name: c.name, mastery: c.mastery ?? null })),
+        lectures: ready.slice(0, 1).map((l) => ({ id: l.id, title: l.title })),
+        strategy: 'Practise its three concepts on the two days before; nothing else moves.',
+      },
+      {
+        name: 'Midterm', date: EXAM_DATE, daysLeft: examDays, kind: 'exam',
+        readiness: Math.round((covered.reduce((n, c) => n + (c.mastery ?? 0), 0) / Math.max(1, covered.length)) * 100) / 100,
+        concepts: covered.map((c) => ({ id: c.id, name: c.name, mastery: c.mastery ?? null })),
+        lectures: ready.map((l) => ({ id: l.id, title: l.title })),
+        strategy: 'Every concept practised on two separate days, a mixed rehearsal in the last three, the weakest the day before.',
+      },
+    ],
+    materials: [PLAN_DOC],
     keyDates: [
       { date: iso(daysFromNow(3)), daysLeft: 3, name: 'Lecture: Exponential family', kind: 'lecture', note: 'Preview the syllabus topics the day before.' },
       { date: iso(daysFromNow(6)), daysLeft: 6, name: 'Problem set 2', kind: 'deadline', note: 'Keep the day before light and get it in early.' },

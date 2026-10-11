@@ -31,18 +31,26 @@ export interface AskPayload {
   segments: PromptSeg[];
   concepts: Array<{ name: string; definition: string }>;
 }
-/** Everything the study plan is written from: dates, what each lecture covered, the concept notes and the class's pace. */
+/** Everything the study plan is written from: the dates with what each exam covers, what each lecture taught, the
+ *  uploaded materials, the concept notes and the class's pace. Lectures and materials carry short keys ("L3", "M1")
+ *  the model uses to point a task at them. */
 export interface StudyPlanPayload {
   today: string;
   horizonDays: number;
-  exams: Array<{ name: string; date: string; daysLeft: number; topics: string[] }>;
+  /** Minutes of study a day the plan should fill: normally, and in the 7 days before an exam. */
+  budget: { normal: number; examWeek: number };
+  /** Upcoming exams and quizzes, soonest first, each with the concepts it covers and the lectures that taught them. */
+  exams: Array<{ name: string; date: string; daysLeft: number; kind: "exam" | "quiz"; topics: string[]; concepts: string[]; lectures: string[] }>;
   deadlines: Array<{ name: string; date: string; daysLeft: number }>;
   /** Dated announcements the lecturer made (from the lecture outlines). */
   announcements: Array<{ lecture: string; lectureDate: string; kind: string; text: string; when: string | null }>;
-  /** Lectures held so far, oldest first, with the outline summary and section titles (the notes). */
-  lectures: Array<{ title: string; date: string; summary: string; sections: string[] }>;
-  /** Concept notes: definition, lecturer emphasis (0..1), exam flag and the student's mastery (0..1, null = never practised). */
-  concepts: Array<{ name: string; definition: string; emphasis: number; examFlag: boolean; mastery: number | null }>;
+  /** Lectures held so far, oldest first: the outline summary and section titles (the notes) and the concepts taught. */
+  lectures: Array<{ key: string; title: string; date: string; daysAgo: number; summary: string; sections: string[]; concepts: string[] }>;
+  /** Uploaded documents: a book chapter with the concepts it explains and how many exercises it has, or the syllabus. */
+  materials: Array<{ key: string; kind: "book" | "syllabus"; title: string; concepts: string[]; exercises: number }>;
+  /** Concept notes: definition, lecturer emphasis (0..1), exam flag, the student's mastery (0..1, null = never practised)
+   *  and the lectures that taught it. */
+  concepts: Array<{ name: string; definition: string; emphasis: number; examFlag: boolean; mastery: number | null; lectures: string[] }>;
   pace: {
     lecturesHeld: number;
     lecturesPerWeek: number | null;
@@ -198,31 +206,54 @@ JSON shape:
 ${inputBlock(p)}`;
 }
 
+// The rules follow reports/"Evidence based study plans.md": retrieval over re-reading, each lecture recalled on
+// several separate days, gaps that widen toward the exam, quizzes kept small.
 export function studyPlanPrompt(p: StudyPlanPayload): string {
-  return `Write a personal study plan for a student in this course, from today (${p.today}) for ${p.horizonDays} days, paced to the class.
-Use only the input: "exams" and "deadlines" from the syllabus, "announcements" the lecturer made, "lectures" held so far (the notes),
-"concepts" (notes with definitions, lecturer emphasis, examFlag and the student's mastery) and "pace" (how fast the class moves and
-which syllabus week it is in, with per-week topic coverage: weeks with topics but few covered concepts are coming up or were missed).
+  return `Write a personal study plan for a student in this course, from today (${p.today}) for ${p.horizonDays} days, as tasks the study app can open.
+Use only the input: "exams" (upcoming exams and quizzes, each with the "concepts" it covers and the "lectures" that taught them),
+"deadlines", "announcements" the lecturer made, "lectures" held so far (key, date, notes and the concepts each taught), "materials"
+(uploaded book chapters and the syllabus, with the concepts a chapter explains), "concepts" (definition, lecturer emphasis, examFlag,
+the student's mastery from 0 to 1 where null means never practised, and its lectures), "pace" (how fast the class moves and the
+syllabus week it is in), "cardsDueByDay" and "budget" (minutes a day).
+
+Task kinds (use only these):
+- "recall": write down everything remembered from one lecture, then check what was missed. Needs "lecture".
+- "practice": answer practice questions on the task's concepts, or on one lecture. This is the main kind.
+- "cards": review the flashcards due that day.
+- "notes": go through one lecture's notes, only to repair what recall or practice showed was missing. Needs "lecture".
+- "material": work from one uploaded document, e.g. a book chapter's explanation or exercises. Needs "material".
+- "pretest": three questions on what the next lecture will cover.
 
 Plan rules:
-- Back-schedule from the next exam: cover its topics first, finish new material 2 days before it, keep the day before for the weakest
-  high-emphasis concepts, and make exam day light review. Days after an exam resume steady practice toward the next one.
-- Match the class pace: review each lecture's concepts within a few days of it, and preview the syllabus topics of the coming week
-  before the lecture on them. Do not exceed roughly ${p.pace.lecturesPerWeek ?? 2} new lectures' worth of material a week.
-- Interleave: each day mixes 2-4 concepts across lectures, weakest and exam-flagged first; never only one concept all day.
-- Fold in due flashcards ("cardsDueByDay") and deadlines (lighter study days before a deadline).
-- "concepts" in a day are concept names copied exactly from the input. "tasks" are 2-4 concrete things to do (e.g. "Review 12 cards",
-  "Practice: 3 questions on X", "Re-read lecture 3 notes on Y", "Preview: Z before Thursday's lecture"). "minutes" is a realistic
-  total (20-120). "reason" is one line on why this day looks like this.
-- "keyDates": every exam, deadline and dated announcement in the window plus the next exam even if outside it, soonest first,
-  each with a one-line note on how to prepare. "overview" is 2-3 sentences on the strategy. "pace" is 1-2 sentences on how the
-  class is moving and whether the student is keeping up, from the data.
+- Retrieval first: most minutes go to recall, practice and cards. At most one notes or material task a day, never a day of only reading.
+- Spread every lecture out. Its first task is a "recall" (today for a lecture from the last 2 days or one whose concepts were never
+  practised); then "practice" on its concepts about 2, 5 and 9 days later, then about weekly until the exam that covers it.
+  Never put all of one lecture on one day.
+- Exams: every concept an exam covers is in at least two practice tasks on different days before it, lowest mastery and examFlag
+  first. In the 3 days before an exam, one practice task mixes all its concepts as a rehearsal; the day before is for the weakest;
+  exam day is one short task. Set "exam" on the tasks that prepare for it.
+- Quizzes are small: practise a quiz's concepts on the 1-2 days before it and do not reshape the other days around it.
+- Mix: from the second week of a lecture on, a practice task takes 2-4 concepts from different lectures.
+- Use the materials: where a book chapter explains a concept with low mastery, give it a "material" task; put a "pretest" on the
+  day before the syllabus topics of the coming week are lectured.
+- Size: 2-4 tasks a day adding up to about ${p.budget.normal} minutes, up to ${p.budget.examWeek} in the 7 days before an exam. A "cards" task on every
+  day with cards due (about 1 minute per 3 cards, at least 5). One or two tasks on the day before a deadline.
+- A task: "title" is a short instruction (at most 9 words) that names the lecture or concepts; "minutes" 3-45; "concepts" are 0-4
+  names copied exactly from the input; "lecture" is a lecture key or null; "material" a material key or null; "exam" the exact
+  name of the exam or quiz it prepares for, or null.
+- A day: "focus" (at most 6 words) and "reason", one line tied to the student's situation (days left, weakest topic, what was just taught).
+- "exams": one entry per input exam with a one-sentence "strategy" for it. "keyDates": every exam, deadline and dated announcement
+  in the window plus the next exam even if outside it, soonest first, each with a one-line note. "overview" is 2-3 sentences on
+  the strategy. "pace" is 1-2 sentences on how the class is moving and whether the student is keeping up, from the data.
 - Exactly ${p.horizonDays} days, consecutive from today, dates as YYYY-MM-DD.
 
 JSON shape:
 {"overview": string, "pace": string,
+ "exams": [{"name": string, "strategy": string}],
  "keyDates": [{"date": "YYYY-MM-DD", "name": string, "kind": "exam"|"deadline"|"lecture"|"other", "note": string}],
- "days": [{"date": "YYYY-MM-DD", "focus": string (<= 8 words), "concepts": [string], "tasks": [string], "minutes": number, "reason": string}]}
+ "days": [{"date": "YYYY-MM-DD", "focus": string, "reason": string,
+   "tasks": [{"kind": "recall"|"practice"|"cards"|"notes"|"material"|"pretest", "title": string, "minutes": number,
+              "lecture": string|null, "concepts": [string], "material": string|null, "exam": string|null}]}]}
 
 ${inputBlock(p)}`;
 }
