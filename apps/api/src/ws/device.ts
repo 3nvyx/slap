@@ -7,7 +7,7 @@ import { AUDIO_FRAME_BYTES, DEVICE_LANGS, type DeviceLang, type DeviceToServer, 
 import { eq } from "drizzle-orm";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { db, schema } from "../db/index.ts";
-import { CaptionRoll, renderLanguage, renderNotice, renderSaved, renderText, SHAKE_MS, shakeFrame } from "../oled.ts";
+import { CaptionRoll, renderLanguage, renderSaved, renderStandby, renderText, SHAKE_MS, shakeFrame } from "../oled.ts";
 import { pcmRms } from "../pipeline/stt.ts";
 import { attachDevice, detachDevice, getLecture, pushAudio, setDeviceLang, startDeviceSession, stopSession, type DeviceLink } from "../sessions.ts";
 import { settings } from "../settings.ts";
@@ -72,7 +72,7 @@ const isLang = (v: unknown): v is DeviceLang => (DEVICE_LANGS as readonly unknow
 function screen(d: DeviceLink, roll: CaptionRoll, banner: boolean, message?: string): Uint8Array {
   switch (d.state) {
     // Idle: waiting for a shake after power-up, or just saved (the device then sleeps or goes dark).
-    case "idle": return d.savedSeconds === null ? renderNotice("Slap", "Shake to record") : renderSaved(d.savedSeconds);
+    case "idle": return d.savedSeconds === null ? renderStandby() : renderSaved(d.savedSeconds);
     case "recording": {
       if (banner) return renderLanguage(d.lang);
       const l = d.lectureId ? getLecture(d.lectureId) : undefined;

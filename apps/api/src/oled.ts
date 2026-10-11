@@ -317,6 +317,15 @@ export function renderNotice(big: string, small: string): Uint8Array {
   });
 }
 
+/** Waiting for a shake after power-up: the name alone, slanted like the wordmark of the switch-on art. */
+export function renderStandby(): Uint8Array {
+  return render(ctx => {
+    ctx.transform(1, 0, -0.2, 1, 0, 0);   // Noto Sans has no italic here: lean the bold
+    ctx.font = font(34, true);
+    centered(ctx, "SLAP!", 44, 9);
+  });
+}
+
 /** After a recording ended, until the device goes to sleep. */
 export function renderSaved(seconds: number): Uint8Array {
   return renderNotice("Saved", `${mmss(seconds)} · see the app`);

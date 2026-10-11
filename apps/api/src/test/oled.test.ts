@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DEVICE_LANGS, OLED_FRAME_BYTES } from "@slap/contracts";
-import { CaptionRoll, packXbm, render, renderLanguage, renderNotice, renderRecording, renderSaved, renderText, SHAKE_MS, shakeFrame } from "../oled.ts";
+import { CaptionRoll, packXbm, render, renderLanguage, renderNotice, renderRecording, renderSaved, renderStandby, renderText, SHAKE_MS, shakeFrame } from "../oled.ts";
 
 const lit = (f: Uint8Array, x: number, y: number) => (f[y * 16 + (x >> 3)]! >> (x & 7)) & 1;
 // Caption area of a recording frame (left of the level column, above the timer), as rows of 0/1.
@@ -23,7 +23,8 @@ test("every screen is exactly one 1,024-byte frame", () => {
     renderRecording(3, 0.5, ""),
     renderLanguage("ja"),
     renderSaved(2520),
-    renderNotice("Slap", "Starting..."),
+    renderNotice("Saved", "see the app"),
+    renderStandby(),
     renderText(["hello", "world"]),
   ]) assert.equal(f.length, OLED_FRAME_BYTES);
 });

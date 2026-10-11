@@ -174,6 +174,18 @@ screen({
 });
 
 screen({
+  name: "Waiting",
+  group: TODAY,
+  note: "Plugged in and connected, before a shake starts a session: the name alone. The screen goes dark after twelve seconds.",
+  draw(ctx) {
+    ctx.textBaseline = "alphabetic";
+    ctx.transform(1, 0, -0.2, 1, 0, 0);   // lean the bold: the device's font has no italic
+    ctx.font = font(34, true);
+    centered(ctx, "SLAP!", 44, 9);
+  },
+});
+
+screen({
   name: "Listening",
   group: TODAY,
   note: "The session has started (it starts by itself once the device is switched on) and nothing has been said yet.",

@@ -234,7 +234,7 @@ test("a device that was only powered up waits; a shake starts it, and a shake wh
   const id = `devtest-shake-${run}`;
   const d = fakeDevice(KEY2, id);
   await d.hello("power");
-  await d.until((st, f) => st.state === "idle" && same(f, m.oled.renderNotice("Slap", "Shake to record")), "waiting for a shake");
+  await d.until((st, f) => st.state === "idle" && same(f, m.oled.renderStandby()), "waiting for a shake");
   assert.equal(await m.dev.triggerUsbSlap("no-such-device"), false);
   assert.equal(await m.dev.triggerUsbSlap(id), true);
   const rec = await d.until(st => st.state === "recording" && !!st.sessionId, "recording after the shake");
