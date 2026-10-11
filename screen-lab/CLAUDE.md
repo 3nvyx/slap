@@ -54,7 +54,7 @@ Leave the five `TODAY` screens as they are: they mirror `apps/api/src/oled.ts`, 
 
 `ctx` is a Canvas 2D context, already set to white fill and stroke with `textBaseline = "top"`. `d` is the mock data:
 
-`d.classCode`, `d.pairCode`, `d.joinUrl`, `d.caption` (grows while Play runs), `d.fullCaption`, `d.lang` (`{ code, name, native, rtl }`), `d.seconds`, `d.level` (0–1), `d.wifiOk`, `d.message`, `d.avatar` (name of the chosen sprite), `d.mascot` (name of the chosen mascot face), `d.t` (seconds since Play, 0 when stopped; drive animation from it).
+`d.classCode`, `d.joinUrl`, `d.caption` (grows while Play runs), `d.fullCaption`, `d.lang` (`{ code, name, native, rtl }`), `d.seconds`, `d.level` (0–1), `d.wifiOk`, `d.message`, `d.avatar` (name of the chosen sprite), `d.mascot` (name of the chosen mascot face), `d.t` (seconds since Play, 0 when stopped; drive animation from it).
 
 Helpers (globals from `lab.js`):
 

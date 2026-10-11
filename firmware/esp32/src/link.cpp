@@ -34,8 +34,7 @@ uint32_t g_framesSent = 0;
 uint8_t g_tx[WEBSOCKETS_MAX_HEADER_SIZE + AUDIO_FRAME_BYTES];
 
 bool parseState(const char* s, AppState* out) {
-  if (!strcmp(s, "unpaired")) *out = AppState::UNPAIRED;
-  else if (!strcmp(s, "idle")) *out = AppState::IDLE;
+  if (!strcmp(s, "idle")) *out = AppState::IDLE;
   else if (!strcmp(s, "recording")) *out = AppState::RECORDING;
   else if (!strcmp(s, "error")) *out = AppState::ERROR;
   else return false;
@@ -110,10 +109,10 @@ void onEvent(WStype_t type, uint8_t* payload, size_t len) {
 
 }  // namespace
 
-void link_begin(const char* deviceId, const char* pairCode, const char* mac) {
+void link_begin(const char* deviceId, const char* mac) {
   snprintf(g_path, sizeof g_path, "%s?key=%s", SERVER_PATH, DEVICE_KEY);
-  snprintf(g_hello, sizeof g_hello, "{\"type\":\"hello\",\"deviceId\":\"%s\",\"fw\":\"%s\",\"pairCode\":\"%s\",\"mac\":\"%s\"}",
-           deviceId, FW_VERSION, pairCode, mac);
+  snprintf(g_hello, sizeof g_hello, "{\"type\":\"hello\",\"deviceId\":\"%s\",\"fw\":\"%s\",\"mac\":\"%s\"}",
+           deviceId, FW_VERSION, mac);
 
   ws.onEvent(onEvent);
   // Empty subprotocol: no Sec-WebSocket-Protocol header (the server does not negotiate one).

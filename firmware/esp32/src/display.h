@@ -13,7 +13,6 @@ struct DisplayModel {
   bool wsUp;
   bool micOk;
   bool imuOk;
-  const char* pairCode;   // 6 chars, shown when UNPAIRED
   const char* classCode;  // from the server's `state`, may be empty
   const char* message;    // from the server's `state`, may be empty
   const char* ssid;

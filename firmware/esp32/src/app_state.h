@@ -6,8 +6,7 @@ enum class AppState : uint8_t {
   BOOTING,     // local: hardware init
   WIFI,        // local: joining the access point
   CONNECTING,  // local: Wi-Fi up, WebSocket not open yet (or waiting for the first `state`)
-  UNPAIRED,    // server: device not bound to a class; OLED shows the pair code
-  IDLE,        // server: paired, no session; a slap or BOOT press asks the server to start
+  IDLE,        // server: online, no session; a slap or BOOT press asks the server to start
   RECORDING,   // server: session live; audio frames stream up
   ERROR,       // server: error state (message shown)
 };
@@ -17,7 +16,6 @@ inline const char* appStateName(AppState s) {
     case AppState::BOOTING:    return "BOOT";
     case AppState::WIFI:       return "WI-FI";
     case AppState::CONNECTING: return "LINK";
-    case AppState::UNPAIRED:   return "PAIR";
     case AppState::IDLE:       return "READY";
     case AppState::RECORDING:  return "REC";
     case AppState::ERROR:      return "ERROR";

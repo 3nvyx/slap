@@ -13,7 +13,7 @@
 //   recording  double slap (IMU only) or REC press -> `button` (server stops);
 //              hold REC 2 s -> stop, then sleep
 //
-// States: BOOTING -> WIFI -> CONNECTING -> (server says) UNPAIRED | IDLE | RECORDING | ERROR.
+// States: BOOTING -> WIFI -> CONNECTING -> (server says) IDLE | RECORDING | ERROR.
 // The server owns the session: BOOT presses and double slaps are sent as `button` events and
 // the server answers with a `state`. A link or Wi-Fi drop falls back to CONNECTING / WIFI.
 
@@ -40,7 +40,6 @@ AppState g_lastServerState = AppState::IDLE;
 
 char g_mac[18];
 char g_deviceId[24];
-char g_pairCode[7];
 char g_classCode[16];
 char g_message[64];
 char g_sessionId[48];
@@ -75,18 +74,6 @@ void makeIdentity() {
   snprintf(g_mac, sizeof g_mac, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   if (DEVICE_ID[0]) snprintf(g_deviceId, sizeof g_deviceId, "%s", DEVICE_ID);
   else snprintf(g_deviceId, sizeof g_deviceId, "slap-%02x%02x%02x", mac[3], mac[4], mac[5]);
-  // Pair code: 6 chars from the MAC (FNV-1a), stable across reboots, no 0/O/1/I.
-  static const char kAlphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  uint32_t h = 2166136261u;
-  for (int i = 0; i < 6; i++) {
-    h ^= mac[i];
-    h *= 16777619u;
-  }
-  for (int i = 0; i < 6; i++) {
-    g_pairCode[i] = kAlphabet[h & 31];
-    h >>= 5;
-  }
-  g_pairCode[6] = 0;
 }
 
 void sendOrHold(const char* button, uint32_t now) {
@@ -182,8 +169,8 @@ void serialCommands(uint32_t now) {
         break;
       }
       case 'i':
-        Serial.printf("[info] fw %s id %s mac %s pair %s state %s wifi %d rssi %d ws %d mic %d imu %d heap %u\n",
-                      FW_VERSION, g_deviceId, g_mac, g_pairCode, appStateName(g_state), WiFi.status() == WL_CONNECTED,
+        Serial.printf("[info] fw %s id %s mac %s state %s wifi %d rssi %d ws %d mic %d imu %d heap %u\n",
+                      FW_VERSION, g_deviceId, g_mac, appStateName(g_state), WiFi.status() == WL_CONNECTED,
                       (int)WiFi.RSSI(), link_connected(), audio_ok(), slap_imuOk(), (unsigned)ESP.getFreeHeap());
         Serial.printf("[info] ssid '%s' wl_status %d ip %s gw %s mask %s server %s:%d\n", WIFI_SSID, (int)WiFi.status(),
                       WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str(),
@@ -256,13 +243,12 @@ void setup() {
   led_begin();
   button_begin();
   makeIdentity();
-  Serial.printf("[boot] id %s mac %s pair code %s\n", g_deviceId, g_mac, g_pairCode);
+  Serial.printf("[boot] id %s mac %s\n", g_deviceId, g_mac);
 
   display_begin();
   DisplayModel boot{};
   boot.state = AppState::BOOTING;
   boot.micOk = true;
-  boot.pairCode = g_pairCode;
   boot.ssid = WIFI_SSID;
   boot.host = SERVER_HOST;
   display_update(millis() + 1000, boot);   // +1 s: bypass the 5 Hz limiter for this first draw
@@ -312,7 +298,7 @@ void loop() {
     Serial.printf("[wifi] up %s gw %s mask %s rssi %d\n", WiFi.localIP().toString().c_str(),
                   WiFi.gatewayIP().toString().c_str(), WiFi.subnetMask().toString().c_str(), (int)WiFi.RSSI());
     if (!g_linkBegun) {
-      link_begin(g_deviceId, g_pairCode, g_mac);
+      link_begin(g_deviceId, g_mac);
       g_linkBegun = true;
     }
     setState(link_connected() ? (g_waitingState ? AppState::CONNECTING : g_lastServerState) : AppState::CONNECTING);
@@ -354,7 +340,6 @@ void loop() {
   m.wsUp = link_connected();
   m.micOk = audio_ok();
   m.imuOk = slap_imuOk();
-  m.pairCode = g_pairCode;
   m.classCode = g_classCode;
   m.message = g_message;
   m.ssid = WIFI_SSID;

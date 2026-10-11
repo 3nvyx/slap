@@ -22,7 +22,7 @@ These pins match `firmware/wokwi/diagram.json` (OLED 8/9, LED 2, button 0), so t
 |---|---|---|
 | Asleep | Any IMU motion (a shake or one slap), or a REC press | Wakes, joins Wi-Fi and connects. A wake alone is never a slap. |
 | Asleep | Double slap (the wake plus exactly one more hit within `SLAP_WAKE_WINDOW_MS` of boot, then a still case) | Wakes; `slap` is held and sent once the link is up (within `SLAP_PENDING_TTL_MS`), which starts recording |
-| Idle (or unpaired/connecting) | Double slap (IMU or mic) or REC press | `slap` / `boot` sent, which starts recording |
+| Idle (or connecting) | Double slap (IMU or mic) or REC press | `slap` / `boot` sent, which starts recording |
 | Idle | Hold REC for 2 s | Deep sleep |
 | Recording | Double slap (IMU only; mic detection is off while recording) or REC press | `slap` / `boot` sent, which stops recording |
 | Recording | Hold REC for 2 s | `boot` sent to stop; waits up to 3 s for the server's non-recording `state`, then deep sleep |
@@ -53,7 +53,7 @@ PlatformIO is pinned to the pioarduino 55.03.35 release (Arduino-ESP32 3.3.5, wh
 ~/.local/bin/pio run -e wokwi        # simulator build (SSD1306 + synthetic audio)
 ```
 
-Serial commands (type one letter in the monitor): `i` info (id, pair code, state, heap), `b` fake REC press, `s` fake slap, `z` deep sleep now.
+Serial commands (type one letter in the monitor): `i` info (id, state, heap), `b` fake REC press, `s` fake slap, `z` deep sleep now.
 
 ### Build result (8 Oct 2026, fw 0.2.0, env esp32s3)
 
@@ -65,9 +65,9 @@ Serial commands (type one letter in the monitor): `i` info (id, pair code, state
 
 - **Audio task** (core 1, priority 10, static stack). Each pass it reads 10 ms (160 × 32-bit slots) from `ESP_I2S` and keeps bits 31..8, the 24-bit sample. A DC blocker runs at about 20 Hz, then the block is scaled to int16 with clipping. With `AUDIO_AGC 1` (the default) the gain follows the room: see "Automatic gain" below. With `AUDIO_AGC 0` it is fixed at `(x24 × AUDIO_GAIN_Q8) >> AUDIO_SHIFT`. The task feeds each block's RMS at the fixed gain to the mic slap detector, so slap thresholds do not move with the automatic gain, and assembles 1,600 samples into a 3,200-byte frame. While recording, it pushes the frame into a static FreeRTOS queue of 8 frames. If the queue is full it drops the oldest frame, so latency stays under 800 ms. No heap is used after init.
 - **Network task** (Arduino `loop()`). Runs `ws.loop()` and drains up to 4 frames per pass with `sendBIN(..., headerToPayload=true)`, which needs no library malloc and does one TCP write. It sends `level` at 2 Hz and handles `state`/`ping` (answered with `pong` echoing `t`) and binary 1,024-byte OLED frames. The heartbeat is `enableHeartbeat(10000, 3000, 2)`. Reconnect starts at 2 s and doubles up to 30 s. The audio task has higher priority, so a blocking TCP connect never starves the mic.
-- **States**: BOOTING → WIFI → CONNECTING → the server's `state` (UNPAIRED / IDLE / RECORDING / ERROR). If no `state` arrives within 5 s of `hello`, the device assumes IDLE. A link drop goes back to CONNECTING, a Wi-Fi drop back to WIFI.
-- **hello**: `{"type":"hello","deviceId","fw","pairCode","mac"}`. The pair code is 6 characters derived from the MAC (no 0/O/1/I) and is shown on the UNPAIRED screen. The server should store it from `hello` (the contract field is `pairCode?`).
-- **OLED**: if a server bitmap arrived within the last `OLED_SERVER_FRAME_TTL_MS` (5 s), it is drawn with `drawXBM`. The server must resend at least that often, or the TTL can be set to 0 to keep the last frame while connected. Otherwise a local screen is drawn: the big state word, Wi-Fi bars and a WS box. Below them it shows the pair code (UNPAIRED); the active course from `state.classCode` plus "slap to start" (IDLE); or REC mm:ss with a level bar, with the course code in the status bar (RECORDING). When the device is paired but `state.classCode` is null or absent, IDLE shows "Pick a course in the app". Redraws are limited to 5 Hz.
+- **States**: BOOTING → WIFI → CONNECTING → the server's `state` (IDLE / RECORDING / ERROR). If no `state` arrives within 5 s of `hello`, the device assumes IDLE. A link drop goes back to CONNECTING, a Wi-Fi drop back to WIFI.
+- **hello**: `{"type":"hello","deviceId","fw","mac"}`. There is no pairing: once the server has the hello the device is online, listed in the web app under its `deviceId` (`slap-` plus the last three MAC bytes unless `DEVICE_ID` is set), and idle. The server keeps one device per `DEVICE_KEY`, so two boards need two keys.
+- **OLED**: if a server bitmap arrived within the last `OLED_SERVER_FRAME_TTL_MS` (5 s), it is drawn with `drawXBM`. The server must resend at least that often, or the TTL can be set to 0 to keep the last frame while connected. Otherwise a local screen is drawn: the big state word, Wi-Fi bars and a WS box. Below them it shows the active course from `state.classCode` plus "slap to start" (IDLE); or REC mm:ss with a level bar, with the course code in the status bar (RECORDING). When `state.classCode` is null or absent, IDLE shows "Pick a course in the app". Redraws are limited to 5 Hz.
 - **Deep sleep**: entered after `DEEP_SLEEP_IDLE_MIN` (20) minutes without recording, by holding REC for 2 s, or with `z`. Before sleeping, the IMU is switched to its "shake" profile: `MOT_THR = IMU_WAKE_THR` (100, below the slap threshold) with a latched INT. The device wakes on REC or the IMU INT. Both are active-low, so one `esp_sleep_enable_ext1_wakeup_io(mask, ESP_EXT1_WAKEUP_ANY_LOW)` call covers them. A wake is a cold boot: the IMU is reconfigured first, which restores `IMU_MOT_THR`. The wake becomes a candidate first hit, and the IMU waits for `IMU_QUIET_MS` of quiet before counting a new hit, so a shake still going on during boot does not count.
 - **Double slap vs shake**: a double slap is exactly two hits, at least `SLAP_MIN_GAP_MS` and at most `SLAP_WINDOW_MS` apart (`SLAP_WAKE_WINDOW_MS` after a wake). The case must then be still for `SLAP_SETTLE_MS`: no third hit, and no IMU pulses after the first half of the settle time. Anything else is a shake and is dropped. The event therefore fires about 300 ms after the second slap.
 
@@ -121,7 +121,7 @@ Start with `include/config.h` set to your hotspot. Watch the serial monitor thro
 3. **OLED**: the boot screen shows "SLAP", then "WI-FI" / "LINK". If it stays blank, the module is probably not ACKing (see `hardware/wiring.md`): bridge pad D2 on the module. The ESP32 I2C peripheral stops a write when the address is not acknowledged.
 4. **Mic levels**: set `MIC_PLOT 1`, flash, and open the Arduino IDE Serial Plotter (115200). Each 100 ms line prints `rms peak clip base thr gain` (`gain` is the gain in use, in dB above unity). Speak at lecture distance (2–3 m). Peaks should reach a few thousand and `clip` should stay at 0 when you speak loudly up close. With `AUDIO_AGC 1`, `gain` should fall when you speak up close and climb back when you stop. With `AUDIO_AGC 0`: too quiet, lower `AUDIO_SHIFT` (each step is +6 dB); clipping, raise it. If `rms` is flat near 0, check SD on GPIO 6 and L/R to GND, then try `-DAUDIO_I2S_SLOT_RIGHT=1`.
 5. **IMU**: the boot log should show `MPU6050 WHO_AM_I 0x68` and `motion INT on GPIO 7`. With `IMU_PLOT 1`, the plot shows `g` ≈ 1.00 at rest, and it moves when you tap the case. A slap prints `[slap] hit imu ...`.
-6. **Wi-Fi + server**: the log shows `[wifi] up <ip>`, then `[ws] connected`, and the server receives `hello`. The OLED shows the pair code (UNPAIRED) or READY.
+6. **Wi-Fi + server**: the log shows `[wifi] up <ip>`, then `[ws] connected`, and the server receives `hello`. The OLED shows READY, and the device appears in the web app's Devices panel.
 7. **Shake to turn on**: send `z` (or hold REC for 2 s) and wait 5 s.
    - Pick the device up and shake it. The log shows `wake: IMU (slap)` and `[slap] hit wake ... (first)`. Then either nothing, or `third -> shake, ignored` / `motion continues ... -> shake`, and never `SLAP`. The device connects and shows READY; nothing is recorded.
    - Put it to sleep again and slap the case once: it wakes, and no slap is sent.
@@ -187,4 +187,4 @@ Every detected hit is logged as `[slap] hit mic|imu|wake t=...`, followed by `(f
 - **REC wake**: GPIO 0 is a strapping pin, so confirm that a wake by REC boots normally and does not enter download mode.
 - **OLED without ACK**: see step 3.
 - **Throughput**: 32 kB/s up on a phone hotspot. During a recording, `[stat]` lines every 10 s show `sent`, `dropped` and `queued`. `dropped` should stay at 0.
-- **Server side**: the server must accept `pairCode` in `hello`, send a `state` after `hello` with `classCode` (or `null` when no course is active), toggle on both `boot` and `slap`, and refresh OLED frames within the 5 s TTL.
+- **Server side**: the server must send a `state` after `hello` with `classCode` (or `null` when no course is active), toggle on both `boot` and `slap`, and refresh OLED frames within the 5 s TTL.

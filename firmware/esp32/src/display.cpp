@@ -125,15 +125,6 @@ void drawLocal(uint32_t nowMs, const DisplayModel& m) {
       }
       break;
 
-    case AppState::UNPAIRED:
-      u8g2.setFont(FONT_SMALL);
-      centered("pair this device", 23);
-      u8g2.setFont(FONT_BIG);
-      centered(m.pairCode, 46);
-      u8g2.setFont(FONT_SMALL);
-      centered("enter code in web app", 62);
-      break;
-
     case AppState::IDLE:
       u8g2.setFont(FONT_BIG);
       centered("READY", 36);
@@ -145,7 +136,7 @@ void drawLocal(uint32_t nowMs, const DisplayModel& m) {
         centered(buf, 50);
         centered("slap to start", 62);
       } else {
-        // Paired but no active course (state.classCode null/absent): recording has nowhere to go.
+        // No active course (state.classCode null/absent): recording has nowhere to go.
         u8g2.setFont(FONT_TINY);
         centered("Pick a course in the app", 50);
         u8g2.setFont(FONT_SMALL);
