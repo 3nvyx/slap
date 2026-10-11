@@ -66,6 +66,18 @@
 #ifndef AUDIO_DC_BLOCK
 #define AUDIO_DC_BLOCK 1
 #endif
+#ifndef AUDIO_AGC
+#define AUDIO_AGC 1
+#endif
+#ifndef AUDIO_AGC_TARGET_RMS
+#define AUDIO_AGC_TARGET_RMS 3000
+#endif
+#ifndef AUDIO_AGC_MIN_GAIN_DB
+#define AUDIO_AGC_MIN_GAIN_DB (-6)
+#endif
+#ifndef AUDIO_AGC_MAX_GAIN_DB
+#define AUDIO_AGC_MAX_GAIN_DB 36
+#endif
 #ifndef AUDIO_QUEUE_FRAMES
 #define AUDIO_QUEUE_FRAMES 8
 #endif
@@ -163,6 +175,9 @@
 static_assert(AUDIO_SHIFT >= 8 && AUDIO_SHIFT <= 16, "AUDIO_SHIFT must be 8..16 (16 = unity, 8 = +48 dB)");
 static_assert(AUDIO_GAIN_Q8 > 0 && AUDIO_GAIN_Q8 <= 1024, "AUDIO_GAIN_Q8 must be 1..1024 (x4 max, keeps int32 math safe)");
 static_assert(AUDIO_QUEUE_FRAMES >= 2, "AUDIO_QUEUE_FRAMES must be >= 2");
+static_assert(AUDIO_AGC_TARGET_RMS >= 100 && AUDIO_AGC_TARGET_RMS <= 10000, "AUDIO_AGC_TARGET_RMS must be 100..10000 (16-bit units)");
+static_assert(AUDIO_AGC_MIN_GAIN_DB >= -20 && AUDIO_AGC_MIN_GAIN_DB < AUDIO_AGC_MAX_GAIN_DB && AUDIO_AGC_MAX_GAIN_DB <= 48,
+              "AGC gain limits must satisfy -20 <= MIN < MAX <= 48 dB");
 static_assert(AUDIO_FRAME_SAMPLES % AUDIO_BLOCK_SAMPLES == 0, "frame must be a whole number of blocks");
 static_assert(SLAP_MIN_GAP_MS < SLAP_WINDOW_MS, "SLAP_MIN_GAP_MS must be below SLAP_WINDOW_MS");
 static_assert(IMU_MOT_THR >= 1 && IMU_MOT_THR <= 255, "IMU_MOT_THR is an 8-bit register");

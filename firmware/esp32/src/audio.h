@@ -20,5 +20,7 @@ float audio_takeLevel();
 // Last frame RMS, 0..1 (for the OLED meter; does not reset).
 float audio_lastLevel();
 
+int audio_gainDb();                 // gain applied to the last block, in dB above unity (moves with the AGC)
+
 uint32_t audio_droppedFrames();     // frames discarded because the queue was full
 uint32_t audio_readErrors();        // short or failed I2S reads

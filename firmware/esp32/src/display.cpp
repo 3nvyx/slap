@@ -206,7 +206,8 @@ void display_update(uint32_t nowMs, const DisplayModel& m) {
   if (nowMs - g_lastDraw < 1000u / OLED_MAX_FPS) return;
 
 #if OLED_SERVER_FRAME_TTL_MS > 0
-  bool fresh = g_haveFrame && m.wsUp && nowMs - g_frameAt < (uint32_t)OLED_SERVER_FRAME_TTL_MS;
+  // Signed age: a frame stamped in the network callback can be a few ms newer than this pass's nowMs.
+  bool fresh = g_haveFrame && m.wsUp && (int32_t)(nowMs - g_frameAt) < (int32_t)OLED_SERVER_FRAME_TTL_MS;
 #else
   bool fresh = g_haveFrame && m.wsUp;   // TTL 0: keep the last server frame while connected
 #endif

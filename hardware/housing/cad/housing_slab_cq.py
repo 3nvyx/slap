@@ -1,4 +1,4 @@
-"""SLAP desk housing v2.3 "slab" rebuilt in CadQuery for a Fusion-openable STEP.
+"""SLAP desk housing v3.0 "deep slab" rebuilt in CadQuery for a Fusion-openable STEP.
 
 Mirror of ../housing_slab.scad (the source of truth). Parameter names match the
 OpenSCAD file one to one; change a value there first, then copy it here.
@@ -46,7 +46,7 @@ tol_text_stroke = 0.5
 tol_text_depth = 0.4
 
 # Slab
-L_min = 104
+L_min = 116
 W_min = 50
 corner_r = 3
 top_chamfer = 0.8
@@ -66,8 +66,12 @@ skirt_strip = 1.2
 pry_w = 3
 pry_d = 1
 
+# Spacious margins (v3)
+zone_gap = 3.0
+dev_clear = 0.4
+
 # Height budget
-floor_clear = 0.5
+floor_clear = 2.5
 wire_bend = 2.0
 jumper_h = 14.0
 jumper_w = 2.54
@@ -76,8 +80,8 @@ header_spacer = 2.5
 dev_pin_below = 9.0
 dev_pcb_t = 1.6
 dev_pin_above = 2.5
-top_clear = 0.5
-oled_back_keep = 1.0
+top_clear = 1.5
+oled_back_keep = 2.0
 
 # OLED 2.42" SSD1309
 oled_glass_w = 62.81
@@ -121,7 +125,7 @@ led_skin = 0.4
 led_d = 5.0
 led_top_gap = 1.0
 led_boss_depth = 6.0
-led_dy = 1.1
+led_dy = 2.2
 
 # Record button
 btn_cap = 12.0
@@ -131,7 +135,7 @@ btn_stroke = 1.0
 btn_flange = 13.6
 btn_flange_t = 0.8
 btn_shaft = 6.0
-btn_nose = 3.5
+btn_nose = 5.0
 btn_collar_clear = 0.3
 
 # Hold-down posts
@@ -158,32 +162,61 @@ dev_btn_h = 2.0
 pad_u0, pad_u1 = 4.5, 20.9
 pad_a_v = (9, 17)
 pad_b_v = (44, 56)
-tab_v, tab_w, tab_t, tab_lip = 3.5, 4.0, 1.6, 0.8  # snap tabs (IMU only since v2.3)
 # v2.3 USB-end cradle fused to the end wall (replaces the board snap tabs)
 cradle_v = 6.3
 cradle_edge = 1.2
 cradle_drop = 1.2
 cheek_t = 2.0
 cheek_up = 2.0
+# v3 antenna gate: shelf + two pillars + a bridged bar
+catch_engage = 3.0
+catch_back = 2.5
+catch_w = 10
+catch_dn = 0.4
+catch_up = 1.0
+catch_jaw_t = 1.6
+gate_clear = 0.8
+gate_pillar = 3.2
 
-# IMU (GY-87 style, all ASSUMED)
-imu_enable = True
-imu_w = 22.0
-imu_d = 17.0
+# Arduino UNO R4 WiFi (datasheet ABX00087; u from the USB edge, v from the DC-jack-side edge)
+uno_len = 68.58
+uno_w = 53.34
+uno_pcb_t = 1.6
+uno_holes = [(13.97, 2.54), (15.24, 50.8), (66.04, 7.62), (66.04, 35.56)]
+uno_hole_d = 3.2
+uno_peg_d = 2.6
+uno_peg_h = 3.0
+uno_pad_d = 5.0
+uno_standoff = 5.0
+uno_usb_gap = 3.5
+uno_back_gap = 5.0
+uno_usb_v = 37.86
+uno_usb_h = 3.0
+uno_hdr_h = 8.5
+uno_hdr_dig = (17.29, 65.02, 50.8)
+uno_hdr_ana = (26.42, 65.02, 2.54)
+uno_jack = (-2.2, 12.0, 4.1, 13.2, 11.0)
+uno_post_u = 35
+uno_post_d = 5.0
+uno_post_gap = 0.5
+
+# IMU: SunFounder 10-axis, Qwiic (size ESTIMATED from the product render)
 imu_pcb_t = 1.6
-imu_spacer = 2.5
-imu_holes = [(-8.5, 5.5), (8.5, 5.5)]
-imu_hole_d = 3.0
-imu_cy = 8.0
-imu_strip = 3.4
-imu_fence_h = 1.0
-imu_peg_h = 1.4
-catch_engage, catch_back, catch_w, catch_jaw_t = 2.0, 2.0, 10, 1.5
+imu_pad_w = 30.0
+imu_pad_d = 34.0
+imu_pad_h = 3.0
+imu_wall_gap = 3.5
+imu_plug_room = 6.0
+imu_pegs = False       # off until the hole spacing is measured
+imu_hole_dx = 14.0
+imu_hole_dy = 21.0
+imu_peg_d = 2.6
+imu_peg_h = 2.6
 
 # USB-C slot
 usb_slot_mode = "uart"  # uart | both | two
-usb_plug_w = 12.0
-usb_plug_h = 6.5
+usb_plug_w = 13.0
+usb_plug_h = 7.5
 
 # Labels
 label_font = "Helvetica Neue"   # OpenSCAD: "Helvetica Neue:style=Bold"
@@ -201,8 +234,8 @@ OPENSCAD_TEXT_EM = 1 / 0.72
 nfc_side = "bottom"  # bottom | none
 nfc_size = 30
 nfc_depth = 0.4
-nfc_cx = -28.5
-nfc_cy = 0
+nfc_dx = 0
+nfc_dy = 0
 foot_d = 8
 foot_depth = 0.6
 foot_inset = 5.5
@@ -232,10 +265,12 @@ grille_span_x = (grille_cols - 1) * grille_pitch + grille_hole_d
 grille_span_y = (grille_rows - 1) * grille_pitch + grille_hole_d
 
 oled_left_k = wall + tol_fit + skirt_t + tol_snap + hook_t + 0.3 + oled_fence_t
+oled_front_k = wall + tol_fit + skirt_t + 0.2
 k_boot = wall + dev_usb_gap + dev_usb_overhang + dev_boot_v
 L_req = k_boot - mic_dx + mic_ring_r + oled_left_k + oled_pocket_w + oled_fence_t + 0.3
-W_req = oled_pocket_h + 2 * (0.2 + skirt_t + tol_fit + wall)
-L = max(L_min, math.ceil(L_req * 2) / 2)
+L_uno = 2 * wall + uno_usb_gap + uno_len + imu_plug_room + imu_pad_w + imu_wall_gap
+W_req = oled_front_k + oled_pocket_h + oled_fence_t + zone_gap + uno_w + uno_back_gap + wall
+L = max(L_min, math.ceil(max(L_req, L_uno) * 2) / 2)
 W = max(W_min, math.ceil(W_req * 2) / 2)
 
 jumper_bot = floor_t + floor_clear + wire_bend
@@ -247,7 +282,10 @@ collar_bot = pcb_top + dev_pin_above + btn_collar_clear
 collar_seat = collar_bot + btn_flange_t + (btn_flange - btn_bore_tmp) / 2
 H_btn = collar_seat + btn_stroke + plate_t
 H_usb = pcb_top + dev_usb_h + tol_fit + plate_t + 1
-H = max(H_oled, H_btn, H_usb)
+uno_z0 = floor_t + uno_standoff
+uno_top = uno_z0 + uno_pcb_t
+H_uno = uno_top + uno_jack[4] + 1 + plate_t
+H = max(H_oled, H_btn, H_usb, H_uno)
 tray_h = H - plate_t
 
 in_hx, in_hy = L / 2 - wall, W / 2 - wall
@@ -264,12 +302,13 @@ z_wt = z_tip + tol_snap
 z_root = z_lip - d_ret - hook_len
 
 oled_cx = -L / 2 + oled_left_k + oled_pocket_w / 2
-oled_cy = 0
+oled_cy = -W / 2 + oled_front_k + oled_pocket_h / 2
 oled_fence_end = oled_cx + oled_pocket_w / 2 + oled_fence_t
 
 x_usb = L / 2 - wall - dev_usb_gap - dev_usb_overhang
 mic_reach = 2.54 + jumper_w / 2
-dev_y_f = grille_cy - mic_reach - 0.2 - dev_w
+gy = oled_cy + grille_cy
+dev_y_f = gy - mic_reach - 0.2 - dev_w
 
 
 def dev_xy(u, v):
@@ -282,10 +321,33 @@ uart_y = dev_y_f + dev_usb_uart_u
 otg_y = dev_y_f + dev_usb_otg_u
 usb_z = pcb_top + dev_usb_h / 2
 gx = boot_xy[0]
-gy = grille_cy
 mic_xy = (gx + mic_dx, gy)
 led_xy = (sk_ix - 0.2 - led_boss_r, gy + led_dy)
 posts = [(x_usb - 3.5, uart_y), (x_usb - 3.5, otg_y)]
+x_tip = x_usb - dev_pcb_len - dev_ant_overhang
+dev_cy = dev_y_f + dev_w / 2
+gate_w = dev_mod_w + 2 * gate_clear
+gate_top = pcb_top + dev_mod_pcb_t + catch_up + catch_jaw_t
+
+# UNO R4 WiFi: USB end at +X, DC-jack side toward the back wall
+uno_x_usb = in_hx - uno_usb_gap
+uno_y_b = in_hy - uno_back_gap
+
+
+def uno_xy(u, v):
+    return (uno_x_usb - u, uno_y_b - v)
+
+
+uno_y_f = uno_y_b - uno_w
+uno_usb_y = uno_y_b - uno_usb_v
+uno_usb_z = uno_top + uno_usb_h / 2
+uno_post_z = uno_top + uno_hdr_h + uno_post_gap
+uno_posts = [uno_xy(uno_post_u, uno_hdr_dig[2]), uno_xy(uno_post_u, uno_hdr_ana[2])]
+
+# IMU pad: back-left bay
+imu_cx = -in_hx + imu_wall_gap + imu_pad_w / 2
+imu_cy = uno_y_f + imu_pad_d / 2
+imu_peg_pos = [(sx * imu_hole_dx / 2, sy * imu_hole_dy / 2) for sx in (-1, 1) for sy in (-1, 1)]
 
 btn_len = H + btn_proud - btn_top
 btn_cone_h = (btn_flange - btn_cap) / 2
@@ -293,16 +355,12 @@ btn_flange_z = collar_bot + btn_flange_t + btn_cone_h - btn_top
 btn_nose_l = collar_bot - btn_top
 btn_guide_depth = H - (collar_seat + btn_stroke)
 
-hx1 = oled_fence_end + 0.3 + hook_w / 2
+hx1 = oled_fence_end + 0.6 + hook_w / 2
 hx2 = sk_ix - 0.3 - hook_w / 2
-hooks = [("left", 0), ("back", hx1), ("back", hx2), ("front", hx1), ("front", hx2)]
-
-imu_z0 = floor_t + floor_clear + wire_bend + jumper_h + imu_spacer
-imu_top = imu_z0 + imu_pcb_t
-imu_x_l = -in_hx + 1.0
-imu_x_r = x_usb - dev_pcb_len - dev_ant_overhang - 0.5
-imu_cx = (imu_x_l + imu_x_r) / 2
-imu_y0 = imu_cy - imu_d / 2
+hy_r = (led_xy[1] + led_boss_r + uno_y_f) / 2
+hooks = [("left", oled_cy), ("left", uno_y_f + uno_w / 2), ("back", -L / 4), ("back", L / 4),
+         ("front", hx1), ("front", hx2), ("right", hy_r)]
+prys = [("back", 0), ("left", (oled_cy + uno_y_f + uno_w / 2) / 2)]
 
 peg_pos = [(sx * (oled_pcb_w / 2 - oled_hole_inset_x), sy * (oled_pcb_h / 2 - oled_hole_inset_y))
            for sx in (-1, 1) for sy in (-1, 1)]
@@ -446,13 +504,24 @@ def catch_window():
     return box(-(hook_w + 0.6) / 2, tol_snap - 0.05, z_wb, hook_w + 0.6, skirt_t + 0.1, z_wt - z_wb)
 
 
-def snap_tab_3d(z_pcb_top):
-    """SCAD snap_tab_2d() extruded tab_w along X: PCB edge at y = 0, PCB toward +y, z = 0 at the floor top."""
-    g = tol_fit
-    zc = z_pcb_top - floor_t + 0.01 + tol_fit
-    zt = zc + 0.6 + tab_lip + g
-    return yz_prism([(-g - tab_t, 0), (-g, 0), (-g, zc), (tab_lip, zc), (tab_lip, zc + 0.6),
-                     (-g, zt), (-g - tab_t, zt)], tab_w)
+def pcb_peg(d, h, x, y, z):
+    """SCAD pcb_peg(): straight shaft with a 0.6 mm lead-in cone, base at z."""
+    return revolve_z([(0, 0), (d / 2, 0), (d / 2, h - 0.6), (d / 2 - 0.4, h), (0, h)], x, y, z)
+
+
+def slot_solid(x0, length, yc, zc, wy, hz):
+    """SCAD slot2d() in (Y, Z), extruded along +X from x0."""
+    return cq.Workplane("YZ", origin=(x0, 0, 0)).center(yc, zc).slot2D(wy, hz).extrude(length).val()
+
+
+def pry_slot(side, along):
+    if side == "back":
+        return box(along - pry_w / 2, in_hy - 0.1, tray_h - pry_d, pry_w, wall + 1, pry_d + 1)
+    if side == "front":
+        return box(along - pry_w / 2, -in_hy - wall - 0.9, tray_h - pry_d, pry_w, wall + 1, pry_d + 1)
+    if side == "right":
+        return box(in_hx - 0.1, along - pry_w / 2, tray_h - pry_d, wall + 1, pry_w, pry_d + 1)
+    return box(-in_hx - wall - 0.9, along - pry_w / 2, tray_h - pry_d, wall + 1, pry_w, pry_d + 1)
 
 
 def oled_peg(x, y, z_seat):
@@ -471,8 +540,7 @@ def oled_peg(x, y, z_seat):
 def usb_slot_cutter(x0, length):
     """SCAD usb_slot_2d() in (Y, Z), extruded along +X from x0."""
     def slot(yc, wy, hz):
-        return (cq.Workplane("YZ", origin=(x0, 0, 0)).center(yc, usb_z)
-                .slot2D(wy, hz).extrude(length).val())
+        return slot_solid(x0, length, yc, usb_z, wy, hz)
 
     if usb_slot_mode == "uart":
         return [slot(uart_y, usb_cw, usb_ch)]
@@ -532,6 +600,9 @@ def top():
     z_post = pcb_top + dev_usb_h + tol_fit
     for p in posts:
         adds.append(cyl(post_d, tray_h - z_post + 0.01, p[0], p[1], z_post))
+    # hold-down posts onto the UNO's two header rows
+    for p in uno_posts:
+        adds.append(cyl(uno_post_d, tray_h - uno_post_z + 0.01, p[0], p[1], uno_post_z))
     body = fuse(plate, *adds)
 
     cuts = []
@@ -581,42 +652,52 @@ def top():
 # Tray
 # =====================================================================
 def imu_mount():
-    """SCAD imu_mount() at the origin (PCB centre), z = 0 at the floor top."""
-    y0 = -imu_d / 2
-    ph = imu_z0 - floor_t
-    parts = [
-        box(-imu_w / 2 + 0.5, y0 + imu_strip, -0.01, imu_w - 1, imu_d - imu_strip + tol_fit + tab_t, ph + 0.01),
-        box(-imu_w / 2 + 0.5, imu_d / 2 + tol_fit, ph - 0.01, imu_w - 1, tab_t, imu_pcb_t + imu_fence_h + 0.01),
-    ]
-    dp = imu_hole_d - 2 * tol_fit
-    for hx, hy in imu_holes:
-        parts.append(cyl(dp, imu_pcb_t + 0.01, hx, hy, ph - 0.01))
-        h_tip = imu_peg_h - imu_pcb_t + 0.01
-        if h_tip > 0:  # negative in the SCAD defaults (imu_peg_h < imu_pcb_t): OpenSCAD renders nothing
-            parts.append(cq.Solid.makeCone(dp / 2, dp / 2 - 0.3, h_tip, V(hx, hy, ph - 0.01 + imu_pcb_t)))
-    for sx in (-1, 1):
-        t = snap_tab_3d(imu_top).rotate(V(0, 0, 0), V(0, 0, 1), 90 if sx > 0 else -90)
-        parts.append(t.moved(cq.Location(V(sx * imu_w / 2, (y0 + imu_strip + imu_d / 2) / 2, 0))))
+    """SCAD imu_mount() placed in the tray: flat pad, plus four pegs once imu_pegs is on."""
+    parts = [cbox(imu_cx, imu_cy, floor_t - 0.01, imu_pad_w, imu_pad_d, imu_pad_h + 0.01)]
+    if imu_pegs:
+        parts += [pcb_peg(imu_peg_d, imu_peg_h, imu_cx + qx, imu_cy + qy, floor_t + imu_pad_h - 0.01)
+                  for qx, qy in imu_peg_pos]
+    return parts
+
+
+def uno_mount():
+    """SCAD uno_mount(): four standoffs at the mounting holes, each with a peg."""
+    parts = []
+    for u, v in uno_holes:
+        x, y = uno_xy(u, v)
+        parts.append(cyl(uno_pad_d, uno_standoff + 0.01, x, y, floor_t - 0.01))
+        parts.append(pcb_peg(uno_peg_d, uno_peg_h, x, y, floor_t - 0.01 + uno_standoff))
+    return parts
+
+
+def antenna_gate():
+    """SCAD antenna_gate(): centre shelf, two pillars and a bar bridged across them."""
+    x0, lx = x_tip - catch_back, catch_engage + catch_back
+    parts = [box(x0, dev_cy - catch_w / 2, floor_t - 0.01, lx, catch_w, pcb_top - catch_dn - floor_t + 0.01)]
+    for sy in (-1, 1):
+        y0 = dev_cy + (gate_w / 2 if sy > 0 else -gate_w / 2 - gate_pillar)
+        parts.append(box(x0, y0, floor_t - 0.01, lx, gate_pillar, gate_top - floor_t + 0.01))
+    parts.append(box(x0, dev_cy - gate_w / 2 - gate_pillar, gate_top - catch_jaw_t,
+                     lx, gate_w + 2 * gate_pillar, catch_jaw_t))
     return parts
 
 
 def usb_cradle():
     """SCAD usb_cradle(): ledge + cheeks at the USB end, run forward into the end wall."""
     x0, x1 = x_usb - cradle_v, in_hx + 0.5
-    y0, y1 = dev_y_f - tol_fit - cheek_t, dev_y_f + dev_w + tol_fit + cheek_t
+    y0, y1 = dev_y_f - dev_clear - cheek_t, dev_y_f + dev_w + dev_clear + cheek_t
     block = box(x0, y0, floor_t - 0.01, x1 - x0, y1 - y0, pcb_top + cheek_up - floor_t + 0.01)
     return cut(block,
                # PCB slot between the cheeks, open upward
-               box(x0 - 1, dev_y_f - tol_fit, pcb_z0, x1 - x0 + 2, dev_w + 2 * tol_fit, 50),
+               box(x0 - 1, dev_y_f - dev_clear, pcb_z0, x1 - x0 + 2, dev_w + 2 * dev_clear, 50),
                # ledge drop under the middle of the strip, edges stay full height
                box(x0 - 1, dev_y_f + cradle_edge, pcb_z0 - cradle_drop,
                    x1 - x0 + 2, dev_w - 2 * cradle_edge, cradle_drop + 1),
                # end wall's inner face clear above the PCB
-               box(x_usb, dev_y_f - tol_fit, pcb_z0, x1 - x_usb + 1, dev_w + 2 * tol_fit, 50))
+               box(x_usb, dev_y_f - dev_clear, pcb_z0, x1 - x_usb + 1, dev_w + 2 * dev_clear, 50))
 
 
 def tray():
-    x_tip = x_usb - dev_pcb_len - dev_ant_overhang
     shell = fuse(loft(rr_wire(L - 2 * tol_efoot, W - 2 * tol_efoot, corner_r - tol_efoot, 0),
                       rr_wire(L, W, corner_r, tol_efoot)),
                  rr_prism(L, W, corner_r, tol_efoot, tray_h - tol_efoot))
@@ -630,26 +711,22 @@ def tray():
     for px, py in oled_post_pos:
         adds.append(box(px - oled_post / 2, py - oled_post / 2, floor_t - 0.01, oled_post, oled_post,
                         H - oled_stack_t - oled_post_gap - floor_t + 0.01))
-    if imu_enable:
-        adds += [p.moved(cq.Location(V(imu_cx, imu_cy, floor_t))) for p in imu_mount()]
-    adds.append(box(x_tip - catch_back, dev_y_f + dev_w / 2 - catch_w / 2, floor_t - 0.01,
-                    catch_engage + catch_back, catch_w,
-                    pcb_top + dev_mod_pcb_t + 2 * tol_fit + catch_jaw_t - floor_t + 0.01))
+    adds += antenna_gate()
+    adds += uno_mount()
+    adds += imu_mount()
     body = fuse(shell, *adds)
 
-    cuts = [
-        box(x_tip - 0.5, dev_y_f + dev_w / 2 - catch_w / 2 - 1, pcb_top - tol_fit,
-            catch_engage + 1.5, catch_w + 2, dev_mod_pcb_t + 3 * tol_fit),       # antenna slot
-        box(gx - pry_w / 2, in_hy - 0.1, tray_h - pry_d, pry_w, wall + 1, pry_d + 1),  # pry slot
-    ]
     # USB-C slot, continued 1.5 mm inside the end wall so the overmold clears the cradle cheeks
-    cuts += usb_slot_cutter(x_usb - 1.5, L / 2 + 1 - (x_usb - 1.5))
+    cuts = usb_slot_cutter(x_usb - 1.5, L / 2 + 1 - (x_usb - 1.5))
+    # UNO USB-C slot in the same end wall
+    cuts.append(slot_solid(in_hx - 0.1, wall + 1.1, uno_usb_y, uno_usb_z, usb_cw, usb_ch))
+    cuts += [pry_slot(s, a) for s, a in prys]
     for sx in (-1, 1):
         for sy in (-1, 1):
             cuts.append(cyl(hole(foot_d), foot_depth + 1, sx * (L / 2 - foot_inset), sy * (W / 2 - foot_inset), -1))
     if nfc_side == "bottom":
         s = nfc_size + 2 * tol_fit
-        cuts.append(cbox(nfc_cx, nfc_cy, -1 + nfc_depth / 2 - (2 + nfc_depth) / 2, s, s, 2 + nfc_depth))
+        cuts.append(cbox(oled_cx + nfc_dx, oled_cy + nfc_dy, -1 + nfc_depth / 2 - (2 + nfc_depth) / 2, s, s, 2 + nfc_depth))
     return cut(body, *cuts)
 
 
@@ -839,7 +916,7 @@ def verify(parts):
 
 def main():
     parts = build()
-    print(f"SLAB v2.3 (CadQuery): outer L x W x H = {L} x {W} x {H:.2f} mm, tray_h {tray_h:.2f}")
+    print(f"SLAB v3.0 (CadQuery): outer L x W x H = {L} x {W} x {H:.2f} mm, tray_h {tray_h:.2f}")
     for name, s in parts.items():
         (x0, y0, z0), (x1, y1, z1) = tight_bbox(s)
         print(f"{name:9s} valid {s.isValid()}  solids {len(s.Solids())}  vol {s.Volume():10.2f} mm3  "

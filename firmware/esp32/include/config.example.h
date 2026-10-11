@@ -41,6 +41,13 @@
 #define AUDIO_GAIN_Q8  256
 // Remove the mic's DC offset with a one-pole high-pass (~20 Hz). 0 = off.
 #define AUDIO_DC_BLOCK 1
+// Automatic gain (1 = on): follows the room and scales it toward AUDIO_AGC_TARGET_RMS,
+// between the two dB limits (0 dB = unity, i.e. AUDIO_SHIFT 16). With it on, AUDIO_SHIFT
+// and AUDIO_GAIN_Q8 only set the gain at power-up and the scale of the slap thresholds.
+#define AUDIO_AGC             1
+#define AUDIO_AGC_TARGET_RMS  3000   // 16-bit units; speech peaks then sit near 12000
+#define AUDIO_AGC_MIN_GAIN_DB (-6)
+#define AUDIO_AGC_MAX_GAIN_DB 36
 // Audio frames buffered between the capture task and the socket (100 ms each).
 // When full, the OLDEST frame is dropped so latency stays bounded.
 #define AUDIO_QUEUE_FRAMES 8

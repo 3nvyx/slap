@@ -1,4 +1,4 @@
-# Measurements still needed (housing v2.3)
+# Measurements still needed (housing v3.0)
 
 Use calipers and give values to 0.1 mm. The SCAD parameter for each value is in brackets.
 
@@ -33,7 +33,7 @@ Use calipers and give values to 0.1 mm. The SCAD parameter for each value is in 
 - [ ] Is the sound port hole at the PCB centre? If not, give its offset: ____ (`mic_port_dx/dy`)
 
 ## Cable and LED
-- [ ] USB-C cable plug overmold width x height (`usb_plug_w/h`, assumed 12.5 x 7.0): ____
+- [ ] USB-C cable plug overmold width x height (`usb_plug_w/h`, assumed 13.0 x 7.5 since v3): ____
 - [ ] LED flange diameter (assumed 5.8): ____
 
 ## Added for the v2.1 slab
@@ -49,15 +49,32 @@ Use calipers and give values to 0.1 mm. The SCAD parameter for each value is in 
 - [ ] **ESP32 module:** how far the antenna tip overhangs the PCB (`dev_ant_overhang`, 6.36) and the module PCB thickness at the tip (0.8).
 - [ ] **ESP32 underside:** any parts on the bare centre strip where the pedestals sit (u 4.5–20.9, v 9–17 and 44–56)?
 - [ ] **5 mm LED:** body diameter and length (5.0 / 8.6).
-- [ ] **USB-C cable overmold** width x height (`usb_plug_w/h`, assumed 12.0 x 6.5).
+- [ ] **USB-C cable overmold** width x height (`usb_plug_w/h`, assumed 13.0 x 7.5 since v3).
 - [ ] **Rubber feet** diameter (8) and NFC sticker size (30 x 30).
 - [ ] **After printing the fit-test coupons:** note each result against the "What to change after the coupons" table in the README.
 
-## Added for v2.2: IMU (10-DOF, GY-87 style)
+## Added for v3.0: SunFounder 10-axis IMU (Qwiic) and Arduino UNO R4 WiFi
 
-- [ ] **IMU PCB** length x width x thickness (`imu_w`, `imu_d`, `imu_pcb_t`; assumed 22 x 17 x 1.6).
-- [ ] **Tallest part** on the top side (`imu_comp_h`, assumed 1.2). Are the 0.8 mm strips along the two short edges free of parts? The snap tabs sit there.
-- [ ] **Header:** number of pins (`imu_pins`, assumed 8), distance from the row centre to the PCB edge (`imu_pin_inset`, 1.27), spacer thickness (`imu_spacer`, 2.5).
-- [ ] **Pin protrusion below the PCB, including the spacer** (`imu_pin_below`, assumed 6.0). At least 6 mm must stick out past the spacer for a Dupont to grip; 6.0 total gives only 3.5.
-- [ ] **Mounting holes:** diameter (`imu_hole_d`, assumed 3.0) and centre positions from the PCB centre, +Y toward the edge opposite the header (`imu_holes`, assumed (±8.5, +5.5)). If there are none, delete the pegs (`imu_holes = []`).
-- [ ] **Underside:** any parts under the area the pedestal supports (everything except the 3.4 mm header strip)?
+The v2.2 IMU list (a GY-87 style board on jumper wires) is dropped: the IMU is the SunFounder 10-axis board on a Qwiic cable to the UNO.
+
+**Print `stl/slab_fit_imu.stl` and `stl/slab_fit_uno.stl` first (both are on the coupon plate).** If both boards drop onto their pegs, only the first two IMU lines and the cable line below are still needed.
+
+IMU (all four values are estimated from SunFounder's product render; no drawing is published):
+- [ ] **PCB size**, short side x long side (`imu_w`, `imu_d`; estimated 21 x 28): ____ x ____
+- [ ] **Corner hole spacing**, centre to centre, across the short side and along the long side (`imu_hole_dx`, `imu_hole_dy`; estimated 14 and 21): ____ / ____
+- [ ] **Hole diameter** (`imu_hole_d`, estimated 3.2): ____
+- [ ] **Tallest part** on top (`imu_comp_h`, assumed 3.0, the Qwiic sockets): ____
+- [ ] **Anything on the underside?** The pad is flat; if parts stick out below, the tape needs to be thicker than they are: ____
+- [ ] **Qwiic cable length** (the bay has room to coil 100 mm): ____
+
+When the hole spacing is known, set `imu_pegs = true` in `housing_slab.scad` and in `cad/housing_slab_cq.py`.
+
+UNO R4 WiFi (outline, holes, header height and USB-C position are from Arduino's datasheet ABX00087; these are the values it does not give):
+- [ ] **DC jack**: how far it sticks out past the PCB edge (`uno_jack`, scaled 2.2) and its height above the PCB (assumed 11.0): ____ / ____
+- [ ] **USB-C**: how far it sticks out past the PCB edge (`uno_usb_over`, scaled 1.5): ____
+- [ ] **Longest solder tail under the board** (`uno_standoff` leaves 5.0): ____
+- [ ] **PCB thickness** (`uno_pcb_t`, assumed 1.6): ____
+- [ ] **Header socket height** above the PCB (`uno_hdr_h`, datasheet 8.5). The lid posts stop 0.5 mm above it: ____
+
+USB-C cables, both:
+- [ ] **Overmold width x height** of each cable (`usb_plug_w/h`, now assumed 13.0 x 7.5; the slots are 13.6 x 8.1): ____ / ____

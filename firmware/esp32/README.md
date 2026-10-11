@@ -63,13 +63,25 @@ Serial commands (type one letter in the monitor): `i` info (id, pair code, state
 
 ## How it works
 
-- **Audio task** (core 1, priority 10, static stack). Each pass it reads 10 ms (160 × 32-bit slots) from `ESP_I2S` and keeps bits 31..8, the 24-bit sample. A DC blocker runs at about 20 Hz, then `(x24 × AUDIO_GAIN_Q8) >> AUDIO_SHIFT` converts to int16 with clipping. The task feeds each block's RMS to the mic slap detector and assembles 1,600 samples into a 3,200-byte frame. While recording, it pushes the frame into a static FreeRTOS queue of 8 frames. If the queue is full it drops the oldest frame, so latency stays under 800 ms. No heap is used after init.
+- **Audio task** (core 1, priority 10, static stack). Each pass it reads 10 ms (160 × 32-bit slots) from `ESP_I2S` and keeps bits 31..8, the 24-bit sample. A DC blocker runs at about 20 Hz, then the block is scaled to int16 with clipping. With `AUDIO_AGC 1` (the default) the gain follows the room: see "Automatic gain" below. With `AUDIO_AGC 0` it is fixed at `(x24 × AUDIO_GAIN_Q8) >> AUDIO_SHIFT`. The task feeds each block's RMS at the fixed gain to the mic slap detector, so slap thresholds do not move with the automatic gain, and assembles 1,600 samples into a 3,200-byte frame. While recording, it pushes the frame into a static FreeRTOS queue of 8 frames. If the queue is full it drops the oldest frame, so latency stays under 800 ms. No heap is used after init.
 - **Network task** (Arduino `loop()`). Runs `ws.loop()` and drains up to 4 frames per pass with `sendBIN(..., headerToPayload=true)`, which needs no library malloc and does one TCP write. It sends `level` at 2 Hz and handles `state`/`ping` (answered with `pong` echoing `t`) and binary 1,024-byte OLED frames. The heartbeat is `enableHeartbeat(10000, 3000, 2)`. Reconnect starts at 2 s and doubles up to 30 s. The audio task has higher priority, so a blocking TCP connect never starves the mic.
 - **States**: BOOTING → WIFI → CONNECTING → the server's `state` (UNPAIRED / IDLE / RECORDING / ERROR). If no `state` arrives within 5 s of `hello`, the device assumes IDLE. A link drop goes back to CONNECTING, a Wi-Fi drop back to WIFI.
 - **hello**: `{"type":"hello","deviceId","fw","pairCode","mac"}`. The pair code is 6 characters derived from the MAC (no 0/O/1/I) and is shown on the UNPAIRED screen. The server should store it from `hello` (the contract field is `pairCode?`).
 - **OLED**: if a server bitmap arrived within the last `OLED_SERVER_FRAME_TTL_MS` (5 s), it is drawn with `drawXBM`. The server must resend at least that often, or the TTL can be set to 0 to keep the last frame while connected. Otherwise a local screen is drawn: the big state word, Wi-Fi bars and a WS box. Below them it shows the pair code (UNPAIRED); the active course from `state.classCode` plus "slap to start" (IDLE); or REC mm:ss with a level bar, with the course code in the status bar (RECORDING). When the device is paired but `state.classCode` is null or absent, IDLE shows "Pick a course in the app". Redraws are limited to 5 Hz.
 - **Deep sleep**: entered after `DEEP_SLEEP_IDLE_MIN` (20) minutes without recording, by holding REC for 2 s, or with `z`. Before sleeping, the IMU is switched to its "shake" profile: `MOT_THR = IMU_WAKE_THR` (100, below the slap threshold) with a latched INT. The device wakes on REC or the IMU INT. Both are active-low, so one `esp_sleep_enable_ext1_wakeup_io(mask, ESP_EXT1_WAKEUP_ANY_LOW)` call covers them. A wake is a cold boot: the IMU is reconfigured first, which restores `IMU_MOT_THR`. The wake becomes a candidate first hit, and the IMU waits for `IMU_QUIET_MS` of quiet before counting a new hit, so a shake still going on during boot does not count.
 - **Double slap vs shake**: a double slap is exactly two hits, at least `SLAP_MIN_GAP_MS` and at most `SLAP_WINDOW_MS` apart (`SLAP_WAKE_WINDOW_MS` after a wake). The case must then be still for `SLAP_SETTLE_MS`: no third hit, and no IMU pulses after the first half of the settle time. Anything else is a shake and is dropped. The event therefore fires about 300 ms after the second slap.
+
+### Automatic gain (`AUDIO_AGC`)
+
+The audio task tracks the input level per 10 ms block and scales it toward `AUDIO_AGC_TARGET_RMS` (3,000 of 32,768), between `AUDIO_AGC_MIN_GAIN_DB` and `AUDIO_AGC_MAX_GAIN_DB` (0 dB = unity, which is `AUDIO_SHIFT 16`).
+
+- **Level:** rises with a time constant of about 160 ms and falls with about 5 s. Loud speech lowers the gain within 100–200 ms; after the room goes quiet the gain climbs about 7 dB in 5 s.
+- **Transients:** one block counts as at most 4× the current level, so a 30 ms slap lowers the gain by about 4.5 dB, which recovers at about 1 dB/s.
+- **Limiter:** a block whose peak would pass 30,000 is scaled down by itself. A falling gain applies to the whole block at once; a rising gain ramps across the block.
+- **Power-up:** the first 0.5 s runs at the fixed gain, because the mic's power-up thump is not a level.
+- **What the fixed gain still does:** `AUDIO_SHIFT` and `AUDIO_GAIN_Q8` set the gain at power-up and the scale of the mic slap thresholds.
+
+Measured on the desk build (10 Oct 2026, noisy room, `AUDIO_SHIFT 14`): gain moved between 6 and 15 dB, and no sample clipped after the first second. With the fixed gain at `AUDIO_SHIFT 12` the same room clipped in most 100 ms frames.
 
 ### Exact I2S API used (verified against `ESP_I2S.h` in framework-arduinoespressif32 3.3.5)
 
@@ -107,7 +119,7 @@ Start with `include/config.h` set to your hotspot. Watch the serial monitor thro
 1. **LED**: power up. The LED blinks slowly (1 Hz) while Wi-Fi/WS connect. `s` in the monitor gives a double blink.
 2. **REC/BOOT**: press it and look for `[btn] BOOT` (or "held until the link is up" when offline). Hold it for 2 s and the device enters deep sleep (the OLED shows "SLEEP"); press again to wake (`wake: BOOT button`).
 3. **OLED**: the boot screen shows "SLAP", then "WI-FI" / "LINK". If it stays blank, the module is probably not ACKing (see `hardware/wiring.md`): bridge pad D2 on the module. The ESP32 I2C peripheral stops a write when the address is not acknowledged.
-4. **Mic levels**: set `MIC_PLOT 1`, flash, and open the Arduino IDE Serial Plotter (115200). Each 100 ms line prints `rms peak clip base thr`. Speak at lecture distance (2–3 m). Peaks should reach a few thousand and `clip` should stay at 0 when you speak loudly up close. Too quiet: lower `AUDIO_SHIFT` (each step is +6 dB). Clipping: raise it. If `rms` is flat near 0, check SD on GPIO 6 and L/R to GND, then try `-DAUDIO_I2S_SLOT_RIGHT=1`.
+4. **Mic levels**: set `MIC_PLOT 1`, flash, and open the Arduino IDE Serial Plotter (115200). Each 100 ms line prints `rms peak clip base thr gain` (`gain` is the gain in use, in dB above unity). Speak at lecture distance (2–3 m). Peaks should reach a few thousand and `clip` should stay at 0 when you speak loudly up close. With `AUDIO_AGC 1`, `gain` should fall when you speak up close and climb back when you stop. With `AUDIO_AGC 0`: too quiet, lower `AUDIO_SHIFT` (each step is +6 dB); clipping, raise it. If `rms` is flat near 0, check SD on GPIO 6 and L/R to GND, then try `-DAUDIO_I2S_SLOT_RIGHT=1`.
 5. **IMU**: the boot log should show `MPU6050 WHO_AM_I 0x68` and `motion INT on GPIO 7`. With `IMU_PLOT 1`, the plot shows `g` ≈ 1.00 at rest, and it moves when you tap the case. A slap prints `[slap] hit imu ...`.
 6. **Wi-Fi + server**: the log shows `[wifi] up <ip>`, then `[ws] connected`, and the server receives `hello`. The OLED shows the pair code (UNPAIRED) or READY.
 7. **Shake to turn on**: send `z` (or hold REC for 2 s) and wait 5 s.
@@ -151,6 +163,9 @@ Every detected hit is logged as `[slap] hit mic|imu|wake t=...`, followed by `(f
 | `SLAP_PENDING_TTL_MS` | 15000 | how long an offline slap/press waits for the link |
 | `SLAP_MIC_K_X10` / `SLAP_MIC_MIN_RMS` / `SLAP_MIC_MAX_HIT_MS` | 60 / 1200 / 80 | mic hit: 6× baseline, absolute floor, max burst length |
 | `AUDIO_SHIFT` / `AUDIO_GAIN_Q8` | 12 / 256 | mic gain (+24 dB) and fine gain |
+| `AUDIO_AGC` | 1 | automatic gain on; 0 = fixed gain from the row above |
+| `AUDIO_AGC_TARGET_RMS` | 3000 | level the automatic gain aims for (16-bit units) |
+| `AUDIO_AGC_MIN_GAIN_DB` / `AUDIO_AGC_MAX_GAIN_DB` | −6 / 36 | limits of the automatic gain, in dB above unity |
 | `DEEP_SLEEP_IDLE_MIN` | 20 | idle minutes before sleep (0 = never) |
 | `OLED_SERVER_FRAME_TTL_MS` | 5000 | how long a server bitmap stays up |
 
@@ -160,7 +175,7 @@ Every detected hit is logged as `[slap] hit mic|imu|wake t=...`, followed by `(f
 
 ## Not verifiable without hardware (check on the bench)
 
-- **I2S data alignment and gain**: whether `>> 8` plus `AUDIO_SHIFT 12` gives sensible levels, and whether the left slot is right for L/R = GND. Check with bench step 4.
+- **Gain at lecture distance**: the left slot and `>> 8` alignment are confirmed on the desk build (a 1 kHz tone from a laptop was picked up 35× above the background, 10 Oct 2026). Still to check with bench step 4: that the automatic gain reaches a usable level for a speaker 2–3 m away.
 - **MOT_THR scale**: the register map gives about 2 mg/LSB, and some clones differ. Also whether the motion INT pulses once or repeatedly per slap. Check with step 5 and the `[slap] hit imu` log.
 - **INT polarity**: whether active-low push-pull on the 10-DOF module's INT pin reaches GPIO 7 (some modules add level shifters or pull-ups). Check with step 5.
 - **Shake wake** (bench step 7). Check each of these:

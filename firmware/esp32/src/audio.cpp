@@ -58,10 +58,35 @@ int32_t g_raw[AUDIO_BLOCK_SAMPLES];        // one 10 ms block of 32-bit I2S slot
 int32_t g_dcPrevX = 0;
 int32_t g_dcPrevY = 0;
 
-// Convert one block of 32-bit I2S slots to 16-bit PCM in place into out[].
-// Returns the number of clipped samples.
-int convertBlock(const int32_t* raw, int16_t* out) {
-  int clips = 0;
+int32_t g_x24[AUDIO_BLOCK_SAMPLES];        // the same block as DC-blocked 24-bit samples
+
+// Gain set by AUDIO_SHIFT and AUDIO_GAIN_Q8, as a plain factor on the top 16 mic bits (1.0 = unity).
+constexpr float kFixedGain = (float)AUDIO_GAIN_Q8 * (float)(1 << (16 - AUDIO_SHIFT)) / 256.0f;
+
+#if AUDIO_AGC
+// Automatic gain: follow the input level and scale it toward AUDIO_AGC_TARGET_RMS, so a
+// quiet lecture hall and a loud room both land in the same 16-bit range. The level rises
+// fast and falls slowly, so gain drops within a syllable of loud speech and creeps back
+// up over seconds of quiet. A per-block limiter handles what the level is too slow for
+// (a slap on the case, a door): that block alone is scaled to fit.
+constexpr float kAgcAttack = 1.0f / 16.0f;     // per 10 ms block: level rises with tau ~160 ms
+constexpr float kAgcRelease = 1.0f / 512.0f;   // level falls with tau ~5 s
+constexpr float kAgcMaxStep = 4.0f;            // a block counts as at most 4x the current level
+constexpr float kAgcPeakCeiling = 30000.0f;    // limiter: no block is scaled past this peak
+constexpr int kAgcHoldBlocks = 50;             // first 0.5 s at the fixed gain: the mic's power-up thump is not a level
+float g_agcMinGain = 1.0f;                     // set from the dB limits in audio_begin()
+float g_agcMaxGain = 1.0f;
+float g_agcEnv = (float)AUDIO_AGC_TARGET_RMS / kFixedGain;   // so the gain starts at the fixed gain
+float g_agcGain = kFixedGain;
+int g_agcHold = kAgcHoldBlocks;
+#endif
+std::atomic<int32_t> g_gainQ8{(int32_t)(kFixedGain * 256.0f)};   // gain in use, for logs
+
+// Stage 1: 32-bit I2S slots -> DC-blocked 24-bit samples in x24[]. Returns the block RMS
+// in 16-bit units at unity gain and stores the largest magnitude (24-bit) in *peak24.
+float filterBlock(const int32_t* raw, int32_t* x24, int32_t* peak24) {
+  uint64_t sumSq = 0;
+  int32_t peak = 0;
   for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
     // The INMP441 sends a 24-bit two's-complement sample MSB-first in a 32-bit slot, so the
     // sample sits in bits 31..8 and bits 7..0 are padding (the mic tri-states them; they can
@@ -76,19 +101,77 @@ int convertBlock(const int32_t* raw, int16_t* out) {
     g_dcPrevY = y;
     x = y;
 #endif
-    // 24-bit -> 16-bit with gain. Dropping the low 8 bits of the 24-bit value maps mic full
-    // scale to 16-bit full scale (unity = AUDIO_SHIFT 16 counted from the 32-bit slot).
-    // The INMP441 is quiet at lecture distances (-26 dBFS at 94 dB SPL, so ~-60 dBFS for
-    // speech at a few metres), so we shift by less: total shift AUDIO_SHIFT (11..14 typical)
-    // means 2^(16-AUDIO_SHIFT) gain, i.e. +6 dB per step. AUDIO_GAIN_Q8/256 is a fine gain.
-    // Combined: s = x24 * GAIN_Q8 / 2^8 / 2^(AUDIO_SHIFT-8) = (x24 * GAIN_Q8) >> AUDIO_SHIFT.
-    // int64 because x24 (up to ~2^24 after the DC filter) * GAIN (up to 2^10) exceeds int32.
-    int32_t s = (int32_t)(((int64_t)x * AUDIO_GAIN_Q8) >> AUDIO_SHIFT);
+    x24[i] = x;
+    int32_t a = x < 0 ? -x : x;
+    if (a > peak) peak = a;
+    int64_t u = x >> 8;   // 16-bit units at unity gain
+    sumSq += (uint64_t)(u * u);
+  }
+  *peak24 = peak;
+  return sqrtf((float)sumSq / AUDIO_BLOCK_SAMPLES);
+}
+
+#if AUDIO_AGC
+// Updates the level from this block and returns the gain to end the block on.
+float agcUpdate(float inRms, int32_t peak24) {
+  if (g_agcHold > 0) {
+    g_agcHold--;
+    return kFixedGain;
+  }
+  // One block can pull the level up by at most kAgcMaxStep x, so a 30 ms slap raises it by
+  // a few dB (the limiter below covers the slap itself) while speech still gets there in ~100 ms.
+  float in = inRms > g_agcEnv * kAgcMaxStep ? g_agcEnv * kAgcMaxStep : inRms;
+  g_agcEnv += (in - g_agcEnv) * (in > g_agcEnv ? kAgcAttack : kAgcRelease);
+  float envFloor = (float)AUDIO_AGC_TARGET_RMS / g_agcMaxGain;   // below this the gain is at its limit anyway
+  if (g_agcEnv < envFloor) g_agcEnv = envFloor;
+  float gain = (float)AUDIO_AGC_TARGET_RMS / g_agcEnv;
+  if (gain > g_agcMaxGain) gain = g_agcMaxGain;
+  if (gain < g_agcMinGain) gain = g_agcMinGain;
+  float peak16 = (float)peak24 / 256.0f;
+  if (peak16 * gain > kAgcPeakCeiling) gain = kAgcPeakCeiling / peak16;
+  return gain;
+}
+#endif
+
+// Stage 2: 24-bit -> 16-bit PCM with gain, into out[]. Returns the number of clipped samples.
+// Dropping the low 8 bits of the 24-bit value maps mic full scale to 16-bit full scale
+// (unity = AUDIO_SHIFT 16 counted from the 32-bit slot). The INMP441 is quiet at lecture
+// distances (-26 dBFS at 94 dB SPL, so ~-60 dBFS for speech at a few metres), so the gain
+// is above unity: fixed at 2^(16-AUDIO_SHIFT) x AUDIO_GAIN_Q8/256, or set per block by the AGC.
+int scaleBlock(const int32_t* x24, int16_t* out, float gainStart, float gainEnd) {
+  // Q12 gain against the 24-bit sample: s = x24 * g / 2^8 = (x24 * gQ12) >> 20. int64
+  // because x24 (up to ~2^24 after the DC filter) times the gain exceeds int32.
+  // A falling gain applies at once, so the loud sample that caused it is covered; a rising
+  // gain ramps across the block so the step is inaudible.
+  int64_t g1 = (int64_t)(gainEnd * 4096.0f);
+  int64_t g0 = gainEnd < gainStart ? g1 : (int64_t)(gainStart * 4096.0f);
+  int clips = 0;
+  for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+    int64_t g = g0 + (g1 - g0) * (i + 1) / AUDIO_BLOCK_SAMPLES;
+    int32_t s = (int32_t)(((int64_t)x24[i] * g) >> 20);
     if (s > 32767) { s = 32767; clips++; }
     else if (s < -32768) { s = -32768; clips++; }
     out[i] = (int16_t)s;   // ESP32 is little-endian: the int16 array IS the LE wire format
   }
   return clips;
+}
+
+// Convert one block of 32-bit I2S slots to 16-bit PCM in out[]. Returns the number of
+// clipped samples; *slapRms is the block RMS at the fixed gain, which the slap detector
+// uses so its thresholds do not move with the AGC.
+int convertBlock(const int32_t* raw, int16_t* out, uint32_t* slapRms) {
+  int32_t peak24 = 0;
+  float inRms = filterBlock(raw, g_x24, &peak24);
+  float fixedRms = inRms * kFixedGain;
+  *slapRms = fixedRms > 32767.0f ? 32767u : (uint32_t)fixedRms;
+#if AUDIO_AGC
+  float gainStart = g_agcGain;
+  g_agcGain = agcUpdate(inRms, peak24);
+  g_gainQ8.store((int32_t)(g_agcGain * 256.0f));
+  return scaleBlock(g_x24, out, gainStart, g_agcGain);
+#else
+  return scaleBlock(g_x24, out, kFixedGain, kFixedGain);
+#endif
 }
 #endif  // !FAKE_AUDIO
 
@@ -130,7 +213,8 @@ void audioTask(void*) {
       vTaskDelay(pdMS_TO_TICKS(10));
       continue;
     }
-    int clips = convertBlock(g_raw, block);
+    uint32_t slapRms = 0;
+    int clips = convertBlock(g_raw, block, &slapRms);
 #endif
 
     // Block statistics (integer math; sumsq of 160 int16 fits easily in uint64).
@@ -142,8 +226,10 @@ void audioTask(void*) {
       int a = v < 0 ? -v : v;
       if (a > peak) peak = a;
     }
-    uint32_t blockRms = (uint32_t)sqrtf((float)sumSq / AUDIO_BLOCK_SAMPLES);
-    slap_onMicBlock(blockRms, millis());
+#if FAKE_AUDIO
+    uint32_t slapRms = (uint32_t)sqrtf((float)sumSq / AUDIO_BLOCK_SAMPLES);
+#endif
+    slap_onMicBlock(slapRms, millis());
 
     frameSumSq += sumSq;
     if (peak > framePeak) framePeak = peak;
@@ -162,8 +248,8 @@ void audioTask(void*) {
 #if MIC_PLOT
     // Serial plotter: label:value pairs, one line per 100 ms. Keep under 64 chars
     // so Print::printf stays on its stack buffer (no heap in this task).
-    Serial.printf("rms:%u peak:%d clip:%d base:%u thr:%u\n", (unsigned)(rms * 32768.0f), framePeak, frameClips,
-                  (unsigned)slap_micBaseline(), (unsigned)slap_micThreshold());
+    Serial.printf("rms:%u peak:%d clip:%d base:%u thr:%u gain:%d\n", (unsigned)(rms * 32768.0f), framePeak, frameClips,
+                  (unsigned)slap_micBaseline(), (unsigned)slap_micThreshold(), audio_gainDb());
 #endif
     frameSumSq = 0;
     framePeak = 0;
@@ -197,6 +283,12 @@ bool audio_begin() {
   Serial.printf("[audio] I2S ok: bclk %d ws %d din %d, 16 kHz, 32-bit mono %s, shift %d gain %d/256\n",
                 PIN_I2S_BCLK, PIN_I2S_WS, PIN_I2S_DIN, AUDIO_I2S_SLOT_RIGHT ? "right" : "left", AUDIO_SHIFT,
                 AUDIO_GAIN_Q8);
+#if AUDIO_AGC
+  g_agcMinGain = powf(10.0f, (float)AUDIO_AGC_MIN_GAIN_DB / 20.0f);
+  g_agcMaxGain = powf(10.0f, (float)AUDIO_AGC_MAX_GAIN_DB / 20.0f);
+  Serial.printf("[audio] AGC on: target rms %d, gain %d..%d dB, starts at %d dB\n", AUDIO_AGC_TARGET_RMS,
+                AUDIO_AGC_MIN_GAIN_DB, AUDIO_AGC_MAX_GAIN_DB, audio_gainDb());
+#endif
 #endif
 
   g_task = xTaskCreateStaticPinnedToCore(audioTask, "audio", kTaskStackBytes, nullptr, kTaskPriority, g_taskStack,
@@ -218,6 +310,14 @@ size_t audio_queued() { return g_queue ? (size_t)uxQueueMessagesWaiting(g_queue)
 float audio_takeLevel() { return (float)g_levelMaxQ16.exchange(0) / 65535.0f; }
 
 float audio_lastLevel() { return (float)g_levelLastQ16.load() / 65535.0f; }
+
+int audio_gainDb() {
+#if FAKE_AUDIO
+  return 0;
+#else
+  return (int)lroundf(20.0f * log10f((float)g_gainQ8.load() / 256.0f));
+#endif
+}
 
 uint32_t audio_droppedFrames() { return g_dropped.load(); }
 
