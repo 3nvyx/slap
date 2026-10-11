@@ -280,6 +280,19 @@ export function renderLanguage(lang: DeviceLang): Uint8Array {
   });
 }
 
+/** The same frame moved `dx` px sideways (what slides in is dark): the screen wobbles when the device is shaken. */
+export function shiftFrame(frame: Uint8Array, dx: number): Uint8Array {
+  if (!dx) return frame;
+  const out = new Uint8Array(frame.length);
+  for (let y = 0; y < H; y++) {
+    for (let x = Math.max(0, dx); x < Math.min(W, W + dx); x++) {
+      const from = x - dx;
+      if ((frame[y * 16 + (from >> 3)]! >> (from & 7)) & 1) out[y * 16 + (x >> 3)]! |= 1 << (x & 7);
+    }
+  }
+  return out;
+}
+
 /** One large line with a hint under it. */
 export function renderNotice(big: string, small: string): Uint8Array {
   return render(ctx => {

@@ -32,3 +32,7 @@ void display_update(uint32_t nowMs, const DisplayModel& m);
 // Immediate two-line notice (boot, sleep).
 void display_notice(const char* big, const char* small);
 void display_off();
+// Dark (false) or lit (true); the picture is kept. Does nothing if already so.
+void display_setPower(bool on);
+// Plays the switch-on animation again from the next display_update, holding its last frame until totalMs.
+void display_playSplash(uint32_t totalMs);

@@ -96,7 +96,7 @@ function fakeDevice(key: string, id = `devtest-${key.slice(-6)}`) {
   const opened = new Promise<void>((res, rej) => { ws.on("open", () => res()); ws.on("error", rej); });
   return {
     states, last, until, get frame() { return frame; },
-    hello: async () => { await opened; ws.send(JSON.stringify({ type: "hello", deviceId: id, fw: "test" })); },
+    hello: async (wake?: string) => { await opened; ws.send(JSON.stringify({ type: "hello", deviceId: id, fw: "test", ...(wake ? { wake } : {}) })); },
     press: () => ws.send(JSON.stringify({ type: "button", button: "boot" })),
     lang: (lang: string) => ws.send(JSON.stringify({ type: "lang", lang })),
     /** Loud audio, sent at once: the mock STT replays one sentence of its fixture per 4 s of it. */
@@ -228,4 +228,23 @@ test("a device that goes offline is no longer listed; with none online a web sta
   assert.equal(row!.deviceId, null);
   assert.equal(row!.source, "browser");
   assert.equal((await call(userA, "POST", `/api/lectures/${r.data.id}/stop`)).status, 200);
+});
+
+test("a device that was only powered up waits; a shake starts it, and a shake while recording does not stop it", { skip }, async () => {
+  const id = `devtest-shake-${run}`;
+  const d = fakeDevice(KEY2, id);
+  await d.hello("power");
+  await d.until((st, f) => st.state === "idle" && same(f, m.oled.renderNotice("Slap", "Shake to record")), "waiting for a shake");
+  assert.equal(await m.dev.triggerUsbSlap("no-such-device"), false);
+  assert.equal(await m.dev.triggerUsbSlap(id), true);
+  const rec = await d.until(st => st.state === "recording" && !!st.sessionId, "recording after the shake");
+  recordings.push(rec.sessionId!);
+  await sleep(1100);
+  assert.equal(await m.dev.triggerUsbSlap(id), true);
+  await sleep(300);
+  assert.deepEqual({ state: d.last()!.state, sessionId: d.last()!.sessionId }, { state: "recording", sessionId: rec.sessionId }, "still the same recording");
+  await sleep(900);
+  d.press();
+  await d.until(st => st.state === "idle", "idle after the stop");
+  d.close();
 });

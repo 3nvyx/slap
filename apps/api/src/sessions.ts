@@ -663,12 +663,14 @@ async function doStartDevice(d: DeviceLink): Promise<LectureSummary | null> {
   return toSummary(l);
 }
 
-/** Registers a connected device and starts recording for it. */
-export async function attachDevice(d: DeviceLink): Promise<void> {
+/** Registers a connected device and, unless `start` is false (it was only powered up and waits for a shake),
+ *  starts recording for it. A recording it left a moment ago carries on either way. */
+export async function attachDevice(d: DeviceLink, start = true): Promise<void> {
   devices.set(d.id, d);
+  const left = goneTimers.has(d.id);
   clearTimeout(goneTimers.get(d.id));
   goneTimers.delete(d.id);
-  await startDeviceSession(d);
+  if (start || left) await startDeviceSession(d);
   d.refresh();
 }
 

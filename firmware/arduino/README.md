@@ -31,10 +31,12 @@ far off a failed shake was. The built-in Arduino LED toggles on each shake.
 To build without Arduino IDE, use the `arduino-cli` bundled in it with the board
 `arduino:renesas_uno:unor4wifi`. Stop the API first: it holds the serial port.
 
-The API routes `SHAKE` (and `SLAP` from the earlier double-slap sketch) to the connected ESP32 named by `ARDUINO_DEVICE_ID` using
-its existing button handler. Pick a course for that ESP32 in the web app first. Events
-while the ESP32 is offline are discarded. The listener reconnects every three
-seconds after unplugging the Arduino. Shakes do not wake a sleeping ESP32.
+The API routes `SHAKE` (and `SLAP` from the earlier double-slap sketch) to the connected ESP32 named by
+`ARDUINO_DEVICE_ID` (`triggerUsbSlap` in `apps/api/src/ws/device.ts`). A shake starts a recording: the ESP32
+plays its slap animation, then shows captions. While a recording runs, a shake only makes the screen wobble for
+half a second; it never stops one (hold REC on the ESP32 for 2 s to save and stop). Events while the ESP32 is
+offline are discarded, and a shake cannot wake an ESP32 from deep sleep. With no motion sensor of its own the
+ESP32 therefore does not sleep after a recording: it stays connected and darkens its screen (standby).
 
 The ESP32 microphone also detects slaps while idle. For this arrangement,
 set `SLAP_MIC_ENABLED` to `0` in `firmware/esp32/include/config.h` and reflash

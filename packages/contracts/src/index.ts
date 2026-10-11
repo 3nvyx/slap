@@ -23,10 +23,12 @@ export type DeviceButton = "boot" | "slap";
 export const DEVICE_LANGS = ["en", "vi", "ja"] as const;
 export type DeviceLang = (typeof DEVICE_LANGS)[number];
 
-// A device that is on records: the server starts a session as soon as it has the hello, and a `button`
-// (REC held for 2 s on the device) ends it. There is nothing to pick on the device first.
+// A device that was switched on by a shake or its button records: the server starts a session as soon as it has
+// the hello, and a `button` (REC held for 2 s on the device) ends it. There is nothing to pick on the device first.
+// `wake` says what switched it on; a device that was only powered up or reset ("power") waits, dark, for a shake.
+export type DeviceWake = "shake" | "button" | "power";
 export type DeviceToServer =
-  | { type: "hello"; deviceId: string; fw: string; mac?: string; lang?: DeviceLang }
+  | { type: "hello"; deviceId: string; fw: string; mac?: string; lang?: DeviceLang; wake?: DeviceWake }
   | { type: "button"; button: DeviceButton }
   | { type: "lang"; lang: DeviceLang }             // caption language for the device's own screen
   | { type: "level"; rms: number }                 // optional mic level 0..1, ~2 Hz

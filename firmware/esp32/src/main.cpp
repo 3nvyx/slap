@@ -44,6 +44,9 @@ RTC_DATA_ATTR uint8_t g_lang = 0;
 TiltDetector g_tilt(IMU_TILT_AXIS, IMU_TILT_SIGN);
 uint32_t g_lastTilt = 0;
 uint32_t g_savedAt = 0;        // when the server ended the session (0 = it has not)
+const char* g_wake = "power";  // what switched the device on: "shake" | "button" | "power"
+bool g_bootSession = false;    // the first session follows the switch-on animation, so it does not play again
+uint32_t g_idleSince = 0;      // for the standby screen timeout
 
 AppState g_state = AppState::BOOTING;
 AppState g_lastServerState = AppState::IDLE;
@@ -72,7 +75,7 @@ void setState(AppState s) {
   if (s == g_state) return;
   Serial.printf("[state] %s -> %s\n", appStateName(g_state), appStateName(s));
   g_state = s;
-  g_lastActivity = millis();
+  g_lastActivity = g_idleSince = millis();
   // Mic slaps only while not recording: during a lecture a loud consonant or a desk thump
   // near the mic must not stop the session (the IMU and REC still can).
   slap_setMicEnabled(s != AppState::BOOTING && s != AppState::RECORDING);
@@ -182,7 +185,9 @@ void stopRecordingThenSleep() {
     }
     if (g_state == AppState::RECORDING) Serial.println("[sleep] no stop confirmation from the server");
   }
-  enterDeepSleep("REC held while recording", true);
+  // With its own motion sensor the device sleeps and a shake wakes it. Without one it stays connected,
+  // shows the server's "Saved" and goes dark (standby), so a shake can still reach it through the server.
+  if (slap_imuOk()) enterDeepSleep("REC held while recording", true);
 }
 
 void serialCommands(uint32_t now) {
@@ -248,8 +253,12 @@ void app_onServerState(AppState s, const char* sessionId, const char* classCode,
   snprintf(g_message, sizeof g_message, "%s", message);
   // REC timer: restart on a new session, keep it across a reconnect into the same one.
   if (s == AppState::RECORDING && g_state != AppState::RECORDING &&
-      !(sessionId[0] && !strcmp(sessionId, g_sessionId) && g_lastServerState == AppState::RECORDING))
+      !(sessionId[0] && !strcmp(sessionId, g_sessionId) && g_lastServerState == AppState::RECORDING)) {
     g_recStart = millis();
+    // A session started by a shake while the device was waiting: the slap plays first.
+    if (!g_bootSession) display_playSplash(SHAKE_SPLASH_MS);
+    g_bootSession = false;
+  }
   snprintf(g_sessionId, sizeof g_sessionId, "%s", sessionId);
   g_lastServerState = s;
   // The server ended the session (a stop from the app): show its "Saved" screen, then sleep.
@@ -287,6 +296,8 @@ void setup() {
   button_begin();
   // On = recording, so a wake by motion has to be a deliberate shake, not a knock or a walk in a bag.
   if (wokeImu && !confirmShake()) sleepNow();
+  g_wake = wokeImu ? "shake" : wokeButton ? "button" : "power";
+  g_bootSession = wokeImu || wokeButton;
   makeIdentity();
   Serial.printf("[boot] id %s mac %s\n", g_deviceId, g_mac);
 
@@ -316,8 +327,14 @@ void loop() {
   // ---- BOOT button ----
   switch (button_poll(now)) {
     case ButtonEvent::SHORT_PRESS:
-      Serial.println("[btn] REC: next language");
-      changeLang(1);
+      g_idleSince = now;   // lights the screen again in standby
+      if (g_state == AppState::RECORDING) {
+        Serial.println("[btn] REC: next language");
+        changeLang(1);
+      } else {
+        Serial.println("[btn] REC: start");
+        sendOrHold("boot", now);
+      }
       break;
     case ButtonEvent::LONG_PRESS:
       if (g_state == AppState::RECORDING) stopRecordingThenSleep();
@@ -342,7 +359,7 @@ void loop() {
     Serial.printf("[wifi] up %s gw %s mask %s rssi %d\n", WiFi.localIP().toString().c_str(),
                   WiFi.gatewayIP().toString().c_str(), WiFi.subnetMask().toString().c_str(), (int)WiFi.RSSI());
     if (!g_linkBegun) {
-      link_begin(g_deviceId, g_mac, kLangs[g_lang]);
+      link_begin(g_deviceId, g_mac, kLangs[g_lang], g_wake);
       g_linkBegun = true;
     }
     setState(link_connected() ? (g_waitingState ? AppState::CONNECTING : g_lastServerState) : AppState::CONNECTING);
@@ -367,7 +384,10 @@ void loop() {
       if (dir) changeLang(dir);
     }
   }
-  if (g_savedAt && now - g_savedAt > SAVED_SHOW_MS) enterDeepSleep("session ended by the server", true);
+  if (g_savedAt && now - g_savedAt > SAVED_SHOW_MS) {
+    g_savedAt = 0;
+    if (slap_imuOk()) enterDeepSleep("session ended by the server", true);
+  }
   if (g_pendingButton && now - g_pendingAt > SLAP_PENDING_TTL_MS) {
     Serial.printf("[btn] held %s expired\n", g_pendingButton);
     g_pendingButton = nullptr;
@@ -382,6 +402,8 @@ void loop() {
 
   // ---- LED + OLED ----
   led_update(now, g_state);
+  // Standby: waiting for a shake with nothing to show, the screen goes dark after a while.
+  display_setPower(!(g_state == AppState::IDLE && now - g_idleSince > STANDBY_SCREEN_MS));
   DisplayModel m;
   m.state = g_state;
   m.wifiUp = wifiUp;

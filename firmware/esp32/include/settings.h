@@ -195,6 +195,16 @@
 #ifndef TILT_REBASE_MS
 #define TILT_REBASE_MS 4000
 #endif
+// Without a motion sensor of its own the device cannot be woken from deep sleep by a shake (the shake comes
+// from the USB sensor, through the server). It then stays connected instead and only darkens the screen,
+// STANDBY_SCREEN_MS after it stopped recording. A shake that starts a session plays the slap animation again
+// for SHAKE_SPLASH_MS before the captions take over.
+#ifndef STANDBY_SCREEN_MS
+#define STANDBY_SCREEN_MS 12000
+#endif
+#ifndef SHAKE_SPLASH_MS
+#define SHAKE_SPLASH_MS 1100
+#endif
 // How long the server's "Saved" screen stays up before the device sleeps, when the session was ended from the app.
 #ifndef SAVED_SHOW_MS
 #define SAVED_SHOW_MS 2500

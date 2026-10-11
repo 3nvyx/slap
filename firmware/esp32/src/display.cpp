@@ -24,9 +24,10 @@ bool g_frameDirty = false;
 bool g_showingServer = false;
 uint32_t g_frameAt = 0;
 uint32_t g_lastDraw = 0;
-int g_splashFrame = -1;        // frame of the switch-on animation on screen (-1 = none yet)
-bool g_splashRunning = false, g_splashDone = false;
-uint32_t g_splashAt = 0;
+int g_splashFrame = -1;        // frame of the slap animation on screen (-1 = none yet)
+bool g_splashOn = false, g_splashRunning = false;
+uint32_t g_splashAt = 0, g_splashTotal = SPLASH_MS;
+bool g_powerOn = true;
 
 void drawSplash(int i) {
   u8g2.clearBuffer();
@@ -221,26 +222,28 @@ bool display_setServerFrame(const uint8_t* data, size_t len, uint32_t nowMs) {
 void display_dropServerFrame() { g_haveFrame = false; }
 
 void display_update(uint32_t nowMs, const DisplayModel& m) {
-  // Switching on: the first frame of the animation is drawn at once from setup(). The rest plays from the
+  // The slap animation. Switching on: its first frame is drawn at once from setup(), the rest plays from the
   // first loop() pass (setup blocks for a moment, which would swallow frames), and the last frame stays until
-  // SPLASH_MS. Wi-Fi joins behind it meanwhile.
+  // SPLASH_MS while Wi-Fi joins behind it. It plays again when a shake starts a session (display_playSplash).
   if (m.state == AppState::BOOTING) {
+    if (!g_splashOn) display_playSplash(SPLASH_MS);
     if (g_splashFrame < 0) drawSplash(0);
     return;
   }
-  if (g_splashFrame >= 0 && !g_splashDone && m.state != AppState::ERROR) {
+  if (g_splashOn && m.state != AppState::ERROR) {
     if (!g_splashRunning) {
       g_splashRunning = true;
       g_splashAt = nowMs;
     }
     uint32_t t = nowMs - g_splashAt;
-    if (t < SPLASH_MS) {
+    if (t < g_splashTotal) {
       int i = 0;
       for (uint32_t end = 0; i < kSplashFrames - 1 && t >= (end += kSplashFrameMs[i]); i++) {}
       if (i != g_splashFrame) drawSplash(i);
       return;
     }
-    g_splashDone = true;
+    g_splashOn = false;
+    g_showingServer = false;   // whatever comes next is drawn afresh
   }
 
 #if OLED_SERVER_FRAME_TTL_MS > 0
@@ -278,4 +281,17 @@ void display_notice(const char* big, const char* small) {
   u8g2.sendBuffer();
 }
 
-void display_off() { u8g2.setPowerSave(1); }
+void display_off() { display_setPower(false); }
+
+void display_setPower(bool on) {
+  if (on == g_powerOn) return;
+  g_powerOn = on;
+  u8g2.setPowerSave(on ? 0 : 1);
+}
+
+void display_playSplash(uint32_t totalMs) {
+  g_splashOn = true;
+  g_splashRunning = false;
+  g_splashTotal = totalMs;
+  g_splashFrame = -1;
+}

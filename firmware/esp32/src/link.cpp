@@ -16,11 +16,11 @@ WebSocketsClient ws;
 
 char g_path[192];     // SERVER_PATH?key=DEVICE_KEY
 char g_hello[224];    // prebuilt hello JSON
-char g_helloId[24], g_helloMac[18];
+char g_helloId[24], g_helloMac[18], g_helloWake[8];
 
 void buildHello(const char* lang) {
-  snprintf(g_hello, sizeof g_hello, "{\"type\":\"hello\",\"deviceId\":\"%s\",\"fw\":\"%s\",\"mac\":\"%s\",\"lang\":\"%s\"}",
-           g_helloId, FW_VERSION, g_helloMac, lang);
+  snprintf(g_hello, sizeof g_hello, "{\"type\":\"hello\",\"deviceId\":\"%s\",\"fw\":\"%s\",\"mac\":\"%s\",\"lang\":\"%s\",\"wake\":\"%s\"}",
+           g_helloId, FW_VERSION, g_helloMac, lang, g_helloWake);
 }
 bool g_connected = false;
 bool g_begun = false;
@@ -115,7 +115,8 @@ void onEvent(WStype_t type, uint8_t* payload, size_t len) {
 
 }  // namespace
 
-void link_begin(const char* deviceId, const char* mac, const char* lang) {
+void link_begin(const char* deviceId, const char* mac, const char* lang, const char* wake) {
+  snprintf(g_helloWake, sizeof g_helloWake, "%s", wake);
   snprintf(g_path, sizeof g_path, "%s?key=%s", SERVER_PATH, DEVICE_KEY);
   snprintf(g_helloId, sizeof g_helloId, "%s", deviceId);
   snprintf(g_helloMac, sizeof g_helloMac, "%s", mac);
