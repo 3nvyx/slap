@@ -145,7 +145,7 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
                 {data.outline.map((o, i) => (
                   <li key={i}>
                     <button onClick={() => scrollTo(`sec-${i}`)} className="-ml-px block w-full cursor-pointer border-l-2 border-transparent py-1.5 pl-3 text-left text-sm hover:border-accent">
-                      <span className="block font-mono text-[11px] text-muted">{fmtTime(o.start)}</span>
+                      <span className="block font-mono text-[12px] text-muted">{fmtTime(o.start)}</span>
                       <span className="block leading-snug">{o.title}</span>
                     </button>
                   </li>
@@ -163,7 +163,7 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
                       <div className="flex items-center gap-2">
                         <span className="min-w-0 flex-1 truncate text-sm group-hover:underline">{c.name}</span>
                         {c.examFlag && <ExamBadge />}
-                        <span className="font-mono text-[11px] text-muted">{c.mastery == null ? 'new' : pct(c.mastery)}</span>
+                        <span className="font-mono text-[12px] text-muted">{c.mastery == null ? 'new' : pct(c.mastery)}</span>
                       </div>
                       <MasteryBar value={c.mastery} />
                     </Link>
@@ -211,7 +211,7 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
               <ul className="space-y-2">
                 {data.announcements.map((a, i) => (
                   <li key={i} className="flex flex-wrap items-baseline gap-3 rounded-md border border-line bg-panel px-4 py-3 text-sm">
-                    <span className={cx('font-mono text-[10px] uppercase tracking-wider', a.kind === 'exam' || a.kind === 'deadline' ? 'text-accent' : 'text-muted')}>{a.kind}</span>
+                    <span className={cx('font-mono text-[11px] uppercase tracking-wider', a.kind === 'exam' || a.kind === 'deadline' ? 'text-accent' : 'text-muted')}>{a.kind}</span>
                     <span className="min-w-0 flex-1">{a.text}</span>
                     {a.when && <span className="font-mono text-xs text-muted">{fmtDate(a.when)}</span>}
                     {a.segmentId != null && (
@@ -282,7 +282,7 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
                               <span key={s.id} id={`seg-${s.id}`} className={cx('scroll-mt-24 rounded-sm', activeSeg === s.id && 'flash')}>
                                 {isStudent(s) && (
                                   <span
-                                    className="mr-2 inline-flex h-5 -translate-y-px items-center rounded-sm bg-ink px-1.5 align-middle font-mono text-[10px] uppercase tracking-wider text-bg"
+                                    className="mr-2 inline-flex h-5 -translate-y-px items-center rounded-sm bg-ink px-1.5 align-middle font-mono text-[11px] uppercase tracking-wider text-bg"
                                     title={`Speaker ${s.speaker}`}
                                   >
                                     Student

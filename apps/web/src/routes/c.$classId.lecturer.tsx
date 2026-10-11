@@ -66,7 +66,7 @@ export default function LecturerPage() {
           <Label>Watching now</Label>
           <div className="mt-3 font-mono text-4xl font-bold">{liveInfo?.viewers ?? 0}</div>
           <div className="mt-1 flex flex-wrap gap-1">
-            {languages.length ? languages.map((l) => <span key={l} className="rounded-sm bg-panel-2 px-1.5 py-0.5 font-mono text-[11px]">{l}</span>) : <span className="text-xs text-muted">no one yet</span>}
+            {languages.length ? languages.map((l) => <span key={l} className="rounded-sm bg-panel-2 px-1.5 py-0.5 font-mono text-[12px]">{l}</span>) : <span className="text-xs text-muted">no one yet</span>}
           </div>
         </div>
         <div className="rounded-md border border-line bg-panel p-5">

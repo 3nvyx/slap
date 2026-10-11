@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import { CourseGrid, CreateCourseForm } from '../components/Courses'
 import { TopBar } from '../components/Shell'
 import { Async, PageTitle } from '../components/ui'
@@ -9,6 +9,8 @@ import { useApi } from '../lib/useApi'
 export default function CoursesPage() {
   const courses = useApi(() => api.classes(), [])
   const navigate = useNavigate()
+  // "/courses#new" (the New course button on Home) lands with the cursor in the form.
+  const wantsNew = useLocation().hash === '#new'
 
   return (
     <div className="min-h-dvh">
@@ -17,10 +19,10 @@ export default function CoursesPage() {
         <PageTitle title="Courses" />
         <div className="grid gap-8 lg:grid-cols-[1fr_340px]">
           <Async state={courses} label="Loading courses">
-            {(data) => <CourseGrid courses={data} />}
+            {(data) => <CourseGrid courses={data} onDeleted={courses.reload} />}
           </Async>
           <div className="space-y-4">
-            <CreateCourseForm onDone={(id) => navigate(`/c/${id}`)} />
+            <CreateCourseForm autoFocus={wantsNew} onDone={(id) => navigate(`/c/${id}`)} />
           </div>
         </div>
       </main>

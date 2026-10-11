@@ -692,7 +692,7 @@ function TalkButton({
         ) : (
           <span className="flex flex-col items-center gap-1.5">
             <MicIcon className="size-9" />
-            <span className="font-mono text-[11px] uppercase tracking-[0.14em]">{recording ? 'Listening' : 'Hold'}</span>
+            <span className="font-mono text-[12px] uppercase tracking-[0.14em]">{recording ? 'Listening' : 'Hold'}</span>
           </span>
         )}
       </button>
@@ -710,7 +710,7 @@ function RoundButton({ onClick, label, sub }: { onClick: () => void; label: stri
       >
         <span className="flex flex-col items-center gap-2">
           <span className="ml-1 inline-block size-0 border-y-[14px] border-l-[22px] border-y-transparent border-l-accent" aria-hidden />
-          <span className="font-mono text-[11px] uppercase tracking-[0.14em]">{label}</span>
+          <span className="font-mono text-[12px] uppercase tracking-[0.14em]">{label}</span>
         </span>
       </button>
       <span className="text-sm text-muted">{sub}</span>
@@ -719,7 +719,7 @@ function RoundButton({ onClick, label, sub }: { onClick: () => void; label: stri
 }
 
 function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="ml-1 rounded-[3px] border border-line bg-bg px-1 py-px font-mono text-[10px] text-ink-2">{children}</kbd>
+  return <kbd className="ml-1 rounded-[3px] border border-line bg-bg px-1 py-px font-mono text-[11px] text-ink-2">{children}</kbd>
 }
 
 function Chip({ children, onClick, disabled, k }: { children: ReactNode; onClick: () => void; disabled?: boolean; k: string }) {
@@ -731,7 +731,7 @@ function Chip({ children, onClick, disabled, k }: { children: ReactNode; onClick
       className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-full border border-line bg-bg px-3 text-sm transition hover:bg-panel-2 disabled:pointer-events-none disabled:opacity-45"
     >
       {children}
-      <span className="font-mono text-[10px] text-muted">{k}</span>
+      <span className="font-mono text-[11px] text-muted">{k}</span>
     </button>
   )
 }
@@ -784,7 +784,7 @@ function Transcript({
                     <span
                       title={e.grade.feedback}
                       className={cx(
-                        'inline-flex h-5 items-center rounded-sm px-1.5 font-mono text-[10px] uppercase tracking-wider',
+                        'inline-flex h-5 items-center rounded-sm px-1.5 font-mono text-[11px] uppercase tracking-wider',
                         e.grade.correct ? 'bg-good text-white' : 'border border-bad text-bad',
                       )}
                     >
@@ -804,13 +804,13 @@ function Transcript({
                 {r.intent === 'explanation' && r.conceptId && (
                   <Link
                     to={`/c/${classId}/concept/${r.conceptId}`}
-                    className="inline-flex h-5 items-center gap-1 rounded-sm border border-accent px-1.5 text-[11px] text-accent hover:bg-accent hover:text-accent-ink"
+                    className="inline-flex h-5 items-center gap-1 rounded-sm border border-accent px-1.5 text-[12px] text-accent hover:bg-accent hover:text-accent-ink"
                   >
-                    <span className="font-mono text-[10px] uppercase tracking-wider">explained:</span> {concept?.name ?? 'concept'}
+                    <span className="font-mono text-[11px] uppercase tracking-wider">explained:</span> {concept?.name ?? 'concept'}
                   </Link>
                 )}
                 {replyClips(r).length > 0 && (
-                  <button type="button" onClick={() => onPlay(replyClips(r))} className="cursor-pointer font-mono text-[10px] uppercase tracking-wider text-muted underline hover:text-ink">
+                  <button type="button" onClick={() => onPlay(replyClips(r))} className="cursor-pointer font-mono text-[11px] uppercase tracking-wider text-muted underline hover:text-ink">
                     play
                   </button>
                 )}

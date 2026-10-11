@@ -244,7 +244,7 @@ function ExampleCourse({ course }: { course: ClassSummary }) {
                         {s.concepts.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1.5">
                             {s.concepts.map((c) => (
-                              <Link key={c.id} to={`${base}/concept/${c.id}`} className="rounded-sm border border-line px-1.5 py-0.5 font-mono text-[11px] hover:border-ink">
+                              <Link key={c.id} to={`${base}/concept/${c.id}`} className="rounded-sm border border-line px-1.5 py-0.5 font-mono text-[12px] hover:border-ink">
                                 {c.name}
                               </Link>
                             ))}

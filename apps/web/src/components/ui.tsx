@@ -33,12 +33,15 @@ export function ButtonLink({ to, variant = 'outline', size = 'md', className, ch
   )
 }
 
+/** Dark mode: a white hairline and a soft white glow so a card stands out from the page. Panels and the course cards share it. */
+export const glowCls = 'border-2 dark:border-white/40 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_0_28px_rgba(255,255,255,0.10)]'
+
 export function Panel({ children, className, title, action }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode }) {
   return (
-    <Card className={cx('block gap-0 p-5', className)}>
+    <Card className={cx('block gap-0 p-5', glowCls, className)}>
       {(title || action) && (
-        <div className="mb-4 flex items-center justify-between gap-3">
-          {title ? <Label>{title}</Label> : <span />}
+        <div className="mb-4 flex items-center justify-between gap-3 border-b border-line pb-3 dark:border-white/20">
+          {title ? <Label className="text-sm font-medium text-ink dark:text-white">{title}</Label> : <span />}
           {action}
         </div>
       )}

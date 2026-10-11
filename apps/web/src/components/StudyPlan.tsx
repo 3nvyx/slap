@@ -84,7 +84,7 @@ function Plan({ plan: p, classId, masteryOf }: { plan: StudyPlan; classId: strin
       <div className="max-w-3xl">
         <p className="text-sm text-ink-2">{p.overview}</p>
         <p className="mt-2 text-sm text-ink-2">{p.pace}</p>
-        <div className="mt-3 flex flex-wrap gap-1.5 font-mono text-[11px] text-muted">
+        <div className="mt-3 flex flex-wrap gap-1.5 font-mono text-[12px] text-muted">
           <span className={chip}>{p.paceData.lecturesHeld} lectures</span>
           {p.paceData.lecturesPerWeek != null && <span className={chip}>{p.paceData.lecturesPerWeek}/week</span>}
           {p.paceData.currentWeek != null && (
@@ -129,7 +129,7 @@ function Plan({ plan: p, classId, masteryOf }: { plan: StudyPlan; classId: strin
               <li key={`${k.date}|${k.name}`} className="grid grid-cols-[4.5rem_1fr] gap-4 py-2.5">
                 <div>
                   <div className="font-mono text-xs">{fmtDate(k.date)}</div>
-                  <div className="font-mono text-[11px] text-muted">{k.daysLeft === 0 ? 'today' : `in ${k.daysLeft}d`}</div>
+                  <div className="font-mono text-[12px] text-muted">{k.daysLeft === 0 ? 'today' : `in ${k.daysLeft}d`}</div>
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -189,7 +189,7 @@ function ExamCard({ exam: e, classId }: { exam: StudyPlanExam; classId: string }
       </div>
       {e.readiness != null && (
         <div className="mt-3">
-          <div className="mb-1 flex justify-between font-mono text-[11px] text-muted">
+          <div className="mb-1 flex justify-between font-mono text-[12px] text-muted">
             <span>Ready</span>
             <span>{pct(e.readiness)}</span>
           </div>
@@ -230,7 +230,7 @@ function TaskRow({ task: t, classId, masteryOf }: { task: StudyPlanTask; classId
   return (
     <li className="grid grid-cols-[4.75rem_1fr_auto] items-start gap-3 py-2.5">
       <span
-        className={`mt-0.5 inline-flex h-5 items-center justify-center rounded-sm font-mono text-[10px] uppercase tracking-wider ${k.retrieval ? 'bg-ink text-bg' : 'border border-line text-muted'}`}
+        className={`mt-0.5 inline-flex h-5 items-center justify-center rounded-sm font-mono text-[11px] uppercase tracking-wider ${k.retrieval ? 'bg-ink text-bg' : 'border border-line text-muted'}`}
       >
         {k.label}
       </span>

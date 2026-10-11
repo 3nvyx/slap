@@ -75,7 +75,7 @@ export function DeviceChip({ device, folded }: { device: ClassDetail['device']; 
       {dot}
       <div className="min-w-0">
         <div className="label leading-none">Device</div>
-        <div className="mt-1 text-[13px] font-medium capitalize leading-none">{text}</div>
+        <div className="mt-1 text-[14px] font-medium capitalize leading-none">{text}</div>
       </div>
     </div>
   )
@@ -89,10 +89,10 @@ function CourseSwitcher({ classId, current, courses, folded, onGo }: { classId: 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton size="lg" aria-label="Switch course" className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
-              <span className="flex aspect-square size-8 items-center justify-center rounded-md bg-ink font-mono text-[10px] font-semibold text-bg">{(current?.code ?? '··').slice(0, 2)}</span>
+              <span className="flex aspect-square size-8 items-center justify-center rounded-md bg-ink font-mono text-[11px] font-semibold text-bg">{(current?.code ?? '··').slice(0, 2)}</span>
               <span className="grid flex-1 text-left leading-tight">
-                <span className="truncate text-[13px] font-semibold text-ink">{current?.name ?? 'Loading…'}</span>
-                <span className="truncate font-mono text-[10px] text-muted">{current?.code ?? ' '}</span>
+                <span className="truncate text-[14px] font-semibold text-ink">{current?.name ?? 'Loading…'}</span>
+                <span className="truncate font-mono text-[11px] text-muted">{current?.code ?? ' '}</span>
               </span>
               <ChevronsUpDown className="ml-auto !size-3.5 text-muted" />
             </SidebarMenuButton>
@@ -102,7 +102,7 @@ function CourseSwitcher({ classId, current, courses, folded, onGo }: { classId: 
             {courses?.map((c) => (
               <DropdownMenuItem key={c.id} asChild>
                 <Link to={`/c/${c.id}`} onClick={onGo}>
-                  <span className="w-16 shrink-0 truncate font-mono text-[10px] text-muted">{c.code}</span>
+                  <span className="w-16 shrink-0 truncate font-mono text-[11px] text-muted">{c.code}</span>
                   <span className="truncate">{c.name}</span>
                   {c.id === classId && <Check className="ml-auto text-accent" />}
                 </Link>
@@ -137,7 +137,7 @@ function ClassSidebar({ classId, detail, courses }: { classId: string; detail?: 
         <div className={cx('flex items-center justify-between gap-2', folded && 'flex-col')}>
           <Link to="/" aria-label="Slap home" className="flex items-center gap-2 px-1 text-ink">
             {folded ? <LogoArt className="h-6 w-auto" /> : <Logo className="text-[17px]" />}
-            {MOCK && !folded && <span className="rounded-sm bg-ink px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-bg">mock</span>}
+            {MOCK && !folded && <span className="rounded-sm bg-ink px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wider text-bg">mock</span>}
           </Link>
           <SidebarTrigger className="text-muted hover:text-ink" title={folded ? 'Open the side bar' : 'Fold the side bar'} />
         </div>
@@ -145,6 +145,19 @@ function ClassSidebar({ classId, detail, courses }: { classId: string; detail?: 
       </SidebarHeader>
 
       <SidebarContent>
+        {/* The way back to the dashboard sits above the course's own pages. */}
+        <SidebarGroup className="px-3 pb-0 group-data-[collapsible=icon]:px-2">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild tooltip="Home" className="text-[14px] text-ink-2">
+                <Link to="/home" onClick={closeSheet}>
+                  <House />
+                  <span>Home</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
         <SidebarGroup className="px-3 group-data-[collapsible=icon]:px-2">
           <SidebarGroupLabel className="label">Course</SidebarGroupLabel>
           <SidebarMenu className="gap-0.5">
@@ -153,7 +166,7 @@ function ClassSidebar({ classId, detail, courses }: { classId: string; detail?: 
               const active = pathname === to || pathname === `${to}/` || (!n.end && pathname.startsWith(`${to}/`))
               return (
                 <SidebarMenuItem key={n.label}>
-                  <SidebarMenuButton asChild isActive={active} tooltip={n.label} className="relative text-[13px] text-ink-2 data-[active=true]:bg-transparent data-[active=true]:text-ink">
+                  <SidebarMenuButton asChild isActive={active} tooltip={n.label} className="relative text-[14px] text-ink-2 data-[active=true]:bg-transparent data-[active=true]:text-ink">
                     <Link to={to} onClick={closeSheet} aria-current={active ? 'page' : undefined}>
                       {/* The marker slides from the old page's row to the new one. */}
                       {active && (
@@ -163,7 +176,7 @@ function ClassSidebar({ classId, detail, courses }: { classId: string; detail?: 
                       )}
                       <n.icon className="relative" />
                       <span className="relative flex-1 truncate">{n.label}</span>
-                      <span className="relative font-mono text-[10px] text-muted group-data-[collapsible=icon]:hidden">{n.key}</span>
+                      <span className="relative font-mono text-[11px] text-muted group-data-[collapsible=icon]:hidden">{n.key}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -175,16 +188,6 @@ function ClassSidebar({ classId, detail, courses }: { classId: string; detail?: 
 
       <SidebarFooter className="gap-2 p-3 group-data-[collapsible=icon]:px-2">
         {detail && <DeviceChip device={detail.device} folded={folded} />}
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="Home" className="text-[13px] text-ink-2">
-              <Link to="/home" onClick={closeSheet}>
-                <House />
-                <span>Home</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

@@ -1,7 +1,6 @@
 import type { Route } from './+types/_index'
 import { About } from '../landing/About'
 import { CaptionDemoProvider } from '../landing/CaptionDemoProvider'
-import { Conversation } from '../landing/Conversation'
 import { Faq } from '../landing/Faq'
 import { Footer } from '../landing/Footer'
 import { Hardware } from '../landing/Hardware'
@@ -34,7 +33,6 @@ export default function LandingPage() {
           <Hardware />
           <Faq />
         </main>
-        <Conversation />
         <Footer />
       </div>
     </CaptionDemoProvider>

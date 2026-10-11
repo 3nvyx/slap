@@ -47,17 +47,15 @@ Who you are: `lib/user.ts` keeps a random id in `localStorage` (`slap.user`) and
 | --- | --- |
 | `Nav`, `Hero`, `About`, `HowItWorks`, `Hardware`, `Faq`, `Footer` | The sections, top to bottom, with all their words. |
 | `landing.css` | How it looks. Plain CSS, loaded on this page only, with every rule inside `.landing` so it cannot reach app pages. The colours and fonts are the short list at the top. |
-| `data.ts` | The demo's sentences and their translations (`LINES`), the example conversation (`EXAMPLE`), the demo class. |
+| `data.ts` | The demo's sentences and their translations (`LINES`), the demo class. |
 | `CaptionDemoProvider`, `captionDemo.ts` | The caption demo's clock; the device screens and the phones follow it, so they tell the same story. |
 | `Device`, `oled.ts` | The device picture and its 128 x 64 pixel screen, drawn pixel by pixel as on the real OLED. |
 | `Phone` | The phone mock-up (captions, or the language list). |
 | `Accordion`, `Reveal` | The lists that open and close; sections fading in as they scroll into view. |
-| `Conversation`, `talk.ts` | The Conversation side bar. |
 | `img/` | Pictures of the device (copies of `hardware/housing/preview/assembled_black.png` and `exploded.png`). |
 
 - **Languages.** The caption demo offers Japanese and Vietnamese over an English lecture. To add one: add its line to every sentence in `LINES`, add it to `LANG_NAMES`, and it appears as a button. The translated sentences were written by hand and should be checked by a native speaker before the page goes public.
 - **Left out on purpose:** customer reviews, press mentions, sales numbers and a shop button, because Slap does not have them yet.
-- **The Conversation side bar** (the black tab on the right edge) listens through the microphone, writes down what is said and sorts it into turns. It only listens in Chrome and Safari, after the browser asks for permission; elsewhere use "Play an example". The browser cannot tell voices apart: the "Who is speaking" buttons file the words under Professor or Student, and a pause of 2.5 seconds or a change of speaker starts a new turn. The browser sends the sound to its own speech service (Google in Chrome, Apple in Safari); the page saves nothing.
 
 ## Look and motion
 

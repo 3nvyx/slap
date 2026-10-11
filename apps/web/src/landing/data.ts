@@ -40,16 +40,3 @@ export const LINES: ReadonlyArray<{ en: string } & Record<CaptionLang, string>> 
 
 export const TICK_MS = 250 // one new word every tick
 export const PAUSE = 6 // ticks of silence after each sentence
-
-export type Who = 'professor' | 'student'
-export const WHO_NAMES: Record<Who, string> = { professor: 'Professor', student: 'Student' }
-
-/** The conversation played by "Play an example" in the side bar. `pause` starts a new turn for the same speaker. */
-export const EXAMPLE: ReadonlyArray<{ who: Who; text: string; pause?: boolean }> = [
-  { who: 'professor', text: 'So what does a Gaussian look like?' },
-  { who: 'student', text: 'Is the mean always in the middle?' },
-  { who: 'professor', text: 'Yes. The mean is its center.' },
-  { who: 'professor', text: 'With enough data, this is a pretty good model.', pause: true },
-  { who: 'student', text: 'So it is a good place to start?' },
-  { who: 'professor', text: "Exactly. It's a great place to start." },
-]

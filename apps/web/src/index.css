@@ -7,15 +7,15 @@
    near-black surfaces a few steps apart, hairline borders. One orange in both. The page follows the system's
    light/dark setting (Tailwind's dark: variant does the same), so there is no .dark class. */
 :root {
-  --bg: #d8d8d6;
-  --side: #d0d0cd;
-  --panel: #e6e6e3;
-  --panel-2: #cdcdca;
+  --bg: #e4e4e1;
+  --side: #dcdcd9;
+  --panel: #f2f2ef;
+  --panel-2: #d9d9d6;
   --ink: #151515;
   --ink-2: #3d3d3d;
   --muted: #6f6f6c;
-  --line: #b5b5b1;
-  --dot: rgba(0, 0, 0, 0.16);
+  --line: #c1c1bd;
+  --dot: rgba(0, 0, 0, 0.13);
   --accent: #ff6a00;
   --accent-ink: #ffffff;
   --good: #2f9e44;
@@ -53,15 +53,15 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f0f10;
-    --side: #0b0b0c;
-    --panel: #161617;
-    --panel-2: #212123;
+    --bg: #17171a;
+    --side: #131315;
+    --panel: #1f1f22;
+    --panel-2: #2a2a2e;
     --ink: #ededeb;
     --ink-2: #b7b7b3;
     --muted: #82827e;
-    --line: #29292b;
-    --dot: rgba(255, 255, 255, 0.09);
+    --line: #353539;
+    --dot: rgba(255, 255, 255, 0.11);
     color-scheme: dark;
   }
 }
@@ -113,6 +113,12 @@
   --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 }
 
+/* The app's pages read one step larger than the browser default: every rem size (type, padding, gaps) scales with
+   this. The landing page sets its own 16px and is left alone. */
+html:not(:has(.landing)) {
+  font-size: 17px;
+}
+
 html,
 body {
   background: var(--bg);
@@ -140,11 +146,14 @@ body {
   background-size: 12px 12px;
 }
 
-.label {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.02em;
-  color: var(--muted);
+/* In the components layer so a text-* utility on a label (a white panel title, say) wins over its grey. */
+@layer components {
+  .label {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+  }
 }
 
 @keyframes slap-pulse {

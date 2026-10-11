@@ -14,7 +14,7 @@ export function AnnouncementList({ items, classId, limit, upcomingOnly = false }
         const urgent = a.when && days != null && days >= 0 && days <= 7 && (a.kind === 'deadline' || a.kind === 'exam')
         return (
           <li key={`${a.lectureId}-${i}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-md border border-line bg-panel px-4 py-3 text-sm">
-            <span className={cx('font-mono text-[10px] uppercase tracking-wider', a.kind === 'exam' || a.kind === 'deadline' ? 'text-accent' : 'text-muted')}>{a.kind}</span>
+            <span className={cx('font-mono text-[11px] uppercase tracking-wider', a.kind === 'exam' || a.kind === 'deadline' ? 'text-accent' : 'text-muted')}>{a.kind}</span>
             <span className="min-w-0 flex-[1_1_14rem]">{a.text}</span>
             {a.when && (
               <span className={cx('font-mono text-xs', urgent ? 'font-semibold text-accent' : 'text-muted')}>

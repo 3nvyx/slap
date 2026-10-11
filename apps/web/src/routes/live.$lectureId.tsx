@@ -1,5 +1,7 @@
+import { House } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
+import { Logo } from '../components/ui'
 import { api } from '../lib/api'
 import { type CaptionState, useCaptions } from '../lib/captions'
 import { LANGUAGES, storedLang, storeLang } from '../lib/languages'
@@ -11,6 +13,10 @@ const SIZES = ['clamp(1.35rem, 3.4vw, 2.4rem)', 'clamp(1.75rem, 4.6vw, 3.4rem)',
 const SIZE_KEY = 'slap.captionSize'
 const TAIL_WORDS = 24
 const FRESH = 3
+/** Sentences kept on screen: the one being spoken and the finished ones before it, in both languages. */
+const KEEP = 5
+/** The finished sentences are drawn smaller than the current one. */
+const HISTORY_SCALE = 0.62
 
 function readSize(): number {
   try {
@@ -24,7 +30,8 @@ function readSize(): number {
 const toks = (words: { word: string; punctuated?: string }[] | undefined, text: string) =>
   words && words.length ? words.map((w) => w.punctuated ?? w.word) : text.split(/\s+/).filter(Boolean)
 
-/** Source line: tail of the last final + current interim; newest words bright, older dimmed. */
+/** Source block: the last few finished sentences (small, dim) over the current one, which is the tail of the
+ *  last final + the interim; its newest words bright, older dimmed. */
 function SourceLine({ state, size }: { state: CaptionState; size: string }) {
   const tokens = useMemo(() => {
     const last = state.finals[state.finals.length - 1]
@@ -32,26 +39,44 @@ function SourceLine({ state, size }: { state: CaptionState; size: string }) {
     const interimToks = state.interim ? toks(state.interim.words, state.interim.text) : []
     return [...finalToks, ...interimToks].slice(-TAIL_WORDS)
   }, [state.finals, state.interim])
+  const history = state.finals.slice(-KEEP, -1)
 
   if (tokens.length === 0) return <p className="text-white/40" style={{ fontSize: size }}>Waiting for the lecturer…</p>
   const n = tokens.length
   return (
-    <p className="font-medium leading-[1.18] tracking-tight" style={{ fontSize: size }} aria-live="off">
-      {tokens.map((t, i) => {
-        const age = n - 1 - i
-        const cls = age < FRESH ? 'text-white font-bold' : age < FRESH + 8 ? 'text-white/70' : 'text-white/35'
-        return (
-          <span key={i} className={`${cls} transition-colors duration-500`}>
-            {t}{' '}
-          </span>
-        )
-      })}
-    </p>
+    <div className="space-y-2">
+      <History lines={history.map((f) => ({ id: f.segmentId, text: f.text }))} size={size} />
+      <p className="font-medium leading-[1.18] tracking-tight" style={{ fontSize: size }} aria-live="off">
+        {tokens.map((t, i) => {
+          const age = n - 1 - i
+          const cls = age < FRESH ? 'text-white font-bold' : age < FRESH + 8 ? 'text-white/70' : 'text-white/35'
+          return (
+            <span key={i} className={`${cls} transition-colors duration-500`}>
+              {t}{' '}
+            </span>
+          )
+        })}
+      </p>
+    </div>
   )
 }
 
-/** Translation line, subtitle style: the sentence being spoken is translated as it grows (bold) after the last
- *  finished one (dim). Between sentences: latest translated final bold, the previous one dim. */
+/** The finished sentences above the current one, oldest first and faintest. */
+function History({ lines, size, rtl, lang }: { lines: { id: number | string; text: string }[]; size: string; rtl?: boolean; lang?: string }) {
+  if (lines.length === 0) return null
+  return (
+    <div className="space-y-1" dir={rtl ? 'rtl' : undefined} lang={lang} aria-hidden="true">
+      {lines.map((l, i) => (
+        <p key={l.id} className={`leading-[1.25] tracking-tight transition-colors duration-500 ${i === lines.length - 1 ? 'text-white/55' : 'text-white/35'}`} style={{ fontSize: `calc(${size} * ${HISTORY_SCALE})` }}>
+          {l.text}
+        </p>
+      ))}
+    </div>
+  )
+}
+
+/** Translation block, subtitle style: the last few translated sentences (small, dim) over the current one, which
+ *  is the sentence being spoken translated as it grows (bold), or between sentences the latest translated final. */
 function TranslationLine({ state, lang, size }: { state: CaptionState; lang: string; size: string }) {
   const rtl = LANGUAGES.find((l) => l.code === lang)?.rtl
   const items = useMemo(() => {
@@ -61,25 +86,25 @@ function TranslationLine({ state, lang, size }: { state: CaptionState; lang: str
   const live = lang !== 'en' ? state.interimTr : null
   const pending = lang !== 'en' && state.finals.length > 0 && !state.translations[state.finals[state.finals.length - 1].segmentId]
   const latest = items[items.length - 1]
-  const prev = items[items.length - 2]
   if (!latest && !live) return null
+  // While a sentence is being spoken every translated final is history; between sentences the latest one is current.
+  const history = live ? items.slice(-(KEEP - 1)) : items.slice(-KEEP, -1)
   return (
-    <p dir={rtl ? 'rtl' : undefined} lang={lang} className="leading-[1.22] tracking-tight" style={{ fontSize: size }} aria-live="polite">
-      {live ? (
-        <>
-          {latest && <span className="text-white/40">{latest.text} </span>}
+    <div className="space-y-2">
+      <History lines={history} size={size} rtl={rtl} lang={lang} />
+      <p dir={rtl ? 'rtl' : undefined} lang={lang} className="leading-[1.22] tracking-tight" style={{ fontSize: size }} aria-live="polite">
+        {live ? (
           <span className="font-bold text-white">{live.text}</span>
-        </>
-      ) : (
-        <>
-          {prev && <span className="text-white/40">{prev.text} </span>}
-          <span key={latest.id} className="font-bold text-white">
-            {latest.text}
-          </span>
-          {pending && <span className="pulse text-white/40"> …</span>}
-        </>
-      )}
-    </p>
+        ) : (
+          <>
+            <span key={latest.id} className="font-bold text-white">
+              {latest.text}
+            </span>
+            {pending && <span className="pulse text-white/40"> …</span>}
+          </>
+        )}
+      </p>
+    </div>
   )
 }
 
@@ -128,16 +153,13 @@ function LivePage() {
 
   return (
     <div className="flex h-dvh flex-col bg-[#0d0d0d] text-white [color-scheme:dark]">
-      <header className="flex items-center gap-3 border-b border-white/10 px-4 py-3 md:px-8">
-        <a href="/" className="flex items-center gap-2 font-bold tracking-tight" aria-label="Slap home">
-          <span className="inline-flex h-4 w-6 items-center rounded-[3px] bg-white">
-            <span className="ml-auto mr-0.5 size-1.5 rounded-full bg-[#ff6a00]" />
-          </span>
-          <span className="hidden sm:inline">slap</span>
+      <header className="flex items-center gap-3 border-b border-white/10 px-3 py-3 md:px-4">
+        <a href="/" className="flex items-center text-white" aria-label="Slap home">
+          <Logo className="text-[20px]" />
         </a>
         <div className="min-w-0 flex-1 truncate text-sm text-white/60">
           {replay && (
-            <span className="mr-2 inline-flex h-5 items-center rounded-sm border border-yellow-400/70 px-1.5 font-mono text-[10px] uppercase tracking-wider text-yellow-300" title="A saved lecture played back, not live audio">
+            <span className="mr-2 inline-flex h-5 items-center rounded-sm border border-yellow-400/70 px-1.5 font-mono text-[11px] uppercase tracking-wider text-yellow-300" title="A saved lecture played back, not live audio">
               Replay
             </span>
           )}
@@ -178,14 +200,22 @@ function LivePage() {
         >
           <span style={{ fontSize: 12 + sizeIdx * 4 }}>Aa</span>
         </button>
+        <Link
+          to="/home"
+          className="flex h-10 items-center gap-1.5 rounded-md border border-white/15 bg-[#1c1c1c] px-3 text-sm font-semibold text-white transition hover:border-white/40"
+          title="Back to the dashboard"
+        >
+          <House className="size-4" aria-hidden="true" />
+          <span className="hidden sm:inline">Home</span>
+        </Link>
       </header>
 
       <main
-        className="flex min-h-0 flex-1 cursor-pointer flex-col justify-end overflow-hidden px-5 pb-6 md:px-12 md:pb-10"
+        className="flex min-h-0 flex-1 cursor-pointer flex-col justify-center overflow-hidden px-5 py-8 md:px-12 md:py-10"
         onClick={cycleSize}
         title="Tap to change text size"
       >
-        <div className="mx-auto w-full max-w-6xl space-y-6">
+        <div className="mx-auto flex max-h-full w-full max-w-6xl flex-col justify-end space-y-6 overflow-hidden">
           {ended && (
             <div className="rounded-md border border-white/15 bg-white/5 p-5 text-base" onClick={(e) => e.stopPropagation()}>
               <div className="font-mono text-xs uppercase tracking-widest text-white/50">{replay ? 'Replay ended' : 'Lecture ended'}</div>
@@ -206,13 +236,13 @@ function LivePage() {
             </div>
           )}
           <div>
-            <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">{replay ? 'Replay of a saved lecture · EN' : 'Lecturer · EN'}</div>
+            <div className="mb-2 font-mono text-[11px] uppercase tracking-[0.2em] text-white/40">{replay ? 'Replay of a saved lecture · EN' : 'Lecturer · EN'}</div>
             <SourceLine state={state} size={translated ? smaller : size} />
           </div>
-          {(translated || state.finals.length > 0) && (
+          {translated && (
             <div className="border-t border-white/10 pt-5">
-              <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">
-                {translated ? `${LANGUAGES.find((l) => l.code === lang)?.native ?? lang} · machine translation, approximate` : 'Last sentence'}
+              <div className="mb-2 font-mono text-[11px] uppercase tracking-[0.2em] text-white/40">
+                {`${LANGUAGES.find((l) => l.code === lang)?.native ?? lang} · machine translation, approximate`}
               </div>
               {translated && state.finals.length > 0 && Object.keys(state.translations).length === 0 && !state.interimTr ? (
                 <p className="pulse text-white/40" style={{ fontSize: size }}>
@@ -226,7 +256,7 @@ function LivePage() {
         </div>
       </main>
 
-      <footer className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-white/10 px-4 py-2.5 font-mono text-[11px] uppercase tracking-wider text-white/55 md:px-8">
+      <footer className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-white/10 px-4 py-2.5 font-mono text-[12px] uppercase tracking-wider text-white/55 md:px-8">
         <span className="flex items-center gap-2">
           <span className={`size-2 rounded-full ${live ? (replay ? 'pulse bg-yellow-400' : 'pulse bg-[#ff6a00]') : socket === 'reconnecting' ? 'bg-yellow-400' : 'bg-white/30'}`} />
           <span className={live ? (replay ? 'text-yellow-300' : 'text-[#ff8a3d]') : ''}>

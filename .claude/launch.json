@@ -16,7 +16,6 @@
         "--filter",
         "@slap/web",
         "dev:mock",
-        "--",
         "--port",
         "5174",
         "--strictPort"

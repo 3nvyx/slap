@@ -103,6 +103,8 @@ export const api = {
   /** Every class; there is no sign-in, so the list is the same for everyone. */
   classes: () => get<ClassSummary[]>('/api/classes'),
   createClass: (name: string, code: string) => post<ClassSummary>('/api/classes', { name, code }),
+  /** Deletes a course with its lectures, notes, cards and dates. */
+  deleteClass: (classId: string) => request<{ ok: true }>('DELETE', `/api/classes/${enc(classId)}`),
   classDetail: (classId: string) => get<ClassDetail>(`/api/classes/${enc(classId)}`),
   announcements: (classId: string) => get<ClassAnnouncement[]>(`/api/classes/${enc(classId)}/announcements`),
   startSession: (classId: string, title?: string) =>

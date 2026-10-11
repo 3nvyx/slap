@@ -176,7 +176,7 @@ function ReviewSession({ cards, names, classId, concept, onMore, onAll }: Sessio
             className={`flex h-16 cursor-pointer flex-col items-center justify-center rounded-md border border-line bg-panel transition hover:bg-panel-2 disabled:cursor-not-allowed disabled:opacity-40 ${cls}`}
           >
             <span className="font-semibold">{label}</span>
-            <span className="font-mono text-[10px] text-muted">
+            <span className="font-mono text-[11px] text-muted">
               {r} · {hint}
             </span>
           </button>

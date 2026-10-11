@@ -15,6 +15,17 @@ export function useOnlineDevices() {
   return devices
 }
 
+/** Device recordings not in a course yet, asked for again every few seconds so a live one shows up. */
+export function useInbox() {
+  const inbox = useApi(() => api.inbox(), [])
+  const reload = inbox.reload
+  useEffect(() => {
+    const t = setInterval(() => void reload(), 5000)
+    return () => clearInterval(t)
+  }, [reload])
+  return inbox
+}
+
 /** Runs one async action at a time and keeps its error. */
 export function useAction() {
   const [busy, setBusy] = useState(false)

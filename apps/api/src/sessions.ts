@@ -122,6 +122,8 @@ export interface LiveLecture {
   audioClock: { offsetS: number; bytes: number } | null;
   /** Set while this (ephemeral) lecture replays a saved one. */
   replay: ReplayState | null;
+  /** Set while this server follows, from the database, a lecture another server is recording (see followLecture). */
+  follow: NodeJS.Timeout | null;
 }
 
 const lectures = new Map<string, LiveLecture>();
@@ -159,7 +161,7 @@ function newLecture(row: LectureRow): LiveLecture {
     status: row.status, source: row.source, deviceId: row.deviceId,
     seq: 0, seqFloor: 0, nextIdx: 0, finals: [], viewers: new Set(), stt: null,
     queue: Promise.resolve(), persist: Promise.resolve(), idPool: [], refilling: null, stopping: null,
-    inflight: new Set(), utterance: 0, interimTr: new Map(), latency: { interim: [], final: [] }, persistent: true, browserAudio: null, audioClock: null, replay: null,
+    inflight: new Set(), utterance: 0, interimTr: new Map(), latency: { interim: [], final: [] }, persistent: true, browserAudio: null, audioClock: null, replay: null, follow: null,
   };
 }
 
@@ -236,6 +238,7 @@ export function lectureState(l: LiveLecture): DeviceState | "ended" {
   const d = l.deviceId ? devices.get(l.deviceId) : undefined;
   if (d && d.lectureId === l.id) return "recording";
   if (l.browserAudio) return "recording";
+  if (l.follow) return "recording";                          // another server records it; we relay its saved captions
   if (l.deviceId && l.source === "device") return "error";   // its device dropped mid-lecture
   return l.stt ? "recording" : "idle";
 }
@@ -253,13 +256,99 @@ export function broadcastStatus(l: LiveLecture) { broadcast(l, statusEvent(l)); 
 
 export function addViewer(l: LiveLecture, v: Viewer) {
   l.viewers.add(v);
+  followLecture(l);
   broadcastStatus(l);
 }
 
 export function removeViewer(l: LiveLecture, v: Viewer) {
   if (!l.viewers.delete(v)) return;
   broadcastStatus(l);
+  if (l.follow && l.viewers.size === 0) {
+    // Nobody is watching: stop reading, and forget the copy so the next viewer starts from a fresh one.
+    stopFollowing(l);
+    lectures.delete(l.id);
+    return;
+  }
   maybeEvict(l);
+}
+
+// ---------- following a lecture another server records ----------
+// Several API servers can share one database (a laptop on the LAN and a deployed one, say). A device streams to
+// just one of them; the others only see the rows it saves. When a viewer here opens such a lecture, this server
+// reads its new sentences (and saved translations) every FOLLOW_MS and sends them on, so the captions show up
+// everywhere, a moment late and without the half-spoken interim words. It stops when the lecture ends or
+// the last viewer leaves.
+
+const FOLLOW_MS = 1500;
+
+/** True for a live device lecture whose device is not connected to this server. */
+function recordedElsewhere(l: LiveLecture): boolean {
+  if (l.status !== "live" || l.source !== "device" || !l.deviceId || l.replay || l.browserAudio || l.stt) return false;
+  const d = devices.get(l.deviceId);
+  return !(d && d.lectureId === l.id);
+}
+
+function followLecture(l: LiveLecture) {
+  if (l.follow || !recordedElsewhere(l)) return;
+  let busy = false;
+  l.follow = setInterval(() => {
+    if (busy) return;
+    busy = true;
+    followTick(l).catch(logErr("follow")).finally(() => { busy = false; });
+  }, FOLLOW_MS);
+  l.follow.unref();
+  log(`following ${l.id} from the database (recorded by another server)`);
+}
+
+function stopFollowing(l: LiveLecture) {
+  if (!l.follow) return;
+  clearInterval(l.follow);
+  l.follow = null;
+}
+
+async function followTick(l: LiveLecture) {
+  if (!l.follow) return;
+  // The device may have connected here meanwhile: then the live path takes over.
+  if (!recordedElsewhere(l)) { stopFollowing(l); broadcastStatus(l); return; }
+  const [row] = await db.select({ status: schema.lectures.status, endedAt: schema.lectures.endedAt }).from(schema.lectures).where(eq(schema.lectures.id, l.id)).limit(1);
+  if (!row) { stopFollowing(l); lectures.delete(l.id); return; }
+  const segs = await db.select().from(schema.segments)
+    .where(and(eq(schema.segments.lectureId, l.id), gt(schema.segments.idx, l.nextIdx - 1)))
+    .orderBy(asc(schema.segments.idx));
+  for (const sg of segs) {
+    if (l.finals.some(f => f.segmentId === sg.id)) continue;
+    const f: FinalEntry = { seq: ++l.seq, segmentId: sg.id, idx: sg.idx, text: sg.text, start: sg.startS, end: sg.endS, words: (sg.words as CaptionWord[] | null) ?? [], tr: new Map() };
+    l.finals.push(f);
+    if (l.finals.length > RING) l.finals.shift();
+    l.nextIdx = sg.idx + 1;
+    broadcast(l, { type: "final", seq: f.seq, segmentId: f.segmentId, text: f.text, words: f.words, start: f.start, end: f.end });
+  }
+  // Translations the viewers here want: the saved ones first, the rest translated here.
+  for (const lang of viewerLanguages(l)) {
+    if (isSourceLang(lang)) continue;
+    const missing = l.finals.slice(-BACKFILL).filter(f => !f.tr.has(lang) && !l.inflight.has(`${f.segmentId}|${lang}`));
+    if (!missing.length) continue;
+    const saved = await db.select().from(schema.translations)
+      .where(and(eq(schema.translations.lang, lang), inArray(schema.translations.segmentId, missing.map(f => f.segmentId))));
+    const byId = new Map(missing.map(f => [f.segmentId, f]));
+    for (const t of saved) {
+      const f = byId.get(t.segmentId);
+      if (!f) continue;
+      const seq = ++l.seq;
+      f.tr.set(lang, { text: t.text, seq });
+      broadcast(l, { type: "translation", seq, segmentId: f.segmentId, lang, text: t.text }, lang);
+      byId.delete(t.segmentId);
+    }
+    const still = [...byId.values()];
+    if (still.length) void translateEntries(l, still, lang);
+  }
+  if (row.status !== "live") {
+    l.status = row.status;
+    l.endedAt = row.endedAt?.getTime() ?? Date.now();
+    stopFollowing(l);
+    broadcastStatus(l);
+    maybeEvict(l);
+  }
 }
 
 /** Switches a viewer's language; the first viewer of a new language triggers a backfill of recent finals. */
@@ -801,6 +890,19 @@ export async function findLiveLecture(classId: string): Promise<LiveLecture | nu
     .where(and(eq(schema.lectures.classId, classId), eq(schema.lectures.status, "live"), gt(schema.lectures.startedAt, new Date(Date.now() - RESUME_WINDOW_MS))))
     .orderBy(desc(schema.lectures.startedAt)).limit(1);
   return row ? loadLecture(row.id) : null;
+}
+
+/** Before a class is deleted: its live lecture (if any) is stopped and saved, its cached lectures are dropped,
+ *  and a device that was pointed at it is pointed at nothing. The rows go with the class (cascade). */
+export async function forgetClass(classId: string): Promise<void> {
+  const live = await findLiveLecture(classId);
+  if (live) await stopSession(live.id).catch(logErr("stop lecture of a class being deleted"));
+  for (const [id, l] of lectures) if (l.classId === classId) lectures.delete(id);
+  for (const d of devices.values()) {
+    if (d.classId !== classId) continue;
+    Object.assign(d, { classId: null, classCode: null, className: null });
+    d.refresh();
+  }
 }
 
 async function defaultTitle(classId: string): Promise<string> {

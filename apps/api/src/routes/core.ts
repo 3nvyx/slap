@@ -15,7 +15,7 @@ import { buildVault, noteName } from "../pipeline/vault.ts";
 import { zipStore } from "../pipeline/zip.ts";
 import { classOr404, type UserEnv } from "../user.ts";
 import {
-  captionMode, connectedDeviceForClass, DeviceBusyError, deviceForWebStart, findLiveLecture, getLecture, importLecture, isUuid,
+  captionMode, connectedDeviceForClass, DeviceBusyError, deviceForWebStart, findLiveLecture, forgetClass, getLecture, importLecture, isUuid,
   listDevices, liveLectureInMemory, ReplayError, assignLecture, inboxClassId, setActiveClass, setCaptionMode, startReplay, startSession, stopSession, toSummary, viewerLanguages,
 } from "../sessions.ts";
 
@@ -253,6 +253,17 @@ coreRoutes.post("/classes", async (c) => {
   const id = crypto.randomUUID();
   await db.insert(classes).values({ id, name: b.name, code: b.code, ownerUserId: c.var.user.id, description: b.description, instructor: b.instructor, term: b.term });
   return c.json(await oneSummary(id), 201);
+});
+
+/** Deletes a course. Its lectures, notes, cards, questions and dates go with it (cascade). The inbox class stays. */
+coreRoutes.delete("/classes/:classId", async (c) => {
+  const classId = uuidParam(c, "classId");
+  await classOr404(classId);
+  const [cls] = await db.select({ code: classes.code }).from(classes).where(eq(classes.id, classId)).limit(1);
+  if (cls?.code === INBOX_CODE) return c.json({ error: "the inbox cannot be deleted" }, 409);
+  await forgetClass(classId);
+  await db.delete(classes).where(eq(classes.id, classId));
+  return c.json({ ok: true });
 });
 
 coreRoutes.patch("/classes/:classId", async (c) => {

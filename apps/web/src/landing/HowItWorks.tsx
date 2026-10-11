@@ -50,7 +50,6 @@ export function HowItWorks() {
             {/* 02: recording */}
             <Scene on={step === 1}>
               <Device className="stage-device slapped" screen="recording" />
-              <p className="scene-note">The red light is on while the microphone is live.</p>
             </Scene>
             {/* 03: pick a language */}
             <Scene on={step === 2}>

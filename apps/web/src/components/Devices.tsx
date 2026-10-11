@@ -2,13 +2,13 @@
 // recording" until someone puts it into a course, while it runs (the Devices card) or afterwards (the New
 // recordings card). Shared by the class list and the class home device panel.
 import type { ClassSummary, InboxLecture } from '@slap/contracts'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
-import { Button, ErrorBox, inputCls, Label, Panel, Pill } from './ui'
+import { Button, ButtonLink, Dot, ErrorBox, inputCls, Label, Panel, Pill } from './ui'
 import { api } from '../lib/api'
 import { deviceLabel, useAction } from '../lib/devices'
 import { fmtDate, fmtTime } from '../lib/format'
-import { useApi, type ApiState } from '../lib/useApi'
+import type { ApiState } from '../lib/useApi'
 import type { DeviceSummary } from '../lib/types'
 
 /** Shown when no device is connected to the server. */
@@ -26,7 +26,8 @@ export function NoDeviceOnline() {
 
 /** Home: every device that is online, each with the course its recording goes into (optional: pick or create one).
  *  `devices` is the page's `useOnlineDevices()`, so the page can use the same list. */
-export function OnlineDevicesCard({ devices, classes, onClassesChanged }: { devices: ApiState<DeviceSummary[]>; classes: ClassSummary[]; onClassesChanged: () => Promise<void> }) {
+/** `liveId`: the lecture being captioned right now, if any; the card's button opens its captions page. */
+export function OnlineDevicesCard({ devices, classes, liveId, onClassesChanged }: { devices: ApiState<DeviceSummary[]>; classes: ClassSummary[]; liveId?: string | null; onClassesChanged: () => Promise<void> }) {
   const list = devices.data ?? []
   const reload = async () => {
     await devices.reload()
@@ -34,7 +35,20 @@ export function OnlineDevicesCard({ devices, classes, onClassesChanged }: { devi
   }
 
   return (
-    <Panel title="Devices">
+    <Panel
+      title="Devices"
+      action={
+        liveId ? (
+          <ButtonLink to={`/live/${liveId}`} variant="accent" size="sm">
+            <Dot live /> Live captions
+          </ButtonLink>
+        ) : (
+          <Button size="sm" disabled title="Nothing is recording right now">
+            <Dot /> Live captions
+          </Button>
+        )
+      }
+    >
       {devices.data === undefined ? (
         devices.error ? <ErrorBox error={devices.error} onRetry={() => void devices.reload()} /> : <p className="text-sm text-muted">Loading…</p>
       ) : list.length === 0 ? (
@@ -135,7 +149,13 @@ function InboxRow({ rec, classes, onChange }: { rec: InboxLecture; classes: Clas
     <div>
       <div className="flex items-center gap-2 text-sm">
         {live && <Pill status="recording" />}
-        <span className="min-w-0 flex-1 truncate font-medium">{rec.title}</span>
+        {live ? (
+          <Link to={`/live/${rec.id}`} className="min-w-0 flex-1 truncate font-medium hover:underline" title="Open the live captions">
+            {rec.title}
+          </Link>
+        ) : (
+          <span className="min-w-0 flex-1 truncate font-medium">{rec.title}</span>
+        )}
         <span className="shrink-0 font-mono text-xs text-muted">{fmtTime(rec.durationS)}</span>
       </div>
       <p className="mt-1 text-xs text-muted">
@@ -188,20 +208,14 @@ function InboxRow({ rec, classes, onChange }: { rec: InboxLecture; classes: Clas
 }
 
 /** Home: transcripts the device made that are not in a course yet, each with a course picker. */
-export function NewRecordingsCard({ classes, onChange }: { classes: ClassSummary[]; onChange: () => Promise<void> }) {
-  const inbox = useApi(() => api.inbox(), [])
-  const reloadInbox = inbox.reload
-  useEffect(() => {
-    const t = setInterval(() => void reloadInbox(), 5000)
-    return () => clearInterval(t)
-  }, [reloadInbox])
+export function NewRecordingsCard({ inbox, classes, onChange }: { inbox: ApiState<InboxLecture[]>; classes: ClassSummary[]; onChange: () => Promise<void> }) {
   const list = inbox.data ?? []
   const reload = async () => {
     await inbox.reload()
     await onChange()
   }
   return (
-    <Panel title="New recordings">
+    <Panel title="New Recordings">
       {inbox.data === undefined ? (
         inbox.error ? <ErrorBox error={inbox.error} onRetry={() => void inbox.reload()} /> : <p className="text-sm text-muted">Loading…</p>
       ) : list.length === 0 ? (

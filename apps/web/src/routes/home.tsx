@@ -1,13 +1,15 @@
-import type { ClassSummary } from '@slap/contracts'
-import { useState, type ReactNode } from 'react'
-import { Link } from 'react-router'
+import type { AssessmentKind, ClassSummary } from '@slap/contracts'
+import { Check, Plus } from 'lucide-react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { Link, useNavigate } from 'react-router'
 import { CourseGrid } from '../components/Courses'
 import { NewRecordingsCard, OnlineDevicesCard } from '../components/Devices'
 import { TopBar } from '../components/Shell'
-import { Async, ButtonLink, cx, Label, PageTitle, Panel, Pill } from '../components/ui'
+import { Async, Button, ButtonLink, cx, ErrorBox, inputCls, Label, PageTitle, Panel, Pill } from '../components/ui'
 import { api } from '../lib/api'
-import { deviceLabel, useOnlineDevices } from '../lib/devices'
+import { deviceLabel, useAction, useInbox, useOnlineDevices } from '../lib/devices'
 import { examInfo, fmtDate } from '../lib/format'
+import { addTodo, removeTodo, useUserTodos, type UserTodo } from '../lib/todos'
 import type { DeviceSummary, Today } from '../lib/types'
 import { useApi } from '../lib/useApi'
 
@@ -18,6 +20,8 @@ const MAX_COURSES = 8
 const VISIBLE_ROWS = 2
 // An exam this close puts "go through the exam topics" on the to-do list.
 const EXAM_SOON_DAYS = 7
+// The recording Home last opened the captions for on its own (per browser tab).
+const AUTO_OPEN_KEY = 'slap.autoOpenedLive'
 
 /** What one course contributes to the dashboard. One that failed to load is left out, not shown as an error. */
 interface CourseStudy {
@@ -83,6 +87,22 @@ export default function HomePage() {
   const devices = useOnlineDevices()
   // A class is only known to be on when a device is recording it; nothing else says a session is running.
   const recording = (devices.data ?? []).filter((d) => d.state === 'recording' && d.lectureId)
+  const inbox = useInbox()
+  // What is being captioned right now: a device recording into a course, else a recording still in the inbox.
+  const liveId = recording[0]?.lectureId ?? (inbox.data ?? []).find((r) => r.status === 'live')?.id ?? null
+  // When a recording starts, the page goes to its captions by itself: once per recording, so coming back to
+  // Home while it runs does not bounce you out again.
+  const navigate = useNavigate()
+  useEffect(() => {
+    if (!liveId) return
+    try {
+      if (sessionStorage.getItem(AUTO_OPEN_KEY) === liveId) return
+      sessionStorage.setItem(AUTO_OPEN_KEY, liveId)
+    } catch {
+      /* storage blocked: still open it */
+    }
+    void navigate(`/live/${liveId}`)
+  }, [liveId, navigate])
   // The study data is asked for again only when the set of courses changes, not on every reload of the list.
   const study = useApi(() => loadStudy(list ?? []), [list?.map((c) => `${c.id}:${c.lectureCount}`).join(',')], { enabled: list !== undefined })
 
@@ -95,9 +115,9 @@ export default function HomePage() {
           {(all) => (
             <>
               {/* Two cards a row, stretched to the same height: to-dos beside the devices, exams beside the new recordings. */}
-              <div className="grid gap-x-8 gap-y-4 lg:grid-cols-[1fr_340px]">
+              <div className="grid gap-x-8 gap-y-6 lg:grid-cols-[1fr_340px]">
                 {recording.length > 0 && (
-                  <Panel title="Recording now" className="lg:col-span-2">
+                  <Panel title="Recording Now" className="lg:col-span-2">
                     <ul className="divide-y divide-line">
                       {recording.map((d) => (
                         <RecordingRow key={d.id} device={d} />
@@ -105,32 +125,183 @@ export default function HomePage() {
                     </ul>
                   </Panel>
                 )}
-                <Panel title="To do">
-                  <Loaded data={study.data} empty={all.some((c) => c.lectureCount > 0) ? 'Nothing due. You are caught up.' : 'Nothing to study yet. To-dos appear once a course has a recorded lecture.'}>
-                    {(s) => todosOf(s).map((t) => <TodoRow key={t.key} todo={t} />)}
-                  </Loaded>
-                </Panel>
-                <OnlineDevicesCard devices={devices} classes={all} onClassesChanged={courses.reload} />
-                <Panel title="Upcoming exams">
-                  <Loaded data={study.data} empty="No exam dates yet. Add them on a course's page, or upload its syllabus.">
-                    {(s) => examsOf(all, s).map((e) => <ExamRow key={e.course.id} {...e} />)}
-                  </Loaded>
-                </Panel>
-                <NewRecordingsCard classes={all} onChange={courses.reload} />
+                <TodoPanel courses={all} study={study.data} />
+                <OnlineDevicesCard devices={devices} classes={all} liveId={liveId} onClassesChanged={courses.reload} />
+                <ExamsPanel
+                  courses={all}
+                  study={study.data}
+                  onChange={async () => {
+                    await Promise.all([courses.reload(), study.reload()])
+                  }}
+                />
+                <NewRecordingsCard inbox={inbox} classes={all} onChange={courses.reload} />
               </div>
 
-              <section className="mt-12">
-                <div className="mb-4 flex items-end justify-between gap-4">
+              <section className="mt-16">
+                <div className="mb-4 flex items-center gap-4">
                   <h2 className="text-2xl font-bold tracking-tight">Courses</h2>
                   <ButtonLink to="/courses">All courses</ButtonLink>
+                  <ButtonLink to="/courses#new">
+                    <Plus /> New course
+                  </ButtonLink>
                 </div>
-                <CourseGrid courses={all} wide />
+                <CourseGrid courses={all} wide onDeleted={courses.reload} />
               </section>
             </>
           )}
         </Async>
       </main>
     </div>
+  )
+}
+
+/** The to-do card: the student's own to-dos (added with the plus button) above the ones worked out from the study data. */
+function TodoPanel({ courses, study }: { courses: ClassSummary[]; study: CourseStudy[] | undefined }) {
+  const mine = useUserTodos()
+  const [adding, setAdding] = useState(false)
+  const rows = [...mine.map((t) => <UserTodoRow key={t.id} todo={t} courses={courses} />), ...(study ? todosOf(study).map((t) => <TodoRow key={t.key} todo={t} />) : [])]
+  const empty = courses.some((c) => c.lectureCount > 0) ? 'Nothing due. You are caught up.' : 'Nothing to study yet. Add your own with the plus, or record a lecture.'
+  return (
+    <Panel
+      title="To Do"
+      action={
+        <Button size="sm" variant={adding ? 'ghost' : 'outline'} aria-expanded={adding} aria-label={adding ? 'Close the new to-do form' : 'Add a to-do'} onClick={() => setAdding(!adding)}>
+          <Plus className={cx('transition', adding && 'rotate-45')} />
+          {adding ? 'Close' : 'Add'}
+        </Button>
+      }
+    >
+      {adding && <AddTodoForm courses={courses} onDone={() => setAdding(false)} />}
+      {rows.length > 0 ? <Rows rows={rows} /> : study === undefined ? <p className="text-sm text-muted">Loading…</p> : <p className="text-sm text-muted">{empty}</p>}
+    </Panel>
+  )
+}
+
+/** One line to write the to-do, a course to file it under (optional), and the button that keeps it. */
+function AddTodoForm({ courses, onDone }: { courses: ClassSummary[]; onDone: () => void }) {
+  const [title, setTitle] = useState('')
+  const [classId, setClassId] = useState('')
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    if (!title.trim()) return
+    addTodo(title, classId || null)
+    setTitle('')
+    onDone()
+  }
+  return (
+    <form onSubmit={submit} className="mb-4 flex flex-col gap-2 rounded-md border border-line bg-bg/60 p-3 sm:flex-row">
+      <input className={inputCls + ' min-w-0 flex-1'} autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What do you need to do?" aria-label="New to-do" maxLength={200} />
+      <select className={inputCls + ' cursor-pointer sm:w-40'} value={classId} onChange={(e) => setClassId(e.target.value)} aria-label="Course for the new to-do">
+        <option value="">No course</option>
+        {courses.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.code}
+          </option>
+        ))}
+      </select>
+      <Button type="submit" variant="ink" disabled={!title.trim()}>
+        Add
+      </Button>
+    </form>
+  )
+}
+
+/** A to-do the student wrote: the tick removes it. */
+function UserTodoRow({ todo, courses }: { todo: UserTodo; courses: ClassSummary[] }) {
+  const course = courses.find((c) => c.id === todo.classId)
+  return (
+    <li className={itemCls}>
+      <div className={rowCls}>
+        <span className={codeCls}>{course?.code ?? '—'}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-medium">{todo.title}</span>
+          <span className="block truncate text-sm text-muted">{course ? course.name : 'Your own to-do'}</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => removeTodo(todo.id)}
+          aria-label={`Mark "${todo.title}" as done`}
+          title="Done"
+          className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line text-transparent transition hover:border-good hover:bg-good hover:text-white"
+        >
+          <Check className="size-3.5" strokeWidth={3} />
+        </button>
+      </div>
+    </li>
+  )
+}
+
+const KINDS: Array<{ value: AssessmentKind; label: string }> = [
+  { value: 'exam', label: 'Exam' },
+  { value: 'quiz', label: 'Quiz' },
+  { value: 'assignment', label: 'Assignment' },
+]
+
+/** The exams card: the next exam of every course, and a plus button that adds a date to a course from here. */
+function ExamsPanel({ courses, study, onChange }: { courses: ClassSummary[]; study: CourseStudy[] | undefined; onChange: () => Promise<void> }) {
+  const [adding, setAdding] = useState(false)
+  return (
+    <Panel
+      title="Upcoming Exams"
+      action={
+        courses.length > 0 && (
+          <Button size="sm" variant={adding ? 'ghost' : 'outline'} aria-expanded={adding} aria-label={adding ? 'Close the new exam form' : 'Add an exam date'} onClick={() => setAdding(!adding)}>
+            <Plus className={cx('transition', adding && 'rotate-45')} />
+            {adding ? 'Close' : 'Add'}
+          </Button>
+        )
+      }
+    >
+      {adding && <AddExamForm courses={courses} onDone={async () => { setAdding(false); await onChange() }} />}
+      <Loaded data={study} empty={courses.length ? 'No exam dates yet. Add one with the plus, or upload a syllabus on the course page.' : 'No exam dates yet. Create a course first.'}>
+        {(s) => examsOf(courses, s).map((e) => <ExamRow key={e.course.id} {...e} />)}
+      </Loaded>
+    </Panel>
+  )
+}
+
+/** Which course, what kind, its name and date; saved to the course like on its own page. */
+function AddExamForm({ courses, onDone }: { courses: ClassSummary[]; onDone: () => Promise<void> }) {
+  const [classId, setClassId] = useState(courses[0]?.id ?? '')
+  const [kind, setKind] = useState<AssessmentKind>('exam')
+  const [name, setName] = useState('')
+  const [date, setDate] = useState('')
+  const a = useAction()
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    if (!classId || !name.trim() || !date) return
+    void a.run(async () => {
+      await api.addAssessment(classId, { kind, name: name.trim(), date })
+      await onDone()
+    })
+  }
+  return (
+    <form onSubmit={submit} className="mb-4 space-y-2 rounded-md border border-line bg-bg/60 p-3">
+      <div className="grid grid-cols-[1fr_110px] gap-2">
+        <select className={inputCls + ' cursor-pointer'} value={classId} onChange={(e) => setClassId(e.target.value)} aria-label="Course for the new exam">
+          {courses.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.code} · {c.name}
+            </option>
+          ))}
+        </select>
+        <select className={inputCls + ' cursor-pointer'} value={kind} onChange={(e) => setKind(e.target.value as AssessmentKind)} aria-label="Kind">
+          {KINDS.map((k) => (
+            <option key={k.value} value={k.value}>
+              {k.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <input className={inputCls} autoFocus placeholder="Name, e.g. Midterm" value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} aria-label="Exam name" />
+      <div className="grid grid-cols-[1fr_auto] gap-2">
+        <input className={inputCls} type="date" value={date} onChange={(e) => setDate(e.target.value)} required aria-label="Exam date" />
+        <Button type="submit" variant="ink" disabled={a.busy || !classId || !name.trim() || !date}>
+          {a.busy ? 'Saving…' : 'Add'}
+        </Button>
+      </div>
+      {a.error != null && <ErrorBox error={a.error} />}
+    </form>
   )
 }
 
