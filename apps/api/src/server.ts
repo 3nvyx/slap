@@ -13,6 +13,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { db } from "./db/index.ts";
 import { resumePendingJobs } from "./pipeline/bundle.ts";
+import { modelBusyMessage } from "./pipeline/llm.ts";
 import { routes } from "./routes/index.ts";
 import { settings } from "./settings.ts";
 import { handleDeviceUpgrade } from "./ws/device.ts";
@@ -96,15 +97,15 @@ async function pageHandler(): Promise<PageHandler | undefined> {
   let builtAt: number;
   try { builtAt = statSync(path.join(webServerBuild, "index.js")).mtimeMs; } catch { return pages?.render; }
   if (pages?.builtAt === builtAt) return pages.render;
-  // A build still being written (under a second old) waits while the previous one keeps serving.
-  if (pages && Date.now() - builtAt < 1000) return pages.render;
+  // A new build is there: the request waits for it (a second for it to finish being written, then for the
+  // copy to settle). The previous build cannot stand in meanwhile, because a rebuild replaces build/client,
+  // so its pages would point at stylesheets and scripts that are gone and show up unstyled.
+  const young = builtAt + 1000 - Date.now();
+  if (young > 0) await new Promise(resolve => setTimeout(resolve, young));
   if (staged?.builtAt !== builtAt) staged = { builtAt, dir: stableCopy(builtAt), at: Date.now() };
   const { dir, at } = staged;
   const wait = dir === webServerBuild ? 0 : at + SETTLE_MS - Date.now();
-  if (wait > 0) {
-    if (pages) return pages.render;
-    await new Promise(resolve => setTimeout(resolve, wait));
-  }
+  if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
   if (pages?.builtAt !== builtAt) {
     const web = await import(pathToFileURL(path.join(webDir, "server.ts")).href) as { pageHandler: (build: unknown) => PageHandler };
     // The query string makes Node load a rebuilt file again instead of the one it already holds.
@@ -125,6 +126,12 @@ app.all("*", async (c) => {
 
 app.onError((err, c) => {
   if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
+  // The model's provider is over its rate limit: say so, and when to come back, instead of "internal error".
+  const busy = modelBusyMessage(err);
+  if (busy) {
+    console.warn("[api]", c.req.method, c.req.path, (err as Error).message);
+    return c.json({ error: busy }, 429);   // not 503: the web app reads 502-504 as "the API is not reachable"
+  }
   console.error("[api]", c.req.method, c.req.path, err);
   return c.json({ error: "internal error" }, 500);
 });

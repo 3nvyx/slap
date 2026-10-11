@@ -15,7 +15,7 @@ export default function ConceptPage() {
   return (
     <Async state={detail} label="Loading note">
       {({ concept, related, mentions, cards, questionCount }) => (
-        <div className="max-w-5xl">
+        <div className="mx-auto max-w-5xl">
           <div className="mb-6 text-sm">
             <Link to={`/c/${classId}/graph`} className="text-muted hover:text-ink">
               ← Graph

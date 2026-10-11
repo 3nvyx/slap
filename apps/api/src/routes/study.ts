@@ -89,7 +89,9 @@ studyRoutes.post("/lectures/:id/bundle", async c => {
 
 studyRoutes.get("/classes/:classId/review/due", async c => {
   const classId = await classParam(c);
-  return c.json(await getDueCards(c.var.user.id, classId, intQuery(c, "limit", 20, 1, 200)));
+  const conceptId = c.req.query("conceptId");
+  if (conceptId !== undefined && !UUID.test(conceptId)) throw new HTTPException(400, { message: "conceptId must be a concept id" });
+  return c.json(await getDueCards(c.var.user.id, classId, intQuery(c, "limit", 20, 1, 200), new Date(), conceptId));
 });
 
 const ReviewBody = z.object({ rating: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]) });

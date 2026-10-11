@@ -8,7 +8,9 @@ import { examInfo, fmtDate, pct } from '../lib/format'
 import { useApi } from '../lib/useApi'
 import { StudyPlanPanel } from '../components/StudyPlan'
 
-export default function TodayPage() {
+/** The study plan page (the address is still /today). The plan the model schedules from the course's lectures,
+ *  syllabus, uploads, exam dates and the student's own results leads; today's numbers and weak spots follow. */
+export default function StudyPlanPage() {
   const { classId } = useClass()
   const today = useApi(() => api.today(classId), [classId])
   const concepts = useApi(() => api.concepts(classId), [classId])
@@ -21,7 +23,11 @@ export default function TodayPage() {
         const exam = examInfo(t.nextExam)
         return (
           <div className="max-w-6xl">
-            <PageTitle kicker={fmtDate(t.date, { weekday: 'long', month: 'long', day: 'numeric' })} title="Today" />
+            <PageTitle kicker={fmtDate(t.date, { weekday: 'long', month: 'long', day: 'numeric' })} title="Study plan" />
+
+            <StudyPlanPanel classId={classId} masteryOf={masteryOf} />
+
+            <h2 className="mb-4 mt-10 text-xl font-bold tracking-tight">Today</h2>
 
             <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="flex flex-col justify-between rounded-md bg-ink p-6 text-bg">
@@ -65,9 +71,7 @@ export default function TodayPage() {
               </div>
             </div>
 
-            <StudyPlanPanel classId={classId} masteryOf={masteryOf} />
-
-            <div className="mt-6 grid items-start gap-6 lg:grid-cols-3">
+            <div className="grid items-start gap-6 lg:grid-cols-3">
               {announcements.data && announcements.data.some((a) => a.when) && (
                 <Panel title="Coming up">
                   <AnnouncementList items={announcements.data} classId={classId} upcomingOnly limit={5} />

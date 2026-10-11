@@ -21,7 +21,7 @@ export default function PracticePage() {
   const focusName = focus ? byId.get(focus)?.name : lectureId ? detail.lectures.find((l) => l.id === lectureId)?.title : undefined
 
   return (
-    <div className="max-w-3xl">
+    <div className="mx-auto max-w-3xl">
       <PageTitle kicker="Practice · formative feedback, not a mark" title="Practice">
         <div className="rounded-md border border-line bg-panel px-4 py-2 text-right">
           <Label>Running score</Label>

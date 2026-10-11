@@ -241,7 +241,7 @@
 #endif
 
 #define BUTTON_LOCKOUT_MS   50    // BOOT must be quiet this long before an edge counts (debounce)
-#define BUTTON_LONG_MS    2000    // hold BOOT/REC this long = (stop recording and) deep sleep
+#define BUTTON_LONG_MS    1000    // hold BOOT/REC this long = (stop recording and) deep sleep
 
 // ---------- Checks ----------
 static_assert(AUDIO_SHIFT >= 8 && AUDIO_SHIFT <= 16, "AUDIO_SHIFT must be 8..16 (16 = unity, 8 = +48 dB)");

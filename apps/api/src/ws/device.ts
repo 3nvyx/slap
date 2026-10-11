@@ -29,7 +29,7 @@ const sockets = new Map<string, WebSocket>();   // device id -> current socket
 const usbTargets = new Map<string, { socket: WebSocket; shake: () => Promise<void> }>();
 
 /** A shake seen by the USB motion sensor that sits with the device (arduino.ts): it starts a recording, or, while
- *  one runs, only throws the captions about for a moment. It never stops one (that is REC held for 2 s). False if the device is offline. */
+ *  one runs, only throws the captions about for a moment. It never stops one (that is REC held for 1 s). False if the device is offline. */
 export async function triggerUsbSlap(firmwareDeviceId: string): Promise<boolean> {
   const target = usbTargets.get(firmwareDeviceId);
   if (!target || target.socket.readyState !== WebSocket.OPEN) return false;

@@ -26,7 +26,7 @@ export default function PretestPage() {
   }
 
   return (
-    <div className="max-w-3xl">
+    <div className="mx-auto max-w-3xl">
       <PageTitle kicker="Before the next lecture · warm-up, not a test" title="Pretest">
         {score.total > 0 && (
           <div className="rounded-md border border-line bg-panel px-4 py-2 text-right">
@@ -94,7 +94,7 @@ export default function PretestPage() {
                     {busy ? 'Writing…' : 'New questions'}
                   </Button>
                   <ButtonLink variant="ink" to={`/c/${classId}/today`}>
-                    Today
+                    Study plan
                   </ButtonLink>
                 </div>
               </div>

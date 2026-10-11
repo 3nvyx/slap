@@ -28,13 +28,22 @@ the case over is too slow. The next shake counts after 0.5 s of stillness.
 count is printed as `motion peak_g=… ms=…` (the server logs it), which shows how
 far off a failed shake was. The built-in Arduino LED toggles on each shake.
 
+The library's `read()` reports acceleration in m/s² (its `set_gravity()` does not apply to it); the sketch
+divides by 9.80665, so `SHAKE_G` and `QUIET_G` are in g. With the values left in m/s² the sensor's own noise
+never counts as still, and only the first shake after power-up is sent.
+
+The sketch restarts the board (`IMU restart: …` in the server log) when no sensor answers at boot, when ten
+reads in a row fail, or when the values stop changing for 2 s. A cable contact that opens for an instant
+while the sensor is shaken causes the last two. To watch the readings, build with `-DIMU_PLOT=1`: it prints
+`ax ay az moved motion_ms` 20 times a second.
+
 To build without Arduino IDE, use the `arduino-cli` bundled in it with the board
 `arduino:renesas_uno:unor4wifi`. Stop the API first: it holds the serial port.
 
 The API routes `SHAKE` (and `SLAP` from the earlier double-slap sketch) to the connected ESP32 named by
 `ARDUINO_DEVICE_ID` (`triggerUsbSlap` in `apps/api/src/ws/device.ts`). A shake starts a recording: the ESP32
 plays its slap animation, then shows captions. While a recording runs, a shake only throws the caption text about for
-half a second (it shifts, bends and gets small movement lines); it never stops one (hold REC on the ESP32 for 2 s to save and stop). Events while the ESP32 is
+half a second (it shifts, bends and gets small movement lines); it never stops one (hold REC on the ESP32 for 1 s to save and stop). Events while the ESP32 is
 offline are discarded, and a shake cannot wake an ESP32 from deep sleep. With no motion sensor of its own the
 ESP32 therefore does not sleep after a recording: it stays connected and darkens its screen (standby).
 

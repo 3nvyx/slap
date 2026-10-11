@@ -78,6 +78,14 @@ export default function PartnerPage() {
   const [lang, setLang] = useState(storedLang)
   const [lectureId, setLectureId] = useState(() => readyLectures[0]?.id ?? '')
   const [nonce, setNonce] = useState(0)
+  // A stored voice that is no longer offered falls back to the default; the session waits for the list to know.
+  const voiceStale = !!voiceId && !!voices.data && !voices.data.some((v) => v.id === voiceId)
+  const voiceReady = !voiceId || (!voiceStale && (!!voices.data || !!voices.error))
+  useEffect(() => {
+    if (!voiceStale) return
+    storeVoice('')
+    setVoiceId('')
+  }, [voiceStale])
 
   // ---- conversation ----
   const [phase, setPhase] = useState<Phase>('starting')
@@ -151,7 +159,7 @@ export default function PartnerPage() {
   // ---- session lifecycle ----
   const hasLectures = readyLectures.length > 0
   useEffect(() => {
-    if (!hasLectures) return
+    if (!hasLectures || !voiceReady) return
     let cancelled = false
     setPhase('starting')
     setStartError(null)
@@ -187,7 +195,7 @@ export default function PartnerPage() {
       stopAudio()
       if (s) void api.endPartner(s.sessionId).catch(() => {})
     }
-  }, [classId, voiceId, lang, lectureId, nonce, hasLectures, preload, speak, stopAudio])
+  }, [classId, voiceId, voiceReady, lang, lectureId, nonce, hasLectures, preload, speak, stopAudio])
 
   const send = useCallback(
     async (input: TurnInput) => {
@@ -327,7 +335,7 @@ export default function PartnerPage() {
 
   if (readyLectures.length === 0) {
     return (
-      <div className="max-w-3xl">
+      <div className="mx-auto max-w-3xl">
         <Header />
         <Empty>
           The partner quizzes you out loud on processed lectures. It opens once a lecture’s study bundle is ready.{' '}
@@ -559,11 +567,9 @@ function Settings({
   lectureId: string
   onLecture: (id: string) => void
 }) {
-  const [custom, setCustom] = useState('')
-  const known = voices?.some((v) => v.id === voiceId)
   return (
-    <div className="grid gap-4 rounded-md border border-line bg-panel p-4 sm:grid-cols-2 lg:grid-cols-[1.3fr_0.7fr_1fr]">
-      <div className="min-w-0 sm:col-span-2 lg:col-span-1">
+    <div className="grid gap-4 rounded-md border border-line bg-panel p-4 sm:grid-cols-[1.4fr_0.8fr_1fr]">
+      <div className="min-w-0">
         <label className="label mb-1.5 block" htmlFor="partner-voice">
           Voice
         </label>
@@ -575,32 +581,7 @@ function Settings({
               {v.default ? ' (default)' : ''}
             </option>
           ))}
-          {voices && voiceId && !known && <option value={voiceId}>Custom · {voiceId}</option>}
         </select>
-        <form
-          className="mt-2 flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault()
-            const id = custom.trim()
-            if (id) {
-              onVoice(id)
-              setCustom('')
-            }
-          }}
-        >
-          <input
-            className={selectCls + ' font-mono text-xs'}
-            placeholder="Enter a Fish voice id"
-            value={custom}
-            onChange={(e) => setCustom(e.target.value)}
-            aria-label="Fish voice id"
-            spellCheck={false}
-            autoComplete="off"
-          />
-          <Button size="sm" className="h-9" disabled={!custom.trim()}>
-            Use
-          </Button>
-        </form>
       </div>
       <div className="min-w-0">
         <label className="label mb-1.5 block" htmlFor="partner-lang">

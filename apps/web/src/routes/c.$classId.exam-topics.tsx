@@ -13,7 +13,7 @@ export default function ExamTopicsPage() {
   const quotes = useMemo(() => new Map((concepts.data ?? []).map((c) => [c.id, c.examQuote])), [concepts.data])
 
   return (
-    <div className="max-w-4xl">
+    <div className="mx-auto max-w-4xl">
       <PageTitle kicker="What to study first" title="Exam topics">
         <ButtonLink to={`/c/${classId}/exam-sheet`}>One-page sheet</ButtonLink>
       </PageTitle>

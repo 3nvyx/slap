@@ -28,8 +28,6 @@ export const settings = {
     key: env("FISH_API_KEY"),
     ttsModel: env("FISH_TTS_MODEL", "s2.1-pro")!,
     asrModel: env("FISH_ASR_MODEL", "transcribe-1-pro")!,
-    voiceId: env("FISH_VOICE_ID"),                 // default partner voice (Fish voice model id)
-    voices: env("FISH_VOICES", "")!,                // "id:Name:style,..." curated partner voices
     diarize: env("FISH_DIARIZE", env("FISH_API_KEY") ? "1" : "0") === "1",
   },
   deviceKeys: (env("DEVICE_KEYS", "dev-device-key") ?? "").split(",").map(s => s.trim()).filter(Boolean),

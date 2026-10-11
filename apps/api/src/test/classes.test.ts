@@ -169,6 +169,31 @@ test("practice ?lectureId puts that lecture's questions first; ?conceptId still 
   assert.equal((await call(alice, "GET", `/api/classes/${ids.cls}/practice?lectureId=nope`)).status, 400);
 });
 
+test("review ?conceptId is that concept's whole deck: its cards stay after they stop being due", { skip }, async () => {
+  const { db, schema } = m.db;
+  const { eq } = await import("drizzle-orm");
+  const [other] = await db.insert(schema.concepts).values({ classId: ids.cls, slug: "momentum", name: "Momentum", definition: "Keeps a running direction." }).returning();
+  const [mine, theirs] = await db.insert(schema.cards).values([
+    { classId: ids.cls, conceptId: ids.concept, front: "What is gradient descent?", back: "Iterative optimisation." },
+    { classId: ids.cls, conceptId: other!.id, front: "What is momentum?", back: "Keeps a running direction." },
+  ]).returning();
+  try {
+    // Other tests may have left a card of their own in the class, so these look for the two made here.
+    const idsOf = async (query: string) => (await call(alice, "GET", `/api/classes/${ids.cls}/review/due${query}`)).data.map((c: any) => c.id) as string[];
+    const all = await idsOf("");
+    assert.ok(all.includes(mine!.id) && all.includes(theirs!.id), "both are new, so both are due");
+    const deck = await call(alice, "GET", `/api/classes/${ids.cls}/review/due?conceptId=${ids.concept}`);
+    assert.ok(deck.data.some((c: any) => c.id === mine!.id) && deck.data.every((c: any) => c.conceptId === ids.concept), "only that concept's cards");
+    assert.equal((await call(alice, "POST", `/api/cards/${mine!.id}/review`, { rating: 4 })).status, 200);
+    assert.ok(!(await idsOf("")).includes(mine!.id), "rated easy: not due any more");
+    assert.ok((await idsOf(`?conceptId=${ids.concept}`)).includes(mine!.id), "still in its concept's deck");
+    assert.equal((await call(alice, "GET", `/api/classes/${ids.cls}/review/due?conceptId=nope`)).status, 400);
+  } finally {
+    await db.delete(schema.cards).where(eq(schema.cards.classId, ids.cls));
+    await db.delete(schema.concepts).where(eq(schema.concepts.id, other!.id));
+  }
+});
+
 test("ask the lecture: answers cite the transcript's segments; empty transcript says so", { skip }, async () => {
   assert.equal((await call(alice, "POST", `/api/lectures/${ids.l1}/ask`, { question: "x" })).status, 400);
   const a = await call(alice, "POST", `/api/lectures/${ids.l1}/ask`, { question: "What does gradient descent do?" });

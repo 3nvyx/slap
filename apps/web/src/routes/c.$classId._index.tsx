@@ -1,5 +1,4 @@
 import type { LectureSummary } from '@slap/contracts'
-import { QRCodeSVG } from 'qrcode.react'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { useClass } from '../components/ClassLayout'
@@ -378,30 +377,21 @@ function JoinPanel({ code }: { code: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <Panel title="Join captions">
-      <div className="flex flex-col items-center gap-4">
-        <div className="rounded-md bg-white p-3">
-          <QRCodeSVG value={url} size={176} level="M" marginSize={0} />
-        </div>
-        <div className="w-full text-center">
-          <div className="break-all font-mono text-sm font-semibold">{short}</div>
-          <div className="mt-3 flex justify-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => {
-                void navigator.clipboard?.writeText(url).then(() => {
-                  setCopied(true)
-                  setTimeout(() => setCopied(false), 1500)
-                })
-              }}
-            >
-              {copied ? 'Copied' : 'Copy link'}
-            </Button>
-          </div>
-          <p className="mt-3 text-xs text-muted">
-            No sign-in needed. The link shows live captions, and from there the notes, graph and practice.
-          </p>
-        </div>
+      <div className="break-all font-mono text-sm font-semibold">{short}</div>
+      <div className="mt-3 flex gap-2">
+        <Button
+          size="sm"
+          onClick={() => {
+            void navigator.clipboard?.writeText(url).then(() => {
+              setCopied(true)
+              setTimeout(() => setCopied(false), 1500)
+            })
+          }}
+        >
+          {copied ? 'Copied' : 'Copy link'}
+        </Button>
       </div>
+      <p className="mt-3 text-xs text-muted">No sign-in needed. The link shows live captions, and from there the notes, graph and practice.</p>
     </Panel>
   )
 }

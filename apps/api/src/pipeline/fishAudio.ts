@@ -16,9 +16,6 @@ const TTS_URL = "https://api.fish.audio/v1/tts";
 const ASR_URL = "https://api.fish.audio/v1/asr";
 const TTS_TIMEOUT_MS = 30_000;
 const ASR_TIMEOUT_MS = 90_000;
-/** Voice id meaning "no reference_id": Fish's own default voice. */
-export const FISH_DEFAULT_VOICE = "default";
-
 /** A failed Fish call (HTTP status, or 0 for a network error / timeout). */
 export class FishError extends Error {
   readonly status: number;
@@ -50,26 +47,13 @@ export function fishMode(): "live" | "mock" {
 
 // ---------- voices ----------
 
-/** `id:Name:style,...` (FISH_VOICES) -> voices; malformed entries are skipped. Names come from config, never hardcoded. */
-export function parseVoiceList(spec: string | undefined, max = 6): PartnerVoice[] {
-  const out: PartnerVoice[] = [];
-  for (const raw of (spec ?? "").split(",")) {
-    const [id, name, style] = raw.split(":").map(s => s.trim());
-    if (!id || !/^[A-Za-z0-9_-]{1,64}$/.test(id) || out.some(v => v.id === id)) continue;
-    out.push({ id, name: name || `Voice ${out.length + 1}`, style: style || "neutral" });
-    if (out.length >= max) break;
-  }
-  return out;
-}
-
-function buildVoices(): PartnerVoice[] {
-  const def: PartnerVoice = { id: settings.fish.voiceId || FISH_DEFAULT_VOICE, name: "Default", style: "neutral", default: true };
-  const extra = parseVoiceList(settings.fish.voices).filter(v => v.id !== def.id);
-  return [def, ...extra];
-}
-
-/** Curated partner voices, the env default first. */
-export const PARTNER_VOICES: readonly PartnerVoice[] = Object.freeze(buildVoices());
+/** The partner voices on offer, the default first. All are Fish Audio's own library voices. */
+export const PARTNER_VOICES: readonly PartnerVoice[] = Object.freeze([
+  { id: "536d3a5e000945adb7038665781a4aca", name: "Ethan", style: "calm explainer", default: true },
+  { id: "e3cd384158934cc9a01029cd7d278634", name: "Laura", style: "warm and steady" },
+  { id: "9a9cf47702da476aa4629e2506d4a857", name: "Hannah", style: "bright and friendly" },
+  { id: "79d0bd3e4e5444b18f7b6d89b5927bf1", name: "Jordan", style: "upbeat coach" },
+]);
 export function defaultVoiceId(): string { return PARTNER_VOICES[0]!.id; }
 export function isKnownVoice(id: string): boolean { return PARTNER_VOICES.some(v => v.id === id); }
 
@@ -88,11 +72,10 @@ export interface TtsOptions { voiceId?: string | null; format?: "mp3" }
 function ttsRequest(text: string, opts: TtsOptions): Promise<Response> {
   const key = settings.fish.key;
   if (!key) throw new Error("FISH_API_KEY is not set");
-  const voice = opts.voiceId && opts.voiceId !== FISH_DEFAULT_VOICE ? opts.voiceId : undefined;
   return fishFetch("tts", TTS_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", model: settings.fish.ttsModel },
-    body: JSON.stringify({ text, format: opts.format ?? "mp3", mp3_bitrate: 64, latency: "low", ...(voice ? { reference_id: voice } : {}) }),
+    body: JSON.stringify({ text, format: opts.format ?? "mp3", mp3_bitrate: 64, latency: "low", ...(opts.voiceId ? { reference_id: opts.voiceId } : {}) }),
     signal: AbortSignal.timeout(TTS_TIMEOUT_MS),
   });
 }

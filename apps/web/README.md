@@ -18,23 +18,23 @@ Env (Vite, build time): `VITE_API_BASE` (empty = same origin), `VITE_MOCK`.
 | Route | What |
 |---|---|
 | `/` | The landing page (`routes/_index.tsx`, built from `src/landing/`): what Slap is, how it works, the device, questions. See "The landing page" below |
-| `/demo` | The landing page's "Demo" button. Two courses, found by code (`routes/demo.tsx`): `OCCHACKS` live (its device, a join QR, every device recording now) and `CS229` recorded (its first ready lecture with a transcript snippet per outline section, the course's exam and quiz dates, links into the course) |
+| `/demo` | The landing page's "Demo" button. Two courses, found by code (`routes/demo.tsx`): `OCCHACKS` live (its device, the join link, every device recording now) and `CS229` recorded (its first ready lecture with a transcript snippet per outline section, the course's exam and quiz dates, links into the course) |
 | `/j/:code` | Join by class code: redirects to the live captions, polls every 5 s until the lecturer starts; otherwise links to the class |
 | `/live/:lectureId` | Captions: two lines (source word-by-word, translation per segment), language and size pickers, reconnect with `since`; labelled *Replay* for a replay; ended state links to recall / notes |
 | `/home` | The dashboard across every course (`routes/home.tsx`): "Recording now" (only while a device is recording: the course and a link to its captions), to-dos (cards due, suggested practice, exam topics when an exam is within a week), each course's next exam, the devices that are online, new recordings, then the course cards. It asks `today` for up to 8 courses that have lectures; it does not ask for the model-written study plan, which costs a model call per course |
 | `/courses` | Course cards (every course, `components/Courses.tsx`) and the form that creates one |
 | `/classes` | The old address of the list: redirects to `/home` |
-| `/c/:classId` | Class home: session panel (start/stop, laptop mic, who is watching, replay state), lectures, announcements feed, join QR, device, exam and quiz dates (`components/Assessments.tsx`), uploads, import |
+| `/c/:classId` | Class home: session panel (start/stop, laptop mic, who is watching, replay state), lectures, announcements feed, join link, device, exam and quiz dates (`components/Assessments.tsx`), uploads, import |
 | `/c/:classId/lecture/:id` | Outline, concepts weakest-first, summary, questions asked in class, announcements, ask-the-lecture box, transcript with hover notes and a saved-translation toggle, replay captions |
 | `/c/:classId/graph` | Force graph coloured by mastery; export as an Obsidian vault |
 | `/c/:classId/concept/:id` | Concept note: definition, exam quote, mentions, cards, related |
 | `/c/:classId/exam-topics`, `/exam-sheet` | Ranked topics; printable one-page sheet |
-| `/c/:classId/review` | FSRS flashcards (space flips, 1–4 rates; looks ahead for more due) |
+| `/c/:classId/review` | FSRS flashcards, shown as a deck whose top card turns over (space flips, 1–4 rates; looks ahead for more due). The Deck picker, or `?concept=<id>`, switches from the due queue to one concept's whole deck, due or not |
 | `/c/:classId/practice` | 5 graded questions (`?concept=` / `?lecture=` first; A–D picks, Enter checks) |
 | `/c/:classId/partner` | Spoken learning partner (hold to talk) |
 | `/c/:classId/pretest` | Three questions on the syllabus's upcoming week |
 | `/c/:classId/lecturer` | Lecturer view: device, session, who is watching and in which languages, live caption tail, questions asked in class |
-| `/c/:classId/today` | Cards due, next exam, practice set, pretest, coming-up announcements, weak spots, and the model-written study plan (`components/StudyPlan.tsx`: overview, class pace, what each exam and quiz covers with a readiness bar, other dates, then day by day as typed tasks, each a link to the page that does it: recall check, practice, review, lecture notes, pretest; regenerate button) |
+| `/c/:classId/today` | The study plan page ("Study plan" in the side bar; the address is still `/today`). The model-written plan leads (`components/StudyPlan.tsx`: overview, class pace, what each exam and quiz covers with a readiness bar, other dates, then day by day as typed tasks, each a link to the page that does it: recall check, practice, review, lecture notes, pretest; regenerate button). Under it, "Today": cards due, next exam, practice set, pretest, coming-up announcements, weak spots. If the model is over its rate limit the API answers 429 with a sentence saying so and when to retry, and the panel shows that |
 | `/recall/:lectureId` | 3-minute free recall, compared into got / missed / wrong |
 
 Who you are: `lib/user.ts` keeps a random id in `localStorage` (`slap.user`) and `api.ts` sends it as `X-Slap-User` on every request. Cards, attempts, recall checks and mastery follow that id, so they are per browser; another browser or cleared site data starts fresh. The id is not a login and gives no access that others lack.

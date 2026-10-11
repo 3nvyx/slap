@@ -117,13 +117,12 @@ test("Fish ASR parsing strips speaker markers and [tags], numbers speakers, conv
   assert.equal(f.cleanAsrText("a [laughs] b <|speaker:2|> c ."), "a b c.");
 });
 
-test("voices: env list parsing, default first", () => {
-  assert.deepEqual(f.parseVoiceList("abc123:Warm:calm, bad id!:X:y, def456:Bright:energetic,abc123:Dup:z"), [
-    { id: "abc123", name: "Warm", style: "calm" }, { id: "def456", name: "Bright", style: "energetic" },
-  ]);
-  assert.equal(f.PARTNER_VOICES[0]!.name, "Default");
-  assert.equal(f.PARTNER_VOICES[0]!.default, true);
+test("voices: presets, default first", () => {
+  assert.ok(f.PARTNER_VOICES.length > 1);
+  assert.deepEqual(f.PARTNER_VOICES.map(v => !!v.default), f.PARTNER_VOICES.map((_, i) => i === 0));
+  assert.equal(new Set(f.PARTNER_VOICES.map(v => v.id)).size, f.PARTNER_VOICES.length);
   assert.ok(f.isKnownVoice(f.defaultVoiceId()));
+  assert.ok(!f.isKnownVoice("03397b4c4be74759b72533b663fbd001"));
 });
 
 test("WAV header round-trips and readWav walks LIST chunks", () => {

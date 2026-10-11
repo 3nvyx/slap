@@ -1,4 +1,4 @@
-// The Today page's study plan: what each exam and quiz covers, then the day-by-day tasks. The model writes it
+// The study plan page's plan: what each exam and quiz covers, then the day-by-day tasks. The model writes it
 // (apps/api pipeline/studyPlan.ts) as typed tasks, so every task opens the page that does it.
 import type { StudyPlan, StudyPlanExam, StudyPlanTask, StudyTaskKind } from '@slap/contracts'
 import { useState } from 'react'
@@ -59,14 +59,14 @@ export function StudyPlanPanel({ classId, masteryOf }: { classId: string; master
   }
   return (
     <Panel
-      title="Study plan"
+      title="Scheduled from the lectures, syllabus, uploads and exam dates"
       action={
         <Button size="sm" onClick={regenerate} disabled={busy || plan.loading}>
           {busy ? 'Writing…' : 'Regenerate'}
         </Button>
       }
     >
-      {failed && <p className="mb-3 text-sm text-red-700">{failed}</p>}
+      {failed && <p className="mb-3 text-sm text-bad">{failed}</p>}
       <Async state={plan} label="Writing your study plan from the lectures, uploads and exam dates">
         {(p) => <Plan plan={p} classId={classId} masteryOf={masteryOf} />}
       </Async>

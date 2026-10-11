@@ -1,8 +1,7 @@
 // `/demo` (the landing page's "Demo" button): the two courses used to show Slap. OCC Hacks is the live one:
-// its device, a QR code into its captions, and every device that is recording right now. CS229 is the recorded
+// its device, the link into its captions, and every device that is recording right now. CS229 is the recorded
 // example: Lecture 1 with snippets of its transcript and the course's dates. Courses are found by their code.
 import type { ClassSummary, LectureSummary } from '@slap/contracts'
-import { QRCodeSVG } from 'qrcode.react'
 import { Link } from 'react-router'
 import { TopBar } from '../components/Shell'
 import { Button, ButtonLink, ErrorBox, Label, PageTitle, Panel, Pill, Spinner } from '../components/ui'
@@ -140,14 +139,11 @@ function LiveCourse({ course, devices, onChange }: { course: ClassSummary; devic
           )}
         </div>
 
-        <div className="flex flex-col items-center gap-3">
-          <div className="rounded-md bg-white p-3">
-            <QRCodeSVG value={joinUrl} size={168} level="M" marginSize={0} />
-          </div>
-          <div className="text-center">
-            <Label>Scan to read along</Label>
-            <div className="mt-1 break-all font-mono text-xs">{joinUrl.replace(/^https?:\/\//, '')}</div>
-          </div>
+        <div>
+          <Label>Read along at</Label>
+          <a href={joinUrl} className="mt-1 block break-all font-mono text-xs underline-offset-2 hover:underline">
+            {joinUrl.replace(/^https?:\/\//, '')}
+          </a>
         </div>
       </div>
     </Panel>

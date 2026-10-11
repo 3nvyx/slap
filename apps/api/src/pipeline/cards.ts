@@ -87,8 +87,10 @@ export async function saveCards(classId: string, lectureId: string | null, cards
   return rows.length;
 }
 
-/** Cards due for the user in a class (oldest due first). Creates missing card_state rows (due now) first. */
-export async function getDueCards(userId: string, classId: string, limit = 20, now = new Date()): Promise<Card[]> {
+/** Cards due for the user in a class (oldest due first). Creates missing card_state rows (due now) first.
+ *  With `conceptId` it is that concept's whole deck instead: every card of the concept, due or not, the
+ *  due ones first, so a student can go through one concept whenever they like. */
+export async function getDueCards(userId: string, classId: string, limit = 20, now = new Date(), conceptId?: string): Promise<Card[]> {
   const { db, schema } = await getDb();
   await db.execute(sql`
     insert into card_state (user_id, card_id, due)
@@ -99,7 +101,7 @@ export async function getDueCards(userId: string, classId: string, limit = 20, n
   const { cards, cardState } = schema;
   const rows = await db.select({ id: cards.id, conceptId: cards.conceptId, front: cards.front, back: cards.back, due: cardState.due, state: cardState.state })
     .from(cardState).innerJoin(cards, eq(cards.id, cardState.cardId))
-    .where(and(eq(cardState.userId, userId), eq(cards.classId, classId), lte(cardState.due, now)))
+    .where(and(eq(cardState.userId, userId), eq(cards.classId, classId), conceptId ? eq(cards.conceptId, conceptId) : lte(cardState.due, now)))
     .orderBy(asc(cardState.due), asc(cards.id))
     .limit(Math.max(1, Math.min(200, limit)));
   return rows.map(r => ({ id: r.id, conceptId: r.conceptId, front: r.front, back: r.back, due: r.due.toISOString(), state: r.state }));

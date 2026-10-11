@@ -11,7 +11,7 @@
 //              being carried wakes the chip for a second and it goes back to sleep unlit
 //   on         joins Wi-Fi, connects, and the server starts a session at once (no course to pick)
 //   recording  tilt left / right, or a short REC press: next caption language (en, vi, ja);
-//              hold REC 2 s: the session is ended and saved, then the device sleeps
+//              hold REC 1 s: the session is ended and saved, then the device sleeps
 // A session ended from the app also puts the device to sleep, after the "Saved" screen.
 //
 // States: BOOTING -> WIFI -> CONNECTING -> (server says) RECORDING | IDLE | ERROR.

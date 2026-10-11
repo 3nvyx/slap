@@ -380,10 +380,10 @@ function lectureDetail(id: string): LectureDetail {
 
 // ---------- learning partner ----------
 const VOICES: PartnerVoice[] = [
-  { id: 'fish-ella', name: 'Ella', style: 'Warm, unhurried tutor', default: true },
-  { id: 'fish-marcus', name: 'Marcus', style: 'Crisp exam coach' },
-  { id: 'fish-ines', name: 'Inés', style: 'Bilingual, patient' },
-  { id: 'fish-kai', name: 'Kai', style: 'Upbeat study buddy' },
+  { id: 'fish-ethan', name: 'Ethan', style: 'calm explainer', default: true },
+  { id: 'fish-laura', name: 'Laura', style: 'warm and steady' },
+  { id: 'fish-hannah', name: 'Hannah', style: 'bright and friendly' },
+  { id: 'fish-jordan', name: 'Jordan', style: 'upbeat coach' },
 ]
 
 /** A short "babble" of sine blips as a 16 kHz mono WAV data URL, so the audio player path runs without TTS. */
@@ -437,7 +437,7 @@ function partnerReply(p: MockPartner, text: string, intent: PartnerReply['intent
 function partnerSession(classId: string, body: { lectureId?: string; voiceId?: string; lang?: string }): PartnerSession {
   if (!classes.some((c) => c.id === classId)) throw new ApiError(404, 'class not found')
   const voiceId = body.voiceId || VOICES[0].id
-  if (!VOICES.some((x) => x.id === voiceId) && !/^[a-z0-9_-]{8,}$/i.test(voiceId)) throw new ApiError(400, `Fish voice "${voiceId}" not found`)
+  if (!VOICES.some((x) => x.id === voiceId)) throw new ApiError(400, 'voiceId: unknown voice (see GET /api/partner/voices)')
   const lec = body.lectureId ? lectures.find((l) => l.id === body.lectureId) : undefined
   if (body.lectureId && !lec) throw new ApiError(404, 'lecture not found')
   const p: MockPartner = {
@@ -673,7 +673,11 @@ const routes: Array<[string, RegExp, Handler]> = [
       questionCount: questions.filter((q) => q.conceptId === concept.id).length,
     }
   }],
-  ['GET', /^\/api\/classes\/([^/]+)\/review\/due$/, (_m, _b, q) => cards.filter((c) => !reviewed.has(c.id)).slice(0, Number(q.get('limit') ?? 20))],
+  ['GET', /^\/api\/classes\/([^/]+)\/review\/due$/, (_m, _b, q) => {
+    const concept = q.get('conceptId')
+    // A concept's deck is all of its cards, reviewed or not; the plain queue is what is still due.
+    return (concept ? cards.filter((c) => c.conceptId === concept) : cards.filter((c) => !reviewed.has(c.id))).slice(0, Number(q.get('limit') ?? 20))
+  }],
   ['POST', /^\/api\/cards\/([^/]+)\/review$/, (m, body) => {
     const rating = (body as { rating: Rating }).rating
     reviewed.add(m[1])

@@ -138,7 +138,8 @@ export const api = {
   // study
   bundle: (lectureId: string) => get<StudyBundleStatus>(`/api/lectures/${enc(lectureId)}/bundle`),
   rerunBundle: (lectureId: string) => post<StudyBundleStatus>(`/api/lectures/${enc(lectureId)}/bundle`),
-  due: (classId: string, limit = 20) => get<Card[]>(`/api/classes/${enc(classId)}/review/due?limit=${limit}`),
+  /** The due cards; with `conceptId`, every card of that concept (due ones first). */
+  due: (classId: string, limit = 20, conceptId?: string) => get<Card[]>(`/api/classes/${enc(classId)}/review/due?limit=${limit}${conceptId ? `&conceptId=${enc(conceptId)}` : ''}`),
   review: (cardId: string, rating: Rating) => post<ReviewResult>(`/api/cards/${enc(cardId)}/review`, { rating }),
   /** `conceptId` puts that concept's questions first; `lectureId` then prefers that lecture's. */
   practice: (classId: string, n = 5, focus: { conceptId?: string; lectureId?: string } = {}) =>

@@ -32,7 +32,7 @@ export default function LecturerPage() {
   const questions = lecture.data?.questionsAsked ?? []
 
   return (
-    <div className="max-w-5xl">
+    <div className="mx-auto max-w-5xl">
       <PageTitle kicker={`${detail.class.code} · lecturer`} title="Lecturer view">
         {current ? (
           <ButtonLink variant="accent" to={`/live/${current.id}`}>

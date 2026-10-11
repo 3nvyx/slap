@@ -46,7 +46,7 @@ const NAV: Array<{ to: string; label: string; key: string; icon: LucideIcon; end
   { to: 'practice', label: 'Practice', key: '04', icon: PencilLine },
   { to: 'partner', label: 'Partner', key: '05', icon: Mic },
   { to: 'exam-topics', label: 'Exam topics', key: '06', icon: ListChecks },
-  { to: 'today', label: 'Today', key: '07', icon: CalendarDays },
+  { to: 'today', label: 'Study plan', key: '07', icon: CalendarDays },
   { to: 'pretest', label: 'Pretest', key: '08', icon: ClipboardCheck },
   { to: 'lecturer', label: 'Lecturer', key: '09', icon: Presentation },
 ]

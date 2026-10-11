@@ -144,6 +144,15 @@ class OpenAiError extends Error {
   constructor(message: string, status: number) { super(message); this.name = "OpenAiError"; this.status = status; }
 }
 
+/** A sentence for the student when the model turned a request down for being over its rate limit (HTTP 429),
+ *  with the wait if the provider gave one; null for any other error. The API answers 429 with it. */
+export function modelBusyMessage(err: unknown): string | null {
+  if (!(err instanceof OpenAiError) || err.status !== 429) return null;
+  const wait = /try again in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?/i.exec(err.message);
+  const minutes = wait ? Math.ceil(Number(wait[1] ?? 0) * 60 + Number(wait[2] ?? 0) + Number(wait[3] ?? 0) / 60) : 0;
+  return `The AI model has reached its request limit for now, so this could not be written.${minutes ? ` Try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.` : " Try again later."}`;
+}
+
 async function openaiCall(parts: OpenAiPart[], system: string | undefined, maxTokens: number, json: boolean, withReasoning: boolean): Promise<string> {
   const key = settings.llm.openaiKey;
   if (!key) throw new Error("LLM_BACKEND=openai but OPENAI_API_KEY is not set");
