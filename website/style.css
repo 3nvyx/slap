@@ -56,8 +56,9 @@ h2 { font-size: clamp(28px, 3.6vw, 42px); line-height: 1.12; letter-spacing: -.0
 .btn-accent:hover { background: #ff7a1c; }
 
 /* ---- Logo: a tiny Slap seen from above */
-.logo { display: inline-flex; align-items: center; gap: 9px; font-weight: 800; font-size: 22px; letter-spacing: -.04em; }
+.logo { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; font-size: 24px; font-style: italic; letter-spacing: -.02em; }
 .logo-light { color: #fff; }
+.logo-art { height: 44px; width: auto; flex: none; fill: currentColor; }
 .logo-mark { position: relative; display: inline-block; width: 30px; height: 20px; border-radius: 5px; background: var(--ink); flex: none; }
 .logo-mark i { position: absolute; left: 4px; top: 5px; width: 13px; height: 10px; border-radius: 1.5px; background: #f2f2f0; }
 .logo-mark b { position: absolute; right: 4px; top: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
@@ -249,7 +250,8 @@ h2 { font-size: clamp(28px, 3.6vw, 42px); line-height: 1.12; letter-spacing: -.0
 .footer-note { display: flex; gap: 10px; font-size: 14px; line-height: 1.6; color: rgba(255, 255, 255, .7); max-width: 34ch; }
 .footer-note .live-dot { margin-top: 7px; }
 .footer-end { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding-top: 28px; border-top: 1px solid rgba(255, 255, 255, .1); font: 500 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: rgba(255, 255, 255, .45); }
-.footer-end .logo { font: 800 20px/1 var(--sans); letter-spacing: -.04em; text-transform: none; }
+.footer-end .logo { font: italic 800 20px/1 var(--sans); letter-spacing: -.02em; text-transform: none; }
+.footer-end .logo-art { height: 34px; }
 
 /* ---- Sections fade up as they scroll into view */
 .js .reveal { opacity: 0; transform: translateY(18px); transition: opacity .6s ease, transform .6s ease; }
