@@ -1,4 +1,4 @@
-"""SLAP desk housing v3.0 "deep slab" rebuilt in CadQuery for a Fusion-openable STEP.
+"""SLAP desk housing v3.1 "deep slab" rebuilt in CadQuery for a Fusion-openable STEP.
 
 Mirror of ../housing_slab.scad (the source of truth). Parameter names match the
 OpenSCAD file one to one; change a value there first, then copy it here.
@@ -52,17 +52,17 @@ corner_r = 3
 top_chamfer = 0.8
 wall = 2.0
 plate_t = 2.0
-skirt_h = 3.0
+skirt_h = 4.0
 skirt_t = 1.2
 floor_t = 2.0
 
 # Snap hooks / catches
-hook_w = 5.0
-hook_t = 1.2
-hook_len = 9.0
+hook_w = 6.0
+hook_t = 2.0
+hook_len = 16.0
 hook_lip = 0.8
 hook_return = 35
-skirt_strip = 1.2
+skirt_strip = 1.6
 pry_w = 3
 pry_d = 1
 
@@ -93,11 +93,20 @@ oled_pcb_h = 48.0
 oled_pegs = False      # lid pegs + OLED clips off until the real hole positions are measured
 oled_post = 4.0        # tray corner posts pressing the PCB up into the lid pocket
 oled_post_gap = 0.15   # post top below the PCB back
+oled_rib_t = 2.0       # v3.1 divider wall under the back posts
+oled_rib_drop = 5.0    # divider top below the post tops
+oled_hdr_side = "left"  # left | right | back: edge the 4-pin header is soldered on, seen from the front
+oled_hdr_keep = 0      # extra inset of the two header-side posts
+oled_hdr_relief = 1.0  # lid seat cut back over the header strip
 oled_glass_dx = 0
 oled_glass_dy = 0
-oled_hole_inset_x = 3.0
-oled_hole_inset_y = 3.0
-oled_hole_d = 2.2
+oled_hole_inset_x = 2.0   # from the builder's reference model: 3.0 mm holes 2.0 mm from both edges
+oled_hole_inset_y = 2.0
+oled_hole_d = 3.0
+oled_pins = True       # locating pin on each tray post, into the corner holes
+oled_pin_d = 2.0
+oled_pin_h = 2.4
+oled_lead = 0.4        # lead-in chamfer on the window and pocket edges
 oled_fence_h = 1.0
 oled_fence_t = 0.8
 oled_proud = 0
@@ -168,10 +177,9 @@ cradle_edge = 1.2
 cradle_drop = 1.2
 cheek_t = 2.0
 cheek_up = 2.0
-# v3 antenna gate: shelf + two pillars + a bridged bar
+# antenna gate: solid block + two short pillars + a bridged bar
 catch_engage = 3.0
 catch_back = 2.5
-catch_w = 10
 catch_dn = 0.4
 catch_up = 1.0
 catch_jaw_t = 1.6
@@ -198,6 +206,7 @@ uno_hdr_ana = (26.42, 65.02, 2.54)
 uno_jack = (-2.2, 12.0, 4.1, 13.2, 11.0)
 uno_post_u = 35
 uno_post_d = 5.0
+uno_post_base = 9.0   # the lid posts are cones
 uno_post_gap = 0.5
 
 # IMU: SunFounder 10-axis, Qwiic (size ESTIMATED from the product render)
@@ -355,19 +364,24 @@ btn_flange_z = collar_bot + btn_flange_t + btn_cone_h - btn_top
 btn_nose_l = collar_bot - btn_top
 btn_guide_depth = H - (collar_seat + btn_stroke)
 
-hx1 = oled_fence_end + 0.6 + hook_w / 2
-hx2 = sk_ix - 0.3 - hook_w / 2
+hxf = (oled_fence_end + sk_ix) / 2
 hy_r = (led_xy[1] + led_boss_r + uno_y_f) / 2
 hooks = [("left", oled_cy), ("left", uno_y_f + uno_w / 2), ("back", -L / 4), ("back", L / 4),
-         ("front", hx1), ("front", hx2), ("right", hy_r)]
+         ("front", hxf), ("right", hy_r)]
 prys = [("back", 0), ("left", (oled_cy + uno_y_f + uno_w / 2) / 2)]
 
 peg_pos = [(sx * (oled_pcb_w / 2 - oled_hole_inset_x), sy * (oled_pcb_h / 2 - oled_hole_inset_y))
            for sx in (-1, 1) for sy in (-1, 1)]
 # OLED corner posts: inside the PCB outline by 0.5 + post/2 at every corner
-oled_post_pos = [(oled_cx + sx * (oled_pcb_w / 2 - 0.5 - oled_post / 2),
-                  oled_cy + sy * (oled_pcb_h / 2 - 0.5 - oled_post / 2))
+def oled_post_in(sx):
+    return oled_hdr_keep if (oled_hdr_side == "left" and sx < 0) or (oled_hdr_side == "right" and sx > 0) else 0
+
+
+oled_post_pos = [(oled_cx + sx * (oled_pcb_w / 2 - (oled_hole_inset_x if oled_pins else 0.5 + oled_post / 2) - oled_post_in(sx)),
+                  oled_cy + sy * (oled_pcb_h / 2 - (oled_hole_inset_y if oled_pins else 0.5 + oled_post / 2)))
                  for sx in (-1, 1) for sy in (-1, 1)]
+oled_pin_tip = oled_pin_h - oled_post_gap - oled_pcb_t
+oled_hdr_sx = -1 if oled_hdr_side == "left" else 1
 
 usb_cw = usb_plug_w + 2 * tol_window
 usb_ch = usb_plug_h + 2 * tol_window
@@ -602,7 +616,8 @@ def top():
         adds.append(cyl(post_d, tray_h - z_post + 0.01, p[0], p[1], z_post))
     # hold-down posts onto the UNO's two header rows
     for p in uno_posts:
-        adds.append(cyl(uno_post_d, tray_h - uno_post_z + 0.01, p[0], p[1], uno_post_z))
+        adds.append(cq.Solid.makeCone(uno_post_d / 2, uno_post_base / 2, tray_h - uno_post_z + 0.01,
+                                      V(p[0], p[1], uno_post_z)))
     body = fuse(plate, *adds)
 
     cuts = []
@@ -616,6 +631,26 @@ def top():
                      cq.Wire.makePolygon([V(wx + sx * (oled_win_w / 2 + tol_efoot + e),
                                             wy + sy * (oled_win_h / 2 + tol_efoot + e), H + e)
                                           for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))], close=True)))
+    # lead-ins where the OLED enters: lower edge of the window and of the PCB pocket
+    def rect(cx, cy, w, h, z):
+        return cq.Wire.makePolygon([V(cx + sx * w / 2, cy + sy * h / 2, z)
+                                    for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))], close=True)
+    za = H - oled_seat
+    cuts.append(loft(rect(wx, wy, oled_win_w + 2 * oled_lead, oled_win_h + 2 * oled_lead, za),
+                     rect(wx, wy, oled_win_w, oled_win_h, za + oled_lead)))
+    zb = H - oled_seat - oled_fence_h
+    cuts.append(loft(rect(oled_cx, oled_cy, oled_pocket_w + 2 * oled_lead, oled_pocket_h + 2 * oled_lead, zb),
+                     rect(oled_cx, oled_cy, oled_pocket_w, oled_pocket_h, zb + oled_lead)))
+    # blind reliefs in the seat for the tips of the tray pins
+    if oled_pins:
+        for px, py in oled_post_pos:
+            cuts.append(cyl(hole(oled_pin_d + 1.0), oled_pin_tip + 0.6 + 0.01, px, py, H - oled_seat - 0.01))
+    # relief in the seat over the header strip, from the pocket edge to the window edge
+    if oled_hdr_side != "back":
+        xp = oled_cx + oled_hdr_sx * oled_pocket_w / 2
+        xw = wx + oled_hdr_sx * oled_win_w / 2
+        cuts.append(box(min(xp, xw) - (0.01 if oled_hdr_sx > 0 else 0), oled_cy - oled_pocket_h / 2,
+                        H - oled_seat - 0.01, abs(xp - xw) + 0.01, oled_pocket_h, oled_hdr_relief + 0.01))
     # grille
     for i in range(grille_cols):
         for j in range(grille_rows):
@@ -671,14 +706,32 @@ def uno_mount():
 
 
 def antenna_gate():
-    """SCAD antenna_gate(): centre shelf, two pillars and a bar bridged across them."""
+    """SCAD antenna_gate(): solid block, a short pillar each side and a bar bridged across them."""
     x0, lx = x_tip - catch_back, catch_engage + catch_back
-    parts = [box(x0, dev_cy - catch_w / 2, floor_t - 0.01, lx, catch_w, pcb_top - catch_dn - floor_t + 0.01)]
+    parts = [box(x0, dev_cy - gate_w / 2 - gate_pillar, floor_t - 0.01,
+                 lx, gate_w + 2 * gate_pillar, pcb_top - catch_dn - floor_t + 0.01)]
     for sy in (-1, 1):
         y0 = dev_cy + (gate_w / 2 if sy > 0 else -gate_w / 2 - gate_pillar)
         parts.append(box(x0, y0, floor_t - 0.01, lx, gate_pillar, gate_top - floor_t + 0.01))
     parts.append(box(x0, dev_cy - gate_w / 2 - gate_pillar, gate_top - catch_jaw_t,
                      lx, gate_w + 2 * gate_pillar, catch_jaw_t))
+    return parts
+
+
+def oled_post_braces():
+    """SCAD oled_post_braces(): divider wall under the back posts (low tie to the left wall under the
+    header strip), and a tie to the front wall for each front post."""
+    post_top = H - oled_stack_t - oled_post_gap
+    x0 = min(p[0] for p in oled_post_pos) - oled_post / 2
+    x1 = max(p[0] for p in oled_post_pos) + oled_post / 2
+    y = max(p[1] for p in oled_post_pos)
+    low = H - oled_stack_t - header_spacer - jumper_h - wire_bend - 2.0
+    parts = [box(x0, y - oled_rib_t / 2, floor_t - 0.01, x1 - x0, oled_rib_t, post_top - oled_rib_drop - floor_t + 0.01),
+             box(-in_hx - 0.5, y - oled_rib_t / 2, floor_t - 0.01, x0 + in_hx + 0.5 + 0.01, oled_rib_t, low - floor_t + 0.01)]
+    for px, py in oled_post_pos:
+        if py < oled_cy:
+            parts.append(box(px - oled_post / 2, -in_hy - 0.5, floor_t - 0.01,
+                             oled_post, py - oled_post / 2 + in_hy + 0.5 + 0.01, skirt_bot - 0.6 - floor_t + 0.01))
     return parts
 
 
@@ -711,6 +764,10 @@ def tray():
     for px, py in oled_post_pos:
         adds.append(box(px - oled_post / 2, py - oled_post / 2, floor_t - 0.01, oled_post, oled_post,
                         H - oled_stack_t - oled_post_gap - floor_t + 0.01))
+    if oled_pins:
+        adds += [pcb_peg(oled_pin_d, oled_pin_h, px, py, H - oled_stack_t - oled_post_gap - 0.01)
+                 for px, py in oled_post_pos]
+    adds += oled_post_braces()
     adds += antenna_gate()
     adds += uno_mount()
     adds += imu_mount()
@@ -916,7 +973,7 @@ def verify(parts):
 
 def main():
     parts = build()
-    print(f"SLAB v3.0 (CadQuery): outer L x W x H = {L} x {W} x {H:.2f} mm, tray_h {tray_h:.2f}")
+    print(f"SLAB v3.1 (CadQuery): outer L x W x H = {L} x {W} x {H:.2f} mm, tray_h {tray_h:.2f}")
     for name, s in parts.items():
         (x0, y0, z0), (x1, y1, z1) = tight_bbox(s)
         print(f"{name:9s} valid {s.isValid()}  solids {len(s.Solids())}  vol {s.Volume():10.2f} mm3  "

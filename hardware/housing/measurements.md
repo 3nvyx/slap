@@ -6,12 +6,12 @@ Use calipers and give values to 0.1 mm. The SCAD parameter for each value is in 
 - [x] PCB width, the long side (`oled_pcb_w`): **70.1** (9 Oct)
 - [x] PCB height, the short side (`oled_pcb_h`): **48.0** (9 Oct)
 - [x] PCB thickness, without the glass (`oled_pcb_t`): **1.0**; whole stack 4.07 (9 Oct)
-- [ ] Mounting hole diameter (`oled_hole_d`, provisional 2.2): ____
-- [ ] Hole centre-to-centre spacing, X (long side): ____ → inset = (PCB width − spacing)/2 (`oled_hole_inset_x`, provisional 3.0)
-- [ ] Hole centre-to-centre spacing, Y (short side): ____ → inset = (PCB height − spacing)/2 (`oled_hole_inset_y`, provisional 3.0)
+- [ ] Mounting hole diameter (`oled_hole_d`, now 3.0 from the builder's reference model, not measured on this board): ____
+- [ ] Hole centre-to-centre spacing, X (long side): ____ → inset = (PCB width − spacing)/2 (`oled_hole_inset_x`, now 2.0 from the reference model, giving 66.1)
+- [ ] Hole centre-to-centre spacing, Y (short side): ____ → inset = (PCB height − spacing)/2 (`oled_hole_inset_y`, now 2.0 from the reference model, giving 44.0). `fit_oled_pins` on the coupon plate checks all three.
 - [ ] Glass position on the PCB: distance from the glass left edge to the PCB left edge ____ and from the glass top edge to the PCB top edge ____ (`oled_glass_dx/dy`)
 - [ ] Does the FPC ribbon wrap around a PCB edge? Which edge, and how far does it stick out? ____
-- [ ] 4-pin header position: distance from the PCB left edge to the centre of the header ____ (`oled_hdr_x`)
+- [x] 4-pin header: **on the left short side seen from the front, long pin ends out the back, soldered ends just proud of the front** (builder, 10 Oct; `oled_hdr_side`). Its position along that side is not needed.
 
 ## ESP32-S3 dev board (clone)
 - [ ] PCB length, without the antenna overhang (`dev_pcb_len`, official 62.74): ____
@@ -42,7 +42,7 @@ Use calipers and give values to 0.1 mm. The SCAD parameter for each value is in 
 - [ ] **ESP32 header spacer thickness** (`header_spacer`, 2.5) and the short pins + solder height above the PCB (`dev_pin_above`, assumed 2.5).
 - [ ] **ESP32 module shield height** above the PCB (`dev_mod_h`, 3.2). This sets the overall height.
 - [ ] **OLED PCB back:** tallest part height (`oled_back_keep`, assumed 1.0), and whether any parts sit over the area where the ESP32 module ends up (the right half of the OLED, seen from the front). If that area is clear, set 0 and save 1 mm. Also check that a 6 mm strip along each short edge is clear for the clips.
-- [ ] **OLED header:** is it on the long edge, and how far is its centre from the PCB centre (`oled_hdr_x`)? Confirm that after soldering at least 6 mm of pin sticks out past the spacer on the inward side.
+- [x] **OLED header:** on the left short side, see the OLED section above. Still to confirm: at least 6 mm of pin sticks out past the spacer on the back.
 - [ ] **INMP441 headers:** two 3-pin strips or one 6-pin row? Where are they relative to the PCB centre (`mic_hdr_off` 4.5)? Confirm at least 6 mm of pin points inward.
 - [ ] **F/F Dupont housing length** (`jumper_h`, assumed 14). This sets the height.
 - [ ] **ESP32 BOOT key** height above the PCB (`dev_btn_h`, assumed 2.0) and position (`dev_boot_u` 7.8 / `dev_boot_v` 13.8). This sets the button column and the slab length.
@@ -59,8 +59,8 @@ The v2.2 IMU list (a GY-87 style board on jumper wires) is dropped: the IMU is t
 
 **Print `stl/slab_fit_imu.stl` and `stl/slab_fit_uno.stl` first (both are on the coupon plate).** If both boards drop onto their pegs, only the first two IMU lines and the cable line below are still needed.
 
-IMU (all four values are estimated from SunFounder's product render; no drawing is published):
-- [ ] **PCB size**, short side x long side (`imu_w`, `imu_d`; estimated 21 x 28): ____ x ____
+IMU (the hole values are estimated from SunFounder's product render; no drawing is published):
+- [x] **PCB size**, short side x long side x thickness (`imu_w`, `imu_d`, `imu_pcb_t`): **21 x 28 x 1.6** (builder, 10 Oct)
 - [ ] **Corner hole spacing**, centre to centre, across the short side and along the long side (`imu_hole_dx`, `imu_hole_dy`; estimated 14 and 21): ____ / ____
 - [ ] **Hole diameter** (`imu_hole_d`, estimated 3.2): ____
 - [ ] **Tallest part** on top (`imu_comp_h`, assumed 3.0, the Qwiic sockets): ____

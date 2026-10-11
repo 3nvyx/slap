@@ -4,11 +4,22 @@
 
 // UNO R4 WiFi's small Qwiic socket uses Wire1.
 SunFounder_IMU imu(&Wire1);
-constexpr float HIT_G = 1.2f;
-constexpr float QUIET_G = 0.35f;
-unsigned long firstHit = 0, lastHit = 0, settleAt = 0, cooldownUntil = 0;
-bool armed = true, ready = false;
-float baseline = 1.0f;
+
+// One shake starts or stops a recording. A shake is motion that lasts: the acceleration stays
+// SHAKE_G away from its recent average for SHAKE_MS in total. A knock on the desk is over in
+// tens of milliseconds and turning the case over changes too slowly, so neither adds up.
+constexpr float SHAKE_G = 0.40f;           // lower = more sensitive
+constexpr float SHAKE_MS = 120.0f;         // lower = fires sooner, but a hard knock may count
+constexpr float QUIET_G = 0.15f;
+constexpr unsigned long REARM_MS = 500;    // still this long before the next shake counts
+constexpr float AVERAGE_MS = 70.0f;        // time constant of the "recent average"
+constexpr float LEAK = 0.25f;              // ms of motion forgotten per ms without it
+
+Vector3f avg;
+bool ready = false, haveAvg = false, fired = false;
+unsigned long lastRead = 0, quietSince = 0;
+float motionMs = 0;                        // leaky total that decides a shake
+float episodeMs = 0, episodePeak = 0;      // reported for motion that did not count
 
 void setup() {
   Serial.begin(115200);
@@ -24,27 +35,44 @@ void setup() {
 
 void loop() {
   if (!ready) { delay(1000); return; }
-  if (!imu.read()) { delay(10); return; }
+  if (!imu.read()) { delay(5); return; }
   Vector3f a = imu.get_accel(); // manufacturer's library returns g
-  float magnitude = sqrtf(a.x*a.x + a.y*a.y + a.z*a.z);
-  float spike = fabsf(magnitude - baseline);
   unsigned long now = millis();
-  if (spike < QUIET_G) { baseline += 0.02f * (magnitude - baseline); armed = true; }
-  if ((long)(now - cooldownUntil) < 0) { delay(5); return; }
-  if (settleAt) {
-    // A third hit or continued motion rejects shaking.
-    if (armed && spike > HIT_G) { settleAt = firstHit = 0; cooldownUntil = now + 1000; }
-    else if (now - settleAt >= 300) {
-      if (spike < QUIET_G) { Serial.println("SLAP"); digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); }
-      settleAt = firstHit = 0;
-      cooldownUntil = now + 1000;
-    }
-  } else if (armed && spike > HIT_G && now - lastHit >= 80) {
-    armed = false;
-    lastHit = now;
-    if (firstHit && now - firstHit <= 500) settleAt = now;
-    else firstHit = now;
+  if (!haveAvg) { avg = a; haveAvg = true; lastRead = quietSince = now; return; }
+  float dt = (float)(now - lastRead);
+  if (dt > 50.0f) dt = 50.0f;
+  lastRead = now;
+
+  float dx = a.x - avg.x, dy = a.y - avg.y, dz = a.z - avg.z;
+  float moved = sqrtf(dx*dx + dy*dy + dz*dz);
+  float k = dt / (AVERAGE_MS + dt);
+  avg.x += k * dx; avg.y += k * dy; avg.z += k * dz;
+
+  if (moved > SHAKE_G) {
+    motionMs += dt;
+    episodeMs += dt;
+    if (moved > episodePeak) episodePeak = moved;
+  } else {
+    motionMs -= dt * LEAK;
+    if (motionMs < 0) motionMs = 0;
   }
-  if (firstHit && !settleAt && now - firstHit > 500) firstHit = 0;
-  delay(5);
+  if (moved > QUIET_G) quietSince = now;
+
+  if (!fired && motionMs >= SHAKE_MS) {
+    fired = true;   // one event per shake, however long it goes on
+    Serial.println("SHAKE");
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+  }
+  if (now - quietSince >= REARM_MS) {
+    // Motion that ended without counting: printed so SHAKE_G and SHAKE_MS can be tuned.
+    if (!fired && episodeMs >= 20.0f) {
+      Serial.print("motion peak_g=");
+      Serial.print(episodePeak, 2);
+      Serial.print(" ms=");
+      Serial.println((int)episodeMs);
+    }
+    fired = false;
+    motionMs = episodeMs = episodePeak = 0;
+  }
+  delay(2);
 }

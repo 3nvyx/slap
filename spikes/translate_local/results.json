@@ -1,0 +1,296 @@
+{
+ "_sentences": [
+  "And now I can look and see what the variance of the YIs are.",
+  "This is a statement just about the random or stochastic part which is just the epsilons.",
+  "This statement makes sense, even if there's a more complicated or crazier model here has nothing to do with the y eyes.",
+  "And if it doesn't make sense, it'll make sense in a couple of slides.",
+  "It's exactly a variance here because the the mean is zero.",
+  "So This is getting cut off a little bit.",
+  "So I'm gonna start here and then I'll go down.",
+  "I hope this notation is familiar to you.",
+  "This means that I want to z is going to be a normal distribution with mean mu that's going to be its center, right?",
+  "So in the last slide, the mean was zero, that's the expected value, is equal to zero.",
+  "In this case, the expected value is equal to mu of z.",
+  "That's all that saying and then it's one dimensional it's variance."
+ ],
+ "google": {
+  "per_lang": {
+   "ja": {
+    "median_ms": 211,
+    "p90_ms": 268,
+    "max_ms": 355
+   },
+   "vi": {
+    "median_ms": 202,
+    "p90_ms": 311,
+    "max_ms": 319
+   }
+  },
+  "translations": {
+   "ja": [
+    "これで、YIの分散がどれくらいかを確認できます。",
+    "これは、イプシロンと呼ばれるランダムまたは確率的な部分に関する記述です。",
+    "この記述は理にかなっている。たとえここにもっと複雑で奇妙なモデルがあったとしても、それはyの目とは何の関係もない。",
+    "もし意味が分からなくても、数枚のスライドを見れば分かるでしょう。",
+    "平均値がゼロなので、これはまさに分散です。",
+    "なので、ここから少し途切れます。",
+    "では、ここから始めて、下へ降りていきます。",
+    "この表記法はあなたにとって馴染み深いものであることを願っています。",
+    "つまり、zは平均μを持つ正規分布に従うということですよね？μはその中心値になるということですか？",
+    "前のスライドでは、平均値はゼロでした。つまり、期待値はゼロに等しいということです。",
+    "この場合、期待値はzのμに等しい。",
+    "それは全てを言い表しているだけで、それは一次元的なものであり、つまり変動性です。"
+   ],
+   "vi": [
+    "Và giờ tôi có thể xem xét và thấy sự biến động của các chỉ số Y.",
+    "Đây chỉ là một phát biểu về phần ngẫu nhiên hoặc xác suất, chính là các giá trị epsilon.",
+    "Phát biểu này nghe có vẻ hợp lý, ngay cả khi có một mô hình phức tạp hơn hoặc kỳ lạ hơn ở đây không liên quan gì đến đôi mắt chữ Y.",
+    "Và nếu điều đó chưa rõ ràng, thì chỉ cần vài slide nữa thôi là bạn sẽ hiểu.",
+    "Đây chính xác là sự sai lệch vì giá trị trung bình bằng không.",
+    "Vì vậy, phần này bị cắt bớt một chút.",
+    "Vậy tôi sẽ bắt đầu từ đây rồi đi xuống dưới.",
+    "Tôi hy vọng bạn đã quen thuộc với ký hiệu này.",
+    "Điều này có nghĩa là tôi muốn z sẽ là phân phối chuẩn với giá trị trung bình mu, và mu sẽ là tâm của nó, đúng không?",
+    "Vậy ở slide trước, giá trị trung bình là 0, tức là giá trị kỳ vọng bằng 0.",
+    "Trong trường hợp này, giá trị kỳ vọng bằng mu của z.",
+    "Tóm lại là như vậy, nó chỉ có một chiều, đó là sự biến thiên."
+   ]
+  },
+  "both_langs": {
+   "median_ms": 424,
+   "p90_ms": 545,
+   "max_ms": 550
+  },
+  "server_path": {
+   "note": "apps/api/src/pipeline/translate.ts from Node (kept-alive fetch), home Wi-Fi, 10 Oct 2026",
+   "per_lang": {
+    "ja": {
+     "median_ms": 176,
+     "p90_ms": 212
+    },
+    "vi": {
+     "median_ms": 172,
+     "p90_ms": 207
+    }
+   },
+   "both_langs_parallel": {
+    "median_ms": 167,
+    "p90_ms": 185,
+    "max_ms": 215
+   }
+  }
+ },
+ "nllb": {
+  "per_lang": {
+   "ja": {
+    "median_ms": 280,
+    "p90_ms": 329,
+    "max_ms": 370
+   },
+   "vi": {
+    "median_ms": 394,
+    "p90_ms": 557,
+    "max_ms": 635
+   }
+  },
+  "translations": {
+   "ja": [
+    "YIsの差異がわかります.",
+    "これは単なるエプシロンであるランダムな部分についてです.",
+    "複雑なモデルがあるとしても Y眼と何の関係もありません",
+    "もしそれが意味がないなら 幻灯片の2枚で意味があるでしょう",
+    "平均値は0だからです.",
+    "これは少し切り離されています.",
+    "ここから始め それから下りましょう",
+    "この符号は ご存じだと思います",
+    "平均mu が中心になりますよね? 平均mu が中心になります.",
+    "平均値は 0 と等しいです. 平均値は 0 と等しいです.",
+    "この場合,期待値は z の mu に等しい.",
+    "変異は1次元です 変異は1次元です"
+   ],
+   "vi": [
+    "Và bây giờ tôi có thể nhìn và thấy sự khác biệt của các YIs là gì.",
+    "Đây là một tuyên bố chỉ về phần ngẫu nhiên hoặc stochastic mà chỉ là epsilons.",
+    "Câu nói này có ý nghĩa, ngay cả khi có một mô hình phức tạp hơn hoặc điên rồ hơn ở đây không liên quan gì đến đôi mắt y.",
+    "Và nếu nó không có ý nghĩa, nó sẽ có ý nghĩa trong một vài slide.",
+    "Đó chính xác là sự khác biệt ở đây bởi vì trung bình là 0.",
+    "Vì vậy, điều này đang bị cắt một chút.",
+    "Vì vậy, tôi sẽ bắt đầu ở đây và sau đó tôi sẽ xuống.",
+    "Tôi hy vọng bạn đã quen với dấu hiệu này.",
+    "Điều này có nghĩa là tôi muốn z sẽ là một phân phối bình thường với mu trung bình sẽ là trung tâm của nó, phải không?",
+    "Vì vậy, trong slide cuối cùng, trung bình là 0, đó là giá trị dự kiến, bằng với 0.",
+    "Trong trường hợp này, giá trị dự kiến bằng với mu của z.",
+    "Đó là tất cả những câu nói đó và sau đó nó là một chiều đó là sự khác biệt."
+   ]
+  },
+  "both_langs": {
+   "median_ms": 668,
+   "p90_ms": 887,
+   "max_ms": 901
+  }
+ },
+ "translategemma-4b": {
+  "per_lang": {
+   "ja": {
+    "median_ms": 257,
+    "p90_ms": 302,
+    "max_ms": 302
+   },
+   "vi": {
+    "median_ms": 276,
+    "p90_ms": 368,
+    "max_ms": 376
+   }
+  },
+  "translations": {
+   "ja": [
+    "そして、YIの変動を観察し、確認することができます。",
+    "これは、ランダムまたは確率的な要素、つまりエプシロンに関する記述です。",
+    "この発言は、より複雑な、あるいは奇抜なモデルが存在しても、目のこととは関係ありません。",
+    "もし、意味が通じない場合は、数枚のスライドで見れば、理解できるようになります。",
+    "これは、平均がゼロであるために、正確なばらつきを示しているのです。",
+    "少し、途中で終わってしまうようです。",
+    "まずここから始め、その後徐々に下に進みます。",
+    "この記号があなたにとって馴染みのあるものだと思います。",
+    "これは、私が、正規分布で、平均（μ）が中心になることを望んでいるという意味です。",
+    "最後のスライドでは、平均はゼロであり、これは期待値がゼロであることを示しています。",
+    "この場合、期待値は mu (mu) に等しいです。",
+    "それだけの言葉で終わってしまう。それは単に、変動だけを説明している状態です。"
+   ],
+   "vi": [
+    "Hiện tại, tôi có thể nhìn và xem sự khác biệt của các YIs.",
+    "Đây là một tuyên bố liên quan chỉ đến phần ngẫu nhiên hoặc ngắt quãng, đó chính là các giá trị epsilon.",
+    "Câu này có ý nghĩa, ngay cả khi có một mô hình phức tạp hoặc điên rồ hơn, nhưng điều đó không liên quan đến đôi mắt.",
+    "Nếu không rõ ràng, nó sẽ trở nên rõ ràng trong vài trang trình bày.",
+    "Điều này chính xác là một sự khác biệt, bởi vì giá trị trung bình là không.",
+    "Vậy, điều này đang bị cắt ngắn một chút.",
+    "Tôi sẽ bắt đầu ở đây và sau đó sẽ đi xuống.",
+    "Tôi hy vọng rằng cách ghi chú này sẽ quen thuộc với bạn.",
+    "Điều này có nghĩa là tôi muốn rằng sự phân phối này sẽ là một phân phối chuẩn, với giá trị trung bình là trung tâm, đúng không?",
+    "Vậy, ở slide cuối, giá trị trung bình là không, đây là giá trị kỳ vọng, bằng không.",
+    "Trong trường hợp này, giá trị kỳ vọng bằng với mu của z.",
+    "Điều đó chỉ là những lời nói, và nó chỉ mang tính một chiều, chỉ là sự biến động."
+   ]
+  },
+  "both_langs": {
+   "median_ms": 554,
+   "p90_ms": 645,
+   "max_ms": 678
+  },
+  "first_token_median_ms": 90,
+  "tokens_per_s_median": 110,
+  "out_tokens_median": 20,
+  "peak_memory_gb": 2.39,
+  "both_langs_batched": {
+   "median_ms": 305,
+   "p90_ms": 432,
+   "max_ms": 445
+  }
+ },
+ "hunyuan-7b": {
+  "per_lang": {
+   "ja": {
+    "median_ms": 577,
+    "p90_ms": 852,
+    "max_ms": 991
+   },
+   "vi": {
+    "median_ms": 953,
+    "p90_ms": 1462,
+    "max_ms": 1485
+   }
+  },
+  "translations": {
+   "ja": [
+    "そして今、Y変数の分散がどのくらいかを確認することができる。",
+    "これは、単にランダム性や確率性に関する記述であり、具体的には「エプシロン（epsilons）」のことを指しています。",
+    "たとえここにもっと複雑で奇妙なモデルが存在し、それが「yの目」とは何の関係もなくても、この主張は理にかなっている。",
+    "もし今の説明が理解しにくいとしても、数スライド先には納得できる内容になるはずです。",
+    "ここでは平均値がゼロであるため、まさに分散（variance）となる。",
+    "つまり、この映像の一部がカットされてしまっているのだ。",
+    "では、ここから始めて、下に向かって進んでいきます。",
+    "この表記法がご存知の通りであることを願っています。",
+    "つまり、z変数が平均値μを中心とする正規分布になるということですよね？",
+    "前回のスライドでは、平均値が0であった。つまり、期待値も0となる。",
+    "この場合、期待値はzのμに等しい。",
+    "それだけが言いたいことであり、その後は一次元のもの、つまり分散になる。"
+   ],
+   "vi": [
+    "Và bây giờ tôi có thể xem xét giá trị của độ lệch chuẩn (variance) đối với các biến Y (YIs) là bao nhiêu.",
+    "Đây là một tuyên bố chỉ liên quan đến phần ngẫu nhiên (hay còn gọi là phần có tính xác suất), đó chính là các giá trị epsilon (epsilons).",
+    "Tuyên bố này hoàn toàn hợp lý, ngay cả khi có những mô hình phức tạp hơn hoặc “điên rồ” hơn; những mô hình đó không hề liên quan gì đến yếu tố “đôi mắt”.",
+    "Và nếu điều đó có vẻ không hợp lý lúc này, thì nó sẽ trở nên hợp lý sau vài trang slide tiếp theo.",
+    "Đây chính xác là trường hợp của hiện tượng “biến thiên” (variance), bởi vì giá trị trung bình (mean) bằng không.",
+    "Vậy là đoạn này hơi bị cắt ngắn đi một chút.",
+    "Vậy tôi sẽ bắt đầu từ đây, sau đó sẽ tiếp tục di chuyển xuống phía dưới.",
+    "Tôi hy vọng bạn đã quen với cách biểu diễn này.",
+    "Điều này có nghĩa là biến ngẫu nhiên $ z $ sẽ tuân theo một phân phối chuẩn, với giá trị trung bình là $ \\mu $ – tức là điểm trung tâm của phân phối đó, đúng không?",
+    "Trong slide cuối cùng, giá trị trung bình là bằng không; đó chính là giá trị kỳ vọng, và nó bằng không.",
+    "Trong trường hợp này, giá trị kỳ vọng bằng với mu của biến ngẫu nhiên z.",
+    "Đó là tất cả những gì được nói đến; sau đó, biến đó trở thành một biến một chiều (biến phương sai)."
+   ]
+  },
+  "both_langs": {
+   "median_ms": 1544,
+   "p90_ms": 2098,
+   "max_ms": 2476
+  },
+  "first_token_median_ms": 84,
+  "tokens_per_s_median": 61,
+  "out_tokens_median": 38,
+  "peak_memory_gb": 6.41
+ },
+ "translategemma-12b": {
+  "per_lang": {
+   "ja": {
+    "median_ms": 701,
+    "p90_ms": 1003,
+    "max_ms": 1042
+   },
+   "vi": {
+    "median_ms": 824,
+    "p90_ms": 1205,
+    "max_ms": 1320
+   }
+  },
+  "translations": {
+   "ja": [
+    "そして今、YI値のばらつきを調べてみたい。",
+    "これは、単にε（イプシロン）と呼ばれる、確率的要素、あるいは乱数部分について述べたものです。",
+    "この主張は、もっと複雑なモデルや突飛な考え方があるかもしれないとしても、yという要素とは全く関係がないように思えます。",
+    "もし意味が分からなくても、数枚後のスライドで理解できるようになるでしょう。",
+    "ここに分散が出ているのは、平均がゼロだからです。",
+    "ちょっと途中で切れてしまっているようです。",
+    "ここから始めます、そして下に移動します。",
+    "この表記が皆様にとって馴染みがあることを願っています。",
+    "これは、zが平均μを中心とする正規分布になることを意味します。",
+    "前のスライドでは、平均値はゼロであり、それが期待値であり、ゼロと等しいという値でした。",
+    "この場合、期待値はzのμ（ミュー）と等しくなります。",
+    "それ以上は何も言えません。それは一方的で、変化がありません。"
+   ],
+   "vi": [
+    "Bây giờ tôi có thể xem xét và đánh giá sự khác biệt giữa các giá trị YI.",
+    "Đây là một phát biểu chỉ liên quan đến phần ngẫu nhiên hoặc xác suất, chỉ đơn thuần là các giá trị epsilon.",
+    "Câu phát biểu này hoàn toàn hợp lý, ngay cả khi có một mô hình phức tạp hơn hoặc điên rồ hơn, điều đó không liên quan gì đến đôi mắt của cô ấy.",
+    "Nếu điều này chưa thực sự rõ ràng, nó sẽ trở nên dễ hiểu hơn trong vài slide tiếp theo.",
+    "Chính xác là một phương sai ở đây vì giá trị trung bình bằng không.",
+    "Có vẻ như đoạn này đang bị cắt ngắn một chút.",
+    "Tôi sẽ bắt đầu từ đây, rồi sau đó tôi sẽ đi xuống.",
+    "Tôi hy vọng ký hiệu này quen thuộc với bạn.",
+    "Điều này có nghĩa là tôi muốn z sẽ tuân theo phân phối chuẩn, với giá trị trung bình là μ, đó sẽ là tâm của phân phối, đúng không?",
+    "Trong slide cuối cùng, giá trị trung bình là không, đó là giá trị kỳ vọng, bằng không.",
+    "Trong trường hợp này, giá trị kỳ vọng bằng giá trị của z.",
+    "Đó là tất cả những gì được nói, và nó chỉ mang tính một chiều, chỉ là sự khác biệt."
+   ]
+  },
+  "both_langs": {
+   "median_ms": 1515,
+   "p90_ms": 1961,
+   "max_ms": 2362
+  },
+  "first_token_median_ms": 213,
+  "tokens_per_s_median": 37,
+  "out_tokens_median": 18,
+  "peak_memory_gb": 6.92
+ }
+}

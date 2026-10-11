@@ -28,7 +28,7 @@
 // =====================================================================
 
 /* [Render] */
-part = "assembly"; // [assembly, top, tray, button, oled_clip, labels, fit_tests, fit_oled_ring, fit_oled_frame, fit_mic, fit_usb, fit_boot, fit_snap, fit_imu, fit_uno, clash_check]
+part = "assembly"; // [assembly, top, tray, button, oled_clip, labels, fit_tests, fit_oled_ring, fit_oled_frame, fit_mic, fit_usb, fit_boot, fit_snap, fit_imu, fit_uno, fit_oled_pins, clash_check]
 print_orient    = true;   // single parts come out in print orientation
 show_components = true;   // ghost PCBs / Dupont housings (F5 preview only)
 show_text       = true;   // engraved labels on/off
@@ -53,17 +53,17 @@ corner_r = 3;
 top_chamfer = 0.8;
 wall     = 2.0;
 plate_t  = 2.0;
-skirt_h  = 3.0;
+skirt_h  = 4.0;   // v3.1: 3 -> 4 so the strip under each catch window can be 1.6
 skirt_t  = 1.2;
 floor_t  = 2.0;
 
 /* [Snap hooks (tray) / catches (top skirt)] */
-hook_w        = 5.0;   // along the wall
-hook_t        = 1.2;   // beam thickness
-hook_len      = 9.0;   // free beam length below the lip
+hook_w        = 6.0;   // along the wall
+hook_t        = 2.0;   // beam thickness (v3.1: 1.2 looked and felt breakable)
+hook_len      = 16.0;  // free beam length below the lip; longer, so the thicker beam bends at half the old strain
 hook_lip      = 0.8;
 hook_return   = 35;    // lip underside angle from horizontal (90 = permanent)
-skirt_strip   = 1.2;   // skirt left below the catch window
+skirt_strip   = 1.6;   // skirt left below the catch window
 pry_w = 3;  pry_d = 1;
 
 /* [Spacious margins (v3): room for dimensions that are still assumed] */
@@ -95,15 +95,29 @@ oled_pcb_h     = 48.0;  // MEASURED (9 Oct)
 oled_pegs      = false; // pegs need the real hole positions; the v2.2 guess missed. Off until measured.
 oled_post      = 4.0;   // tray corner posts that press the PCB up into the lid pocket (sandwich hold)
 oled_post_gap  = 0.15;  // post top below the PCB back
+// v3.1 bracing: the two back posts stand on a divider wall between the front zone and the back bay,
+// the two front posts are tied to the front wall. Only the last few mm of each post is free.
+oled_rib_t     = 2.0;   // divider wall thickness
+oled_rib_drop  = 5.0;   // divider top below the post tops (room for parts on the OLED back)
 oled_glass_dx  = 0;     // ASSUMED glass centred on PCB
 oled_glass_dy  = 0;
-oled_hole_inset_x = 3.0; // ASSUMED
-oled_hole_inset_y = 3.0; // ASSUMED
-oled_hole_d    = 2.2;    // ASSUMED (M2 clearance)
+// Corner holes: REFERENCE MODEL the builder sent (10 Oct), a 72 x 43 variant of this module. Scaled from
+// its screenshot: 3.0 mm holes centred 2.0 mm from both edges. The builder says the corners match this board.
+oled_hole_inset_x = 2.0;
+oled_hole_inset_y = 2.0;
+oled_hole_d    = 3.0;
+oled_pins      = true;   // a locating pin on top of each tray post, into the corner holes
+oled_pin_d     = 2.0;    // 0.5 per side in the hole: the hole positions are not measured on this board
+oled_pin_h     = 2.4;    // above the post top; the tip passes through the PCB into a relief in the lid
+oled_lead      = 0.4;    // lead-in chamfer on the window and pocket edges the OLED enters first
 oled_fence_h   = 1.0;
 oled_fence_t   = 0.8;
 oled_proud     = 0;
-oled_hdr_x     = 0;      // header centre along the BACK edge, from PCB centre
+oled_hdr_side  = "left";  // [left, right, back] BUILDER (10 Oct): header soldered on the left short side, seen from the front
+oled_hdr_x     = 0;      // header centre along that edge, from the edge's middle (not measured; nothing depends on it)
+oled_hdr_inset = 2.0;    // ASSUMED pin row centre from the PCB edge (2.5 on the back edge)
+oled_hdr_keep  = 0;      // extra inset of the two header-side posts (0: the posts are at the corner holes, the header is between them)
+oled_hdr_relief = 1.0;   // lid seat cut back this deep over the header strip: the soldered pin ends stand just proud of the front
 oled_hdr_pins  = 4;
 peg_neck_d     = 1.2;    // clip groove on the peg
 clip_t         = 1.2;
@@ -181,11 +195,11 @@ cradle_drop   = 1.2;   // ledge drop under the rest of the strip (USB shell anch
 cheek_t       = 2.0;
 cheek_up      = 2.0;   // cheek height above the PCB top
 // v3 antenna gate: the module's antenna end slides through a tunnel under a bridged bar, so the
-// board may be up to 2.5 mm shorter or longer than the drawing. A centre shelf supports it.
+// board may be up to 2.5 mm shorter or longer than the drawing. v3.1: the tunnel sits on one solid
+// block instead of two free-standing pillars.
 catch_engage = 3.0;   // bar reaches this far over the antenna from its tip
 catch_back   = 2.5;   // and this far past the tip
-catch_w      = 10;    // centre shelf width
-catch_dn     = 0.4;   // shelf below the module PCB
+catch_dn     = 0.4;   // block top below the module PCB
 catch_up     = 1.0;   // tunnel roof above the module PCB (a 20 mm bridge sags a little)
 catch_jaw_t  = 1.6;   // bar thickness
 gate_clear   = 0.8;   // per side: tunnel beside the module
@@ -214,13 +228,14 @@ uno_hdr_ana  = [26.42, 65.02, 2.54];   // DATASHEET power + analog header
 uno_jack     = [-2.2, 12.0, 4.1, 13.2, 11.0];  // SCALED/ASSUMED DC jack [u0, u1, v0, v1, height]
 uno_qwiic_v  = 14.1;   // SCALED Qwiic socket centre; it opens past the far end of the board
 uno_post_u   = 35;     // lid posts land on both header tops here (inside the 10-pin and 8-pin strips)
-uno_post_d   = 5.0;
+uno_post_d   = 5.0;    // at the tip
+uno_post_base = 9.0;   // at the lid: the posts are cones, not 16 mm rods
 uno_post_gap = 0.5;    // post end above the header top
 
 /* [IMU: SunFounder 10-axis (SH3001 + QMC6310 + SPL06), Qwiic - size ESTIMATED from the product render] */
-imu_w        = 21.0;   // ESTIMATED PCB size along X (short side)
-imu_d        = 28.0;   // ESTIMATED PCB size along Y (long side, Qwiic sockets on these ends)
-imu_pcb_t    = 1.6;    // ASSUMED
+imu_w        = 21.0;   // BUILDER confirmed 28 x 21 x 1.6 (10 Oct); short side along X
+imu_d        = 28.0;   // long side along Y (Qwiic sockets on these ends)
+imu_pcb_t    = 1.6;
 imu_comp_h   = 3.0;    // ASSUMED Qwiic socket height
 imu_pad_w    = 30.0;   // flat pad, larger than the board: stick it down with thin double-sided tape
 imu_pad_d    = 34.0;
@@ -375,12 +390,11 @@ btn_nose_l   = collar_bot - btn_top;
 btn_guide_depth = H - (collar_seat + btn_stroke);                // bore length from the top surface
 
 // hooks: [wall, position along the wall]
-hx1 = oled_fence_end + 0.6 + hook_w/2;   // catch window edge 0.3 clear of the OLED fence (coincident faces left slivers in the STL)
-hx2 = sk_ix - 0.3 - hook_w/2;
+hxf = (oled_fence_end + sk_ix)/2;        // one front hook, midway between the OLED fence and the right skirt
 // right end: one hook in the gap between the LED socket and the UNO (the boards' USB ends fill the rest)
 hy_r = (led_xy[1] + led_boss_r + uno_y_f)/2;
 hooks = [["left", oled_cy], ["left", uno_y_f + uno_w/2], ["back", -L/4], ["back", L/4],
-         ["front", hx1], ["front", hx2], ["right", hy_r]];
+         ["front", hxf], ["right", hy_r]];
 // pry slots: [wall, position], between the hooks
 prys = [["back", 0], ["left", (oled_cy + uno_y_f + uno_w/2)/2]];
 
@@ -392,16 +406,21 @@ function pin_xy(c, k) = dev_xy(c == 0 ? dev_pin_inset : dev_w - dev_pin_inset,
                                dev_pin_v0 + (dev_pins - 1 - k)*2.54);
 
 oled_back_z = H - oled_stack_t - oled_back_keep;
-// OLED corner posts: inside the PCB outline by 0.5 + post/2 at every corner (6 mm edge strips assumed clear)
+// OLED corner posts: centred on the corner holes (oled_pins), else 0.5 + post/2 inside the PCB outline
+// (on the header side they move in along the long edges by oled_hdr_keep)
+function oled_post_in(sx) = (oled_hdr_side == "left" && sx < 0) || (oled_hdr_side == "right" && sx > 0) ? oled_hdr_keep : 0;
 oled_post_pos = [for (sx = [-1, 1], sy = [-1, 1])
-    [oled_cx + sx*(oled_pcb_w/2 - 0.5 - oled_post/2), oled_cy + sy*(oled_pcb_h/2 - 0.5 - oled_post/2)]];
+    [oled_cx + sx*(oled_pcb_w/2 - (oled_pins ? oled_hole_inset_x : 0.5 + oled_post/2) - oled_post_in(sx)),
+     oled_cy + sy*(oled_pcb_h/2 - (oled_pins ? oled_hole_inset_y : 0.5 + oled_post/2))]];
+oled_hdr_sx = oled_hdr_side == "left" ? -1 : 1;
+oled_pin_tip = oled_pin_h - oled_post_gap - oled_pcb_t;                 // pin length past the PCB front face
 
 hook_half   = (hook_w + 0.6)/2;                                   // catch window half-width
 rhook_led_gap = (hy_r - hook_half) - (led_xy[1] + led_boss_r);
 rhook_uno_gap = uno_y_f - (hy_r + hook_half);
 imu_bay_gap   = uno_x_far - (imu_cx + imu_pad_w/2);
 
-echo(str("SLAB v3.0: outer L x W x H = ", L, " x ", W, " x ", H, " mm (L_req ", L_req, ", L_uno ", L_uno, ", W_req ", W_req, ")"));
+echo(str("SLAB v3.1: outer L x W x H = ", L, " x ", W, " x ", H, " mm (L_req ", L_req, ", L_uno ", L_uno, ", W_req ", W_req, ")"));
 echo(str("  height budget: floor ", floor_t, " + clearance ", floor_clear, " + wire bend ", wire_bend,
          " + Dupont ", jumper_h, " + header spacer ", header_spacer, " = PCB bottom ", pcb_z0,
          "; + PCB ", dev_pcb_t, " = ", pcb_top));
@@ -440,7 +459,7 @@ assert(uno_usb_gap + uno_jack[0] >= 0.5, "DC jack hits the end wall");
 assert(skirt_bot >= uno_top + uno_jack[4] + 0.5, "skirt hits the UNO");
 assert(gate_top + 0.5 <= oled_back_z, "antenna gate hits the OLED back");
 assert(oled_cy - oled_pocket_h/2 >= -sk_iy, "skirt cuts into the OLED pocket");
-assert(hx1 - hook_w/2 >= oled_fence_end + 0.2, "hook under the OLED");
+assert(hxf - hook_half >= oled_fence_end + 0.3, "front hook under the OLED");
 assert(hook_t >= tol_min_wall && skirt_t >= tol_min_wall && btn_guide_wall >= tol_min_wall, "wall below tol_min_wall");
 assert(peg_neck_d >= tol_min_feat && hook_lip >= tol_min_feat, "feature below tol_min_feat");
 if (grille_hole_d < hole(grille_hole))
@@ -541,15 +560,34 @@ module usb_cradle() {
     }
 }
 
-// Antenna gate (v3): centre shelf under the module's antenna end, two pillars beside it and a bar
-// bridged across them. The antenna slides through the tunnel; nothing stops it in X.
+// Antenna gate: a solid block under the module's antenna end, a short pillar on each side of it and
+// a bar bridged across them. The antenna slides through the tunnel; nothing stops it in X.
 module antenna_gate() {
     x0 = x_tip - catch_back;  lx = catch_engage + catch_back;
-    translate([x0, dev_cy - catch_w/2, floor_t - 0.01]) cube([lx, catch_w, pcb_top - catch_dn - floor_t + 0.01]);
+    translate([x0, dev_cy - gate_w/2 - gate_pillar, floor_t - 0.01])
+        cube([lx, gate_w + 2*gate_pillar, pcb_top - catch_dn - floor_t + 0.01]);
     for (sy = [-1, 1])
         translate([x0, dev_cy + (sy > 0 ? gate_w/2 : -gate_w/2 - gate_pillar), floor_t - 0.01])
             cube([lx, gate_pillar, gate_top - floor_t + 0.01]);
     translate([x0, dev_cy - gate_w/2 - gate_pillar, gate_top - catch_jaw_t]) cube([lx, gate_w + 2*gate_pillar, catch_jaw_t]);
+}
+
+// OLED post bracing (v3.1), z = 0 at the world floor
+oled_post_top = H - oled_stack_t - oled_post_gap;
+oled_rib_x0   = min([for (p = oled_post_pos) p[0]]) - oled_post/2;     // divider runs between the two back posts
+oled_rib_x1   = max([for (p = oled_post_pos) p[0]]) + oled_post/2;
+// under the header strip the divider only continues to the left wall as a low tie, 2 mm below the Duponts' wire bend
+oled_rib_low  = H - oled_stack_t - header_spacer - jumper_h - wire_bend - 2.0;
+oled_rib_y    = max([for (p = oled_post_pos) p[1]]);                    // back post row
+oled_tie_top  = skirt_bot - 0.6;                                        // front ties stop under the lid skirt
+module oled_post_braces() {
+    translate([oled_rib_x0, oled_rib_y - oled_rib_t/2, floor_t - 0.01])
+        cube([oled_rib_x1 - oled_rib_x0, oled_rib_t, oled_post_top - oled_rib_drop - floor_t + 0.01]);
+    translate([-in_hx - 0.5, oled_rib_y - oled_rib_t/2, floor_t - 0.01])
+        cube([oled_rib_x0 + in_hx + 0.5 + 0.01, oled_rib_t, oled_rib_low - floor_t + 0.01]);
+    for (p = oled_post_pos) if (p[1] < oled_cy)
+        translate([p[0] - oled_post/2, -in_hy - 0.5, floor_t - 0.01])
+            cube([oled_post, p[1] - oled_post/2 + in_hy + 0.5 + 0.01, oled_tie_top - floor_t + 0.01]);
 }
 
 // peg into a real PCB hole: straight shaft with a 0.6 mm lead-in cone, z = 0 at the seat
@@ -634,7 +672,7 @@ module top_add() {
             cylinder(d = post_d, h = tray_h - (pcb_top + dev_usb_h + tol_fit) + 0.01);
     // hold-down posts onto the UNO's two header rows
     for (p = uno_posts)
-        translate([p[0], p[1], uno_post_z]) cylinder(d = uno_post_d, h = tray_h - uno_post_z + 0.01);
+        translate([p[0], p[1], uno_post_z]) cylinder(d1 = uno_post_d, d2 = uno_post_base, h = tray_h - uno_post_z + 0.01);
 }
 
 module top_cuts() {
@@ -648,6 +686,27 @@ module top_cuts() {
             translate([0, 0, H]) linear_extrude(0.01) square([oled_win_w + 2*tol_efoot, oled_win_h + 2*tol_efoot], center = true);
         }
     }
+    // lead-ins where the OLED enters: lower edge of the window and of the PCB pocket
+    hull() {
+        translate([oled_cx + oled_glass_dx, oled_cy + oled_glass_dy, H - oled_seat - 0.01]) linear_extrude(0.01)
+            square([oled_win_w + 2*oled_lead, oled_win_h + 2*oled_lead], center = true);
+        translate([oled_cx + oled_glass_dx, oled_cy + oled_glass_dy, H - oled_seat + oled_lead]) linear_extrude(0.01)
+            square([oled_win_w, oled_win_h], center = true);
+    }
+    hull() {
+        translate([oled_cx, oled_cy, H - oled_seat - oled_fence_h - 0.01]) linear_extrude(0.01)
+            square([oled_pocket_w + 2*oled_lead, oled_pocket_h + 2*oled_lead], center = true);
+        translate([oled_cx, oled_cy, H - oled_seat - oled_fence_h + oled_lead]) linear_extrude(0.01)
+            square([oled_pocket_w, oled_pocket_h], center = true);
+    }
+    // blind reliefs in the seat for the tips of the tray pins
+    if (oled_pins) for (p = oled_post_pos)
+        translate([p[0], p[1], H - oled_seat - 0.01]) cylinder(d = hole(oled_pin_d + 1.0), h = oled_pin_tip + 0.6 + 0.01);
+    // relief in the seat over the header strip, from the pocket edge to the window edge
+    if (oled_hdr_side != "back")
+        let (xp = oled_cx + oled_hdr_sx*oled_pocket_w/2, xw = oled_cx + oled_glass_dx + oled_hdr_sx*oled_win_w/2)
+            translate([min(xp, xw) - (oled_hdr_sx > 0 ? 0.01 : 0), oled_cy - oled_pocket_h/2, H - oled_seat - 0.01])
+                cube([abs(xp - xw) + 0.01, oled_pocket_h, oled_hdr_relief + 0.01]);
     // grille (through the plate only)
     for (i = [0 : grille_cols - 1], j = [0 : grille_rows - 1])
         translate([gx + (i - (grille_cols - 1)/2)*grille_pitch, gy + (j - (grille_rows - 1)/2)*grille_pitch, tray_h - 0.01])
@@ -709,6 +768,10 @@ module tray() {
             // OLED corner posts: press the PCB up into the lid pocket (replaces the pegs until measured)
             for (p = oled_post_pos) translate([p[0] - oled_post/2, p[1] - oled_post/2, floor_t - 0.01])
                 cube([oled_post, oled_post, H - oled_stack_t - oled_post_gap - floor_t + 0.01]);
+            if (oled_pins) for (p = oled_post_pos)
+                translate([p[0], p[1], H - oled_stack_t - oled_post_gap - 0.01]) pcb_peg(oled_pin_d, oled_pin_h);
+            // OLED post bracing: divider wall under the back pair, ties to the front wall for the front pair
+            oled_post_braces();
             // antenna gate
             antenna_gate();
             // UNO standoffs + pegs, IMU pad
@@ -776,14 +839,20 @@ module dev_board_proxy() {
 module oled_proxy() {
     difference() {
         translate([oled_cx - oled_pcb_w/2, oled_cy - oled_pcb_h/2, H - oled_seat - oled_pcb_t]) cube([oled_pcb_w, oled_pcb_h, oled_pcb_t]);
-        if (oled_pegs) for (p = peg_pos) translate([oled_cx + p[0], oled_cy + p[1], 0]) cylinder(d = oled_hole_d, h = 2*H);
+        if (oled_pegs || oled_pins) for (p = peg_pos) translate([oled_cx + p[0], oled_cy + p[1], 0]) cylinder(d = oled_hole_d, h = 2*H);
     }
     translate([oled_cx + oled_glass_dx - oled_glass_w/2, oled_cy + oled_glass_dy - oled_glass_h/2, H - oled_seat]) cube([oled_glass_w, oled_glass_h, oled_seat - 0.01]);
     translate([oled_cx - oled_pcb_w/2 + clip_w + 0.5, oled_cy - oled_pcb_h/2 + 6, H - oled_stack_t - oled_back_keep])
         cube([oled_pcb_w - 2*clip_w - 1, oled_pcb_h - 12, oled_back_keep]);
     for (i = [0 : oled_hdr_pins - 1])
-        housing_at([oled_cx + oled_hdr_x + (i - (oled_hdr_pins - 1)/2)*2.54, oled_cy + oled_pcb_h/2 - 2.5],
+        let (k = oled_hdr_x + (i - (oled_hdr_pins - 1)/2)*2.54,
+             q = oled_hdr_side == "back" ? [oled_cx + k, oled_cy + oled_pcb_h/2 - 2.5]
+                                         : [oled_cx + oled_hdr_sx*(oled_pcb_w/2 - oled_hdr_inset), oled_cy + k]) {
+        // soldered pin end, just proud of the front face
+        if (oled_hdr_side != "back") translate([q[0] - 0.8, q[1] - 0.8, H - oled_seat]) cube([1.6, 1.6, 0.8]);
+        housing_at(q,
                    H - oled_stack_t - header_spacer - jumper_h - wire_bend, header_spacer + jumper_h + wire_bend);
+        }
 }
 
 module mic_proxy() {
@@ -961,6 +1030,20 @@ module fit_imu() {
     for (q = imu_peg_pos) translate([q[0], q[1], t0 - 0.01]) pcb_peg(imu_peg_d, imu_peg_h);
 }
 
+// OLED corner holes: a frame with four short posts and the tray's locating pins
+module fit_oled_pins() {
+    t0 = 1.2;  bar = 6;
+    hx = oled_pcb_w/2 - oled_hole_inset_x;  hy = oled_pcb_h/2 - oled_hole_inset_y;
+    ef_extrude(t0) difference() {
+        square([2*hx + bar, 2*hy + bar], center = true);
+        square([2*hx - bar, 2*hy - bar], center = true);
+    }
+    for (sx = [-1, 1], sy = [-1, 1]) translate([sx*hx, sy*hy, 0]) {
+        translate([-oled_post/2, -oled_post/2, 0]) cube([oled_post, oled_post, t0 + 2]);
+        translate([0, 0, t0 + 2 - 0.01]) pcb_peg(oled_pin_d, oled_pin_h);
+    }
+}
+
 // UNO hole pattern: a frame with the four standoffs and pegs (v axis mirrored, as in the tray)
 module fit_uno() {
     t0 = 1.2;  bar = 7;
@@ -989,6 +1072,7 @@ module fit_tests() {
     translate([0, -40, 0]) fit_snap();
     translate([52, -50, 0]) fit_imu();
     translate([20, -62, 0]) fit_uno();
+    translate([-45, -118, 0]) fit_oled_pins();
 }
 
 // =====================================================================
@@ -1025,6 +1109,8 @@ if (part == "assembly") {
     fit_snap();
 } else if (part == "fit_imu") {
     fit_imu();
+} else if (part == "fit_oled_pins") {
+    fit_oled_pins();
 } else if (part == "fit_uno") {
     fit_uno();
 } else if (part == "clash_check") {

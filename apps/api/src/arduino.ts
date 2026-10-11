@@ -18,9 +18,10 @@ export function startArduinoBridge(): () => void {
     ], { stdio: ["ignore", "pipe", "pipe"] });
     const lines = createInterface({ input: child.stdout! });
     lines.on("line", line => {
-      if (line !== "SLAP") { console.log("[arduino]", line); return; }
+      // SHAKE from the current sketch; SLAP from the earlier double-slap one.
+      if (line !== "SHAKE" && line !== "SLAP") { console.log("[arduino]", line); return; }
       void triggerUsbSlap(target!).then(accepted => {
-        console.log(`[arduino] SLAP -> ${target}: ${accepted ? "delivered" : "ESP32 offline"}`);
+        console.log(`[arduino] ${line} -> ${target}: ${accepted ? "delivered" : "ESP32 offline"}`);
       }).catch(e => console.error("[arduino] slap failed:", e.message));
     });
     child.stderr!.on("data", data => console.warn("[arduino]", data.toString().trim()));

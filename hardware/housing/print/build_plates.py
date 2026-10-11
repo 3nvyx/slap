@@ -80,7 +80,7 @@ def export(plate_name, specs):
 export("Slap_fit_tests_black_0.4", [
     ("slab_fit_snap", "fit_snap", 1), ("slab_fit_oled_ring", "fit_oled_ring", 1), ("slab_fit_mic", "fit_mic", 1),
     ("slab_fit_usb", "fit_usb", 1), ("slab_fit_boot", "fit_boot", 1), ("slab_fit_imu", "fit_imu", 1),
-    ("slab_fit_uno", "fit_uno", 1),
+    ("slab_fit_uno", "fit_uno", 1), ("slab_fit_oled_pins", "fit_oled_pins", 1),
 ])
 # v3.0: tray and lid are 116 x 116.5 mm each, so the housing plate carries only the three parts.
 # Print the coupon plate first: fit_uno and fit_imu check the two hole patterns in minutes.
