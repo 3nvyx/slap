@@ -181,7 +181,12 @@ function loadState() {
   if (!langs.some(l => l.code === state.lang)) state.lang = langs[0].code;
   if (!fonts.some(f => f.name === state.font)) state.font = fonts[0].name;
   if (!LAB.sprites[state.avatar]) state.avatar = Object.keys(LAB.sprites)[0] ?? "";
-  if (!mascotFaces().includes(state.mascot)) state.mascot = mascotFaces()[0] ?? "";
+  // A face this browser has not shown before (just added to sprites.js) is selected straight away.
+  const faces = mascotFaces(), seen = Array.isArray(state.mascotSeen) ? state.mascotSeen : [];
+  const fresh = faces.find(f => !seen.includes(f));
+  if (fresh) state.mascot = fresh;
+  else if (!faces.includes(state.mascot)) state.mascot = faces[0] ?? "";
+  state.mascotSeen = faces;
 }
 
 /** The mascot's faces: every NAME that has a "mascot/NAME/eyes" layer in sprites.js. */

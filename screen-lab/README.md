@@ -79,26 +79,26 @@ To watch an avatar live, pick the "Avatar + caption" screen, turn on the microph
 
 ### The mascot
 
-The mascot comes from the designer's pencil sketches: a box for a head with a face in it. The eyes blink and the mouth grows with the sound. See it on the "Mascot face", "Mascot + caption", "Mascot ready" and "Mascot asleep" screens. "Mascot: both sketches" shows two faces side by side.
+The mascot comes from the designer's pencil sketches: a box for a head with a face in it. The eyes blink and the mouth grows with the sound. See it on the "Mascot face", "Mascot + caption", "Mascot ready" and "Mascot asleep" screens. Drag "Sound level" to move its mouth, or turn on the microphone and talk.
 
-There are three faces. Choose one under "Mascot" on the right:
+`cat` is the mascot. The other faces are earlier sketches, kept to compare ("Mascot: both sketches" shows two of them side by side). Choose a face under "Mascot" on the right:
 
 | Face | What it looks like |
 | --- | --- |
+| `cat` | A box with two cat ears, round eyes joined by a bar, square mouth |
 | `round` | Round eyes, wide flat mouth |
 | `odd` | One big eye, one small eye, triangle mouth |
 | `tall` | Tall rounded eyes with a band across the top, small square mouth |
- Drag "Sound level" to move its mouth, or turn on the microphone and talk.
 
-It is drawn in `sprites.js` as layers on one grid, 26 pixels wide and 20 tall, like sheets of tracing paper:
+Each face is drawn in `sprites.js` as six layers on one grid, like sheets of tracing paper:
 
 | Layer | What it is |
 | --- | --- |
-| `mascot/head` | The box around the face, shared by every face |
+| `mascot/NAME/head` | The box around the face, with the ears if it has any |
 | `mascot/NAME/eyes`, `mascot/NAME/blink` | Eyes open, eyes shut |
 | `mascot/NAME/quiet`, `mascot/NAME/half`, `mascot/NAME/open` | The mouth when it is quiet, for soft sound, for loud sound |
 
-`NAME` is the face (`round`, `odd`, `tall`). A new face is five more layers under a new name; it then appears in the menu by itself. The face layers are lit pixels inside the box. Keep every layer the same size, or the parts slide out of place. A screen can show the head at 2 or 3 times that size; at 3 times it is as tall as the display.
+`NAME` is the face (`cat`, `round`, `odd`, `tall`). A new face is six more layers under a new name; it then appears in the menu by itself and the page switches to it. The six layers of one face must be the same size, or the parts slide out of place (`cat` is 26 pixels wide and 21 tall, the others 26 by 20). A screen gives the mascot an area and it is drawn there as large as fits: 3 times its size on the whole display, 2 times beside a caption.
 
 The face can show anything that fits: hearts for eyes, a sound wave for a mouth, a wink. To change it, ask the AI in plain words ("bigger eyes", "add a surprised mouth for very loud sound", "make it wink"), send it a sketch, or change the `#` and `.` yourself.
 
