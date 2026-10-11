@@ -23,6 +23,14 @@ interface DeviceAuth { key: string; row: DeviceRow | null }
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 const sockets = new Map<string, WebSocket>();   // device id -> current socket
+const usbTargets = new Map<string, { socket: WebSocket; press: () => Promise<void> }>();
+
+export async function triggerUsbSlap(firmwareDeviceId: string): Promise<boolean> {
+  const target = usbTargets.get(firmwareDeviceId);
+  if (!target || target.socket.readyState !== WebSocket.OPEN) return false;
+  await target.press();
+  return true;
+}
 
 const log = (...a: unknown[]) => console.log("[device]", ...a);
 
@@ -100,6 +108,8 @@ function screen(d: DeviceLink, message?: string): Uint8Array {
 
 function onConnection(ws: WebSocket, auth: DeviceAuth) {
   let link: DeviceLink | null = null;
+  let firmwareDeviceId: string | undefined;
+  let buttonBusy = false;
   let helloSeen = false;
   let lastAlive = Date.now();
   let lastSeenWrite = 0;
@@ -217,12 +227,15 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
     link = makeLink(row, owner, cls ?? null, pairCode, m.pairCode);
     log(`hello ${m.deviceId} fw=${m.fw} -> ${row.id} ${!owner ? `unpaired (${pairCode})` : cls ? `class ${cls.code}` : "paired, no active class"}`);
     await attachDevice(link);
+    firmwareDeviceId = m.deviceId;
+    usbTargets.set(m.deviceId, { socket: ws, press: onButton });
     touchSeen(true);
     if (pendingPress) { pendingPress = false; void onButton(); }
   }
 
   async function onButton() {
     if (!link) { pendingPress = helloSeen; return; }
+    if (buttonBusy) return;
     if (Date.now() - lastPress < 1000) return;   // debounce double reports
     lastPress = Date.now();
     const d = link;
@@ -232,12 +245,15 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
       d.refresh();
       return;
     }
+    buttonBusy = true;
     try {
       if (d.lectureId) await stopSession(d.lectureId);
       else await startSession(d.classId!, { source: "device", deviceId: d.id });
     } catch (e) {
       console.error("[device] button action failed:", (e as Error).message);
       showError(d.lectureId ? "could not stop" : "could not start");
+    } finally {
+      buttonBusy = false;
     }
   }
 
@@ -270,6 +286,7 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
     pushAudio(link.lectureId, buf);
   });
   ws.on("close", (code) => {
+    if (firmwareDeviceId && usbTargets.get(firmwareDeviceId)?.socket === ws) usbTargets.delete(firmwareDeviceId);
     clearInterval(heartbeat);
     clearInterval(tick);
     clearTimeout(errorTimer);

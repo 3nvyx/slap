@@ -17,6 +17,7 @@ import { settings } from "./settings.ts";
 import { handleDeviceUpgrade } from "./ws/device.ts";
 import { handleLectureAudioUpgrade } from "./ws/audio.ts";
 import { handleLiveUpgrade } from "./ws/live.ts";
+import { startArduinoBridge } from "./arduino.ts";
 
 const apiDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const webDist = path.resolve(apiDir, settings.webDist);
@@ -67,9 +68,11 @@ app.onError((err, c) => {
 app.notFound(c => c.json({ error: "not found" }, 404));
 
 export function start(port = settings.port): Server {
+  const stopArduino = startArduinoBridge();
   const server = serve({ fetch: app.fetch, port }, info => {
     console.log(`[api] listening on http://localhost:${info.port} (mode ${settings.mode}, stt ${settings.stt.backend}, translate ${settings.translate.backend}, llm ${settings.llm.backend})`);
   }) as Server;
+  server.on("close", stopArduino);
   server.on("upgrade", (req, socket, head) => {
     const { pathname } = new URL(req.url ?? "/", "http://localhost");
     if (pathname === "/ws/device") {
