@@ -173,15 +173,39 @@ screen({
   },
 });
 
+const STANDBY_SLAP_MS = 2400;   // how often the waiting name takes a slap
+
 screen({
   name: "Waiting",
   group: TODAY,
-  note: "Plugged in and connected, before a shake starts a session: the name alone. The screen goes dark after twelve seconds.",
-  draw(ctx) {
+  note: "Plugged in and connected, before a shake starts a session: the name alone. Press Play: it pops in, bobs gently, and every couple of seconds takes a slap. On the device it moves for twelve seconds, then the screen goes dark.",
+  draw(ctx, d) {
     ctx.textBaseline = "alphabetic";
-    ctx.transform(1, 0, -0.2, 1, 0, 0);   // lean the bold: the device's font has no italic
+    const ms = d.t ? d.t * 1000 : Infinity;
+    let scale = 1, dx = 0, dy = 0, skew = -0.2, lines = 0;
+    if (Number.isFinite(ms)) {
+      const hit = ms % STANDBY_SLAP_MS;
+      if (ms < 360) {                      // pops in: small, a little too big, then its size
+        const t = ms / 360;
+        scale = t < 0.7 ? 0.5 + 0.65 * (t / 0.7) : 1.15 - 0.15 * ((t - 0.7) / 0.3);
+      } else if (hit < 340) {              // takes a slap: knocked sideways and leaning, with movement lines
+        const left = 1 - hit / 340;
+        dx = Math.round(6 * left * Math.sin(hit / 11));
+        skew = -0.2 - 0.14 * left * Math.cos(hit / 15);
+        lines = left > 0.3 ? 1 + (Math.floor(hit / 60) % 2) : 0;
+      } else {
+        dy = Math.round(1.2 * Math.sin(ms / 450));   // and bobs gently in between
+      }
+    }
+    ctx.save();
+    ctx.translate(64 + dx, 32 + dy);
+    ctx.scale(scale, scale);
+    ctx.transform(1, 0, skew, 1, 0, 0);    // lean the bold: the device's font has no italic
     ctx.font = font(34, true);
-    centered(ctx, "SLAP!", 44, 9);
+    ctx.textAlign = "center";
+    ctx.fillText("SLAP!", 1, 12);
+    ctx.restore();
+    for (let k = 0; k < (lines ? 3 : 0); k++) ctx.fillRect(lines === 1 ? 0 : W - 6 - k, 20 + k * 11, 6 + k, 2);   // at the edges, clear of the word
   },
 });
 

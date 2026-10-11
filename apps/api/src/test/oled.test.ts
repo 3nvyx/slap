@@ -201,3 +201,13 @@ test("a shake throws the caption text about for a moment and leaves the level co
   assert.deepEqual(shakeFrame(f, SHAKE_MS), f, "and comes to rest exactly where it was");
   assert.deepEqual(shakeFrame(f, -1), f);
 });
+
+test("the waiting name moves: it pops in, takes a slap now and then, and rests exactly as the still frame", () => {
+  const still = renderStandby();
+  const count = (f: Uint8Array) => { let n = 0; for (const b of f) for (let v = b; v; v >>= 1) n += v & 1; return n; };
+  assert.ok(count(renderStandby(0)) < count(renderStandby(250)), "small first, then larger");
+  assert.deepEqual(renderStandby(1400), still, "at rest between slaps");
+  const slap = [0, 50, 100, 200].map(ms => renderStandby(2400 + ms));
+  for (const f of slap) assert.notDeepEqual(f, still);
+  assert.equal(new Set(slap.map(f => Buffer.from(f).toString("hex"))).size, slap.length);
+});

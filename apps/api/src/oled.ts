@@ -317,12 +317,37 @@ export function renderNotice(big: string, small: string): Uint8Array {
   });
 }
 
-/** Waiting for a shake after power-up: the name alone, slanted like the wordmark of the switch-on art. */
-export function renderStandby(): Uint8Array {
+export const STANDBY_SLAP_MS = 2400;   // how often the waiting name takes a slap
+
+/** Waiting for a shake after power-up: the name alone, slanted like the wordmark of the switch-on art.
+ *  `ms` since it came up moves it: it pops in, bobs gently, and every STANDBY_SLAP_MS takes a slap (knocked
+ *  sideways, leaning, with movement lines). Without `ms` it is at rest. */
+export function renderStandby(ms = Infinity): Uint8Array {
   return render(ctx => {
-    ctx.transform(1, 0, -0.2, 1, 0, 0);   // Noto Sans has no italic here: lean the bold
-    ctx.font = font(34, true);
-    centered(ctx, "SLAP!", 44, 9);
+  let scale = 1, dx = 0, dy = 0, skew = -0.2, lines = 0;
+  if (Number.isFinite(ms)) {
+    const hit = ms % STANDBY_SLAP_MS;
+    if (ms < 360) {                      // pops in: small, a little too big, then its size
+      const t = ms / 360;
+      scale = t < 0.7 ? 0.5 + 0.65 * (t / 0.7) : 1.15 - 0.15 * ((t - 0.7) / 0.3);
+    } else if (hit < 340) {              // takes a slap: knocked sideways and leaning, with movement lines
+      const left = 1 - hit / 340;
+      dx = Math.round(6 * left * Math.sin(hit / 11));
+      skew = -0.2 - 0.14 * left * Math.cos(hit / 15);
+      lines = left > 0.3 ? 1 + (Math.floor(hit / 60) % 2) : 0;
+    } else {
+      dy = Math.round(1.2 * Math.sin(ms / 450));   // and bobs gently in between
+    }
+  }
+  ctx.save();
+  ctx.translate(64 + dx, 32 + dy);
+  ctx.scale(scale, scale);
+  ctx.transform(1, 0, skew, 1, 0, 0);    // Noto Sans has no italic here: lean the bold
+  ctx.font = font(34, true);
+  ctx.textAlign = "center";
+  ctx.fillText("SLAP!", 1, 12);
+  ctx.restore();
+  for (let k = 0; k < (lines ? 3 : 0); k++) ctx.fillRect(lines === 1 ? 0 : W - 6 - k, 20 + k * 11, 6 + k, 2);   // at the edges, clear of the word
   });
 }
 

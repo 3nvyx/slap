@@ -17,6 +17,7 @@ const DEAD_MS = 30_000;
 const SEEN_WRITE_MS = 60_000;
 const MAX_BUFFERED = 256 * 1024;                            // skip OLED frames if the device is not draining
 const LANG_BANNER_MS = 1500;     // how long the language name covers the caption after a tilt
+const STANDBY_MOVES_MS = 12_000; // the waiting name moves this long (the firmware darkens the screen after STANDBY_SCREEN_MS)
 const ANIMATION_MS = 50;         // frame spacing while captions roll or fade in (the firmware draws up to 20 a second)
 const FRAME_REFRESH_MS = 3000;   // firmware shows a server frame for 5 s (OLED_SERVER_FRAME_TTL_MS), so resend before that
 
@@ -69,10 +70,10 @@ function meter(rms: number): number {
 
 const isLang = (v: unknown): v is DeviceLang => (DEVICE_LANGS as readonly unknown[]).includes(v);
 
-function screen(d: DeviceLink, roll: CaptionRoll, banner: boolean, message?: string): Uint8Array {
+function screen(d: DeviceLink, roll: CaptionRoll, banner: boolean, idleMs: number, message?: string): Uint8Array {
   switch (d.state) {
     // Idle: waiting for a shake after power-up, or just saved (the device then sleeps or goes dark).
-    case "idle": return d.savedSeconds === null ? renderStandby() : renderSaved(d.savedSeconds);
+    case "idle": return d.savedSeconds === null ? renderStandby(idleMs < STANDBY_MOVES_MS ? idleMs : Infinity) : renderSaved(d.savedSeconds);
     case "recording": {
       if (banner) return renderLanguage(d.lang);
       const l = d.lectureId ? getLecture(d.lectureId) : undefined;
@@ -99,6 +100,8 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
   let errorTimer: NodeJS.Timeout | undefined;
   let bannerUntil = 0;          // the language name is on screen until then
   const roll = new CaptionRoll();   // where each caption word sits on this device's screen
+  let idleAt = Date.now();          // when it last became idle: the waiting name moves for a while from then
+  let wasIdle = false;
   let shakenAt = -Infinity;         // a shake during a recording: the captions are thrown about for SHAKE_MS
   let animation: NodeJS.Timeout | undefined;
 
@@ -166,15 +169,19 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
         const s = JSON.stringify(msg);
         if (s !== lastState) { ws.send(s); lastState = s; }
         if (ws.bufferedAmount > MAX_BUFFERED) return;
-        const drawn = screen(d, roll, Date.now() < bannerUntil, errorMessage);
+        if (d.state === "idle" && !wasIdle) idleAt = Date.now();
+        wasIdle = d.state === "idle";
+        const drawn = screen(d, roll, Date.now() < bannerUntil, Date.now() - idleAt, errorMessage);
         const frame = d.state === "recording" ? shakeFrame(drawn, Date.now() - shakenAt) : drawn;
         if (!lastFrame || Buffer.compare(frame, lastFrame) !== 0 || Date.now() - lastFrameAt >= FRAME_REFRESH_MS) {
           ws.send(frame, { binary: true });
           lastFrame = frame;
           lastFrameAt = Date.now();
         }
-        // Captions rolling up or fading in: keep drawing until they have settled.
-        if (!animation && d.state === "recording" && (roll.animating(Date.now()) || Date.now() - shakenAt < SHAKE_MS)) {
+        // Captions rolling up or fading in, a shake, or the waiting name moving: keep drawing until it has settled.
+        const moving = d.state === "recording" ? roll.animating(Date.now()) || Date.now() - shakenAt < SHAKE_MS
+          : d.state === "idle" && d.savedSeconds === null && Date.now() - idleAt < STANDBY_MOVES_MS + ANIMATION_MS;
+        if (!animation && moving) {
           animation = setTimeout(() => { animation = undefined; d.refresh(); }, ANIMATION_MS);
           animation.unref();
         }
