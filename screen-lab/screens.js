@@ -7,7 +7,7 @@
 // Helpers: font(px, bold)  centered(ctx, text, y, x0, width)  fitFont(ctx, text, width, max)
 //          wrapText(ctx, text, maxWidth)  drawQr(ctx, text, x, y, box)  mmss(seconds)
 //          drawSprite(ctx, name, x, y, scale)  spriteFit(name, boxW, boxH)
-//          drawMascot(ctx, x, y, scale, d, asleep)   the mascot from sprites.js (defined further down)
+//          drawMascot(ctx, d, x, y, w, h, asleep, face)   the mascot from sprites.js, fitted into an area (defined further down)
 
 const TODAY = "On the device today";
 const IDEAS = "Ideas to play with";
@@ -185,24 +185,27 @@ screen({
   },
 });
 
-// The mascot from sprites.js: a box head with a face in it, 26 x 20 pixels times `scale`.
-// It blinks now and then, and its mouth grows as the sound gets louder.
+// The mascot from sprites.js: a box head with a face in it.
+// It is drawn as large as fits in the area (x, y, w, h), in the middle of it, at a whole-number size
+// so the pixels stay square. It blinks now and then, and its mouth grows as the sound gets louder.
 // `face` is one of the faces in sprites.js; left out, it is the one chosen on the page.
-function drawMascot(ctx, x, y, scale, d, asleep = false, face = d.mascot) {
+function drawMascot(ctx, d, x, y, w, h, asleep = false, face = d.mascot) {
+  const fit = spriteFit(`mascot/${face}/head`, w, h);
+  const px = x + Math.floor((w - fit.w) / 2), py = y + Math.floor((h - fit.h) / 2);
   const shut = asleep || d.t % 3.2 > 3;
   const mouth = asleep || d.level < 0.15 ? "quiet" : d.level < 0.45 ? "half" : "open";
-  drawSprite(ctx, "mascot/head", x, y, scale);
-  drawSprite(ctx, `mascot/${face}/${shut ? "blink" : "eyes"}`, x, y, scale);
-  drawSprite(ctx, `mascot/${face}/${mouth}`, x, y, scale);
+  drawSprite(ctx, `mascot/${face}/head`, px, py, fit.scale);
+  drawSprite(ctx, `mascot/${face}/${shut ? "blink" : "eyes"}`, px, py, fit.scale);
+  drawSprite(ctx, `mascot/${face}/${mouth}`, px, py, fit.scale);
 }
 
 screen({
   name: "Mascot face",
   group: IDEAS,
-  note: "The mascot's head, as large as fits. Choose the face under Mascot on the right. Its mouth follows the sound and it blinks: drag Sound level, press Play, or turn on the microphone.",
+  note: "The mascot, as large as fits. Choose the face under Mascot on the right. Its mouth follows the sound and it blinks: drag Sound level, press Play, or turn on the microphone.",
   led: true,
   draw(ctx, d) {
-    drawMascot(ctx, 25, 2, 3, d);
+    drawMascot(ctx, d, 0, 0, W, H);
   },
 });
 
@@ -212,9 +215,9 @@ screen({
   note: "The mascot talks along with the lecture, with the caption beside it.",
   led: true,
   draw(ctx, d) {
-    drawMascot(ctx, 0, 12, 2, d);
+    drawMascot(ctx, d, 0, 0, 54, H);
     ctx.font = font(11);
-    const x0 = 56;
+    const x0 = 57;
     const lines = wrapText(ctx, d.caption, W - x0 - 1).slice(-4);
     lines.forEach((l, i) => ctx.fillText(l, x0, 4 + i * 14));
   },
@@ -225,7 +228,7 @@ screen({
   group: IDEAS,
   note: "Waiting to start: the mascot beside the class code.",
   draw(ctx, d) {
-    drawMascot(ctx, 2, 12, 2, { ...d, level: 0 });
+    drawMascot(ctx, { ...d, level: 0 }, 2, 0, 54, H);
     const x0 = 58, w = W - x0;
     ctx.font = font(fitFont(ctx, d.classCode, w - 2, 18), true);
     centered(ctx, d.classCode, 8, x0, w);
@@ -238,10 +241,10 @@ screen({
 screen({
   name: "Mascot: both sketches",
   group: IDEAS,
-  note: "The two newest sketches side by side, to compare them. Both react to the sound.",
+  note: "Two of the earlier sketches side by side, to compare them. Both react to the sound.",
   draw(ctx, d) {
-    drawMascot(ctx, 8, 4, 2, d, false, "round");
-    drawMascot(ctx, 68, 4, 2, d, false, "odd");
+    drawMascot(ctx, d, 8, 4, 52, 40, false, "round");
+    drawMascot(ctx, d, 68, 4, 52, 40, false, "odd");
     ctx.font = font(10);
     centered(ctx, "round", 49, 8, 52);
     centered(ctx, "odd", 49, 68, 52);
@@ -253,7 +256,7 @@ screen({
   group: IDEAS,
   note: "Nothing is happening: eyes shut, mouth small.",
   draw(ctx, d) {
-    drawMascot(ctx, 14, 2, 3, d, true);
+    drawMascot(ctx, d, 10, 0, 84, H, true);
     ctx.font = font(10, true);
     ctx.fillText("z", 98, 14);
     ctx.font = font(13, true);
