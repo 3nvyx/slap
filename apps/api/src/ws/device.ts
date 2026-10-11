@@ -7,7 +7,7 @@ import { AUDIO_FRAME_BYTES, DEVICE_LANGS, type DeviceLang, type DeviceToServer, 
 import { eq } from "drizzle-orm";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { db, schema } from "../db/index.ts";
-import { CaptionRoll, renderLanguage, renderNotice, renderSaved, renderText, shiftFrame } from "../oled.ts";
+import { CaptionRoll, renderLanguage, renderNotice, renderSaved, renderText, SHAKE_MS, shakeFrame } from "../oled.ts";
 import { pcmRms } from "../pipeline/stt.ts";
 import { attachDevice, detachDevice, getLecture, pushAudio, setDeviceLang, startDeviceSession, stopSession, type DeviceLink } from "../sessions.ts";
 import { settings } from "../settings.ts";
@@ -17,7 +17,6 @@ const DEAD_MS = 30_000;
 const SEEN_WRITE_MS = 60_000;
 const MAX_BUFFERED = 256 * 1024;                            // skip OLED frames if the device is not draining
 const LANG_BANNER_MS = 1500;     // how long the language name covers the caption after a tilt
-const WOBBLE_MS = 450;           // how long the screen wobbles after a shake during a recording
 const ANIMATION_MS = 50;         // frame spacing while captions roll or fade in (the firmware draws up to 20 a second)
 const FRAME_REFRESH_MS = 3000;   // firmware shows a server frame for 5 s (OLED_SERVER_FRAME_TTL_MS), so resend before that
 
@@ -29,7 +28,7 @@ const sockets = new Map<string, WebSocket>();   // device id -> current socket
 const usbTargets = new Map<string, { socket: WebSocket; shake: () => Promise<void> }>();
 
 /** A shake seen by the USB motion sensor that sits with the device (arduino.ts): it starts a recording, or, while
- *  one runs, only makes the screen wobble. It never stops one (that is REC held for 2 s). False if the device is offline. */
+ *  one runs, only throws the captions about for a moment. It never stops one (that is REC held for 2 s). False if the device is offline. */
 export async function triggerUsbSlap(firmwareDeviceId: string): Promise<boolean> {
   const target = usbTargets.get(firmwareDeviceId);
   if (!target || target.socket.readyState !== WebSocket.OPEN) return false;
@@ -100,9 +99,7 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
   let errorTimer: NodeJS.Timeout | undefined;
   let bannerUntil = 0;          // the language name is on screen until then
   const roll = new CaptionRoll();   // where each caption word sits on this device's screen
-  let shakenAt = -Infinity;         // a shake during a recording: the screen wobbles for WOBBLE_MS
-  /** Sideways offset of the screen `ms` after a shake: a few quick swings that die away. */
-  const wobble = (ms: number) => ms < 0 || ms >= WOBBLE_MS ? 0 : Math.round(6 * Math.sin(ms / 14) * (1 - ms / WOBBLE_MS));
+  let shakenAt = -Infinity;         // a shake during a recording: the captions are thrown about for SHAKE_MS
   let animation: NodeJS.Timeout | undefined;
 
   const send = (m: ServerToDevice) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m)); };
@@ -169,14 +166,15 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
         const s = JSON.stringify(msg);
         if (s !== lastState) { ws.send(s); lastState = s; }
         if (ws.bufferedAmount > MAX_BUFFERED) return;
-        const frame = shiftFrame(screen(d, roll, Date.now() < bannerUntil, errorMessage), d.state === "recording" ? wobble(Date.now() - shakenAt) : 0);
+        const drawn = screen(d, roll, Date.now() < bannerUntil, errorMessage);
+        const frame = d.state === "recording" ? shakeFrame(drawn, Date.now() - shakenAt) : drawn;
         if (!lastFrame || Buffer.compare(frame, lastFrame) !== 0 || Date.now() - lastFrameAt >= FRAME_REFRESH_MS) {
           ws.send(frame, { binary: true });
           lastFrame = frame;
           lastFrameAt = Date.now();
         }
         // Captions rolling up or fading in: keep drawing until they have settled.
-        if (!animation && d.state === "recording" && (roll.animating(Date.now()) || Date.now() - shakenAt < WOBBLE_MS)) {
+        if (!animation && d.state === "recording" && (roll.animating(Date.now()) || Date.now() - shakenAt < SHAKE_MS)) {
           animation = setTimeout(() => { animation = undefined; d.refresh(); }, ANIMATION_MS);
           animation.unref();
         }

@@ -280,14 +280,28 @@ export function renderLanguage(lang: DeviceLang): Uint8Array {
   });
 }
 
-/** The same frame moved `dx` px sideways (what slides in is dark): the screen wobbles when the device is shaken. */
-export function shiftFrame(frame: Uint8Array, dx: number): Uint8Array {
-  if (!dx) return frame;
-  const out = new Uint8Array(frame.length);
-  for (let y = 0; y < H; y++) {
-    for (let x = Math.max(0, dx); x < Math.min(W, W + dx); x++) {
-      const from = x - dx;
-      if ((frame[y * 16 + (from >> 3)]! >> (from & 7)) & 1) out[y * 16 + (x >> 3)]! |= 1 << (x & 7);
+export const SHAKE_MS = 450;   // how long the captions react to a shake
+
+/** The recording frame `ms` after the device was shaken: the caption text is thrown about (each row slides
+ *  sideways by its own amount, so the letters bend, and the whole block hops up and down), with short movement
+ *  lines beside it. It dies away over SHAKE_MS. The level column and the timer on the right stay put. */
+export function shakeFrame(frame: Uint8Array, ms: number): Uint8Array {
+  if (ms < 0 || ms >= SHAKE_MS) return frame;
+  const left = 1 - ms / SHAKE_MS, edge = CAPTION_W + 3;   // the caption area is x < edge, rows 0-53
+  const bit = (x: number, y: number) => x >= 0 && x < edge && y >= 0 && y < 54 ? (frame[y * 16 + (x >> 3)]! >> (x & 7)) & 1 : 0;
+  const out = Uint8Array.from(frame);
+  const put = (x: number, y: number, v: number) => { if (v) out[y * 16 + (x >> 3)]! |= 1 << (x & 7); else out[y * 16 + (x >> 3)]! &= ~(1 << (x & 7)); };
+  const dy = Math.round(2 * left * Math.cos(ms / 11));
+  for (let y = 0; y < 54; y++) {
+    const dx = Math.round(left * (5 * Math.sin(ms / 14) + 2.5 * Math.sin(ms / 9 + y / 5)));
+    for (let x = 0; x < edge; x++) put(x, y, bit(x - dx, y - dy));
+  }
+  // Movement lines in the gaps between the caption lines, flicking from side to side.
+  const phase = Math.floor(ms / 60);
+  if (left > 0.25) {
+    for (const [k, y] of [19, 37, 1].entries()) {
+      const len = 5 + 2 * ((phase + k) % 3), right = (phase + k) % 2 === 0;
+      for (let i = 0; i < len; i++) put(right ? edge - 1 - i : i, y, 1);
     }
   }
   return out;

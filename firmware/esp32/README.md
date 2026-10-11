@@ -29,7 +29,7 @@ The device is either asleep or recording. "REC" is the housing button over the b
 
 Slaps no longer start or stop anything (the detector in `slap.cpp` still runs; its result is ignored).
 
-**Without a motion sensor on the ESP32** (the IMU sits on the Arduino, `firmware/arduino/`): a shake reaches the ESP32 only through the server, which cannot wake it from deep sleep. The device then never sleeps by itself. Powered up or reset, it connects and waits ("Shake to record", dark after `STANDBY_SCREEN_MS`); a shake or a short REC press starts a session, with the slap animation first (`SHAKE_SPLASH_MS`); a shake during a session makes the screen wobble; hold REC for 2 s shows "Saved" and returns to the dark, connected standby. Holding REC while not recording is still deep sleep, and only REC wakes it then.
+**Without a motion sensor on the ESP32** (the IMU sits on the Arduino, `firmware/arduino/`): a shake reaches the ESP32 only through the server, which cannot wake it from deep sleep. The device then never sleeps by itself. Powered up or reset, it connects and waits ("Shake to record", dark after `STANDBY_SCREEN_MS`); a shake or a short REC press starts a session, with the slap animation first (`SHAKE_SPLASH_MS`); a shake during a session throws the caption text about for half a second (drawn by the server); hold REC for 2 s shows "Saved" and returns to the dark, connected standby. Holding REC while not recording is still deep sleep, and only REC wakes it then.
 
 LED: solid while recording, slow 1 Hz blink while booting or connecting, 5 Hz while in the server's error state, off when asleep.
 

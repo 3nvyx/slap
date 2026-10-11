@@ -33,8 +33,8 @@ To build without Arduino IDE, use the `arduino-cli` bundled in it with the board
 
 The API routes `SHAKE` (and `SLAP` from the earlier double-slap sketch) to the connected ESP32 named by
 `ARDUINO_DEVICE_ID` (`triggerUsbSlap` in `apps/api/src/ws/device.ts`). A shake starts a recording: the ESP32
-plays its slap animation, then shows captions. While a recording runs, a shake only makes the screen wobble for
-half a second; it never stops one (hold REC on the ESP32 for 2 s to save and stop). Events while the ESP32 is
+plays its slap animation, then shows captions. While a recording runs, a shake only throws the caption text about for
+half a second (it shifts, bends and gets small movement lines); it never stops one (hold REC on the ESP32 for 2 s to save and stop). Events while the ESP32 is
 offline are discarded, and a shake cannot wake an ESP32 from deep sleep. With no motion sensor of its own the
 ESP32 therefore does not sleep after a recording: it stays connected and darkens its screen (standby).
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DEVICE_LANGS, OLED_FRAME_BYTES } from "@slap/contracts";
-import { CaptionRoll, packXbm, render, renderLanguage, renderNotice, renderRecording, renderSaved, renderText } from "../oled.ts";
+import { CaptionRoll, packXbm, render, renderLanguage, renderNotice, renderRecording, renderSaved, renderText, SHAKE_MS, shakeFrame } from "../oled.ts";
 
 const lit = (f: Uint8Array, x: number, y: number) => (f[y * 16 + (x >> 3)]! >> (x & 7)) & 1;
 // Caption area of a recording frame (left of the level column, above the timer), as rows of 0/1.
@@ -184,4 +184,19 @@ test("captions: a finished sentence takes the place of the same words without re
   assert.deepEqual(r.frame(0, 0, 3500), renderRecording(0, 0, "Good morning."));
   r.update({ finals: [{ id: 21, text: "おはようございます。" }], interim: "" }, 4000);   // the same sentence in another language
   assert.deepEqual(r.frame(0, 0, 4500), renderRecording(0, 0, "おはようございます。"));
+});
+
+test("a shake throws the caption text about for a moment and leaves the level column and timer alone", () => {
+  const f = renderRecording(754, 0.55, "So what does a Gaussian look like? It is a bell curve centred on the mean.");
+  const side = (g: Uint8Array) => { let s = ""; for (let y = 0; y < 64; y++) for (let x = 119; x < 128; x++) s += lit(g, x, y); return s; };
+  const foot = (g: Uint8Array) => { let s = ""; for (let y = 54; y < 64; y++) for (let x = 0; x < 128; x++) s += lit(g, x, y); return s; };
+  const frames = [0, 50, 100, 200, 300].map(ms => shakeFrame(f, ms));
+  for (const g of frames) {
+    assert.notDeepEqual(g, f);
+    assert.equal(side(g), side(f));
+    assert.equal(foot(g), foot(f));
+  }
+  assert.equal(new Set(frames.map(g => Buffer.from(g).toString("hex"))).size, frames.length, "it keeps moving");
+  assert.deepEqual(shakeFrame(f, SHAKE_MS), f, "and comes to rest exactly where it was");
+  assert.deepEqual(shakeFrame(f, -1), f);
 });
