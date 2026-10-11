@@ -5,10 +5,10 @@ import { Async, Button, ButtonLink, Empty, Label, PageTitle } from '../component
 import { api } from '../lib/api'
 import { fmtDate } from '../lib/format'
 import { useApi } from '../lib/useApi'
-import { AnswerCard } from './Practice'
+import { AnswerCard } from './c.$classId.practice'
 
 /** Three questions on what the syllabus says the next lecture covers: a warm-up, not a test. */
-export function PretestPage() {
+export default function PretestPage() {
   const { classId, detail } = useClass()
   const pretest = useApi(() => api.pretest(classId), [classId])
   const [score, setScore] = useState({ correct: 0, total: 0 })

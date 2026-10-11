@@ -1,4 +1,4 @@
-// Device hooks shared by the class list and class home (pages/Devices.tsx holds the components).
+// Device hooks shared by the class list and class home (components/Devices.tsx holds the components).
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import type { DeviceSummary } from './types'

@@ -67,7 +67,7 @@ async function call<T = any>(user: string | null, method: string, path: string, 
 test("the class list has every class; join and the public lecture need nothing", { skip }, async () => {
   const list = await call(null, "GET", "/api/classes");
   assert.equal(list.status, 200);
-  assert.deepEqual(list.data.find((c: any) => c.id === ids.cls), { id: ids.cls, name: "Class test (throwaway)", code: CODE, lectureCount: 2, nextExam: null });
+  assert.deepEqual(list.data.find((c: any) => c.id === ids.cls), { id: ids.cls, name: "Class test (throwaway)", code: CODE, description: null, instructor: null, term: null, lectureCount: 2, nextExam: null });
   const join = await call(null, "GET", `/api/join/${CODE}`);
   assert.equal(join.status, 200);
   assert.deepEqual(join.data, { classId: ids.cls, className: "Class test (throwaway)", lectureId: null, live: false });
@@ -79,7 +79,7 @@ test("any caller, with or without an id, reads the class, lectures, concepts, gr
   for (const who of [null, alice, bob]) {
     const cls = await call(who, "GET", `/api/classes/${ids.cls}`);
     assert.equal(cls.status, 200, `class for ${who ?? "no id"}`);
-    assert.deepEqual(cls.data.class, { id: ids.cls, name: "Class test (throwaway)", code: CODE, lectureCount: 2, nextExam: null });
+    assert.deepEqual(cls.data.class, { id: ids.cls, name: "Class test (throwaway)", code: CODE, description: null, instructor: null, term: null, lectureCount: 2, nextExam: null });
     assert.equal(cls.data.lectures.length, 2);
     assert.equal(cls.data.live, null);
 
@@ -126,8 +126,8 @@ test("creating a class needs no sign-in; a taken code is refused", { skip }, asy
   const code = `GN${run}`.slice(0, 16);
   const r = await call(bob, "POST", "/api/classes", { name: "Made by bob (throwaway)", code: code.toLowerCase() });
   assert.equal(r.status, 201, JSON.stringify(r.data));
-  assert.deepEqual(r.data, { id: r.data.id, name: "Made by bob (throwaway)", code, lectureCount: 0, nextExam: null });
-  try {
+  try {   // every assertion after the insert sits inside, so a failure cannot leave the class behind
+    assert.deepEqual(r.data, { id: r.data.id, name: "Made by bob (throwaway)", code, description: null, instructor: null, term: null, lectureCount: 0, nextExam: null });
     assert.equal((await call(alice, "POST", "/api/classes", { name: "Again", code })).status, 409);
     assert.equal((await call(alice, "GET", `/api/classes/${r.data.id}`)).status, 200, "another caller opens it");
   } finally {

@@ -12,7 +12,7 @@ const RATINGS: Array<{ r: Rating; label: string; hint: string; cls: string }> = 
   { r: 4, label: 'Easy', hint: 'instant', cls: 'border-good/60 hover:bg-good/10' },
 ]
 
-export function ReviewPage() {
+export default function ReviewPage() {
   const { classId } = useClass()
   const due = useApi(() => api.due(classId, 20), [classId])
   const concepts = useApi(() => api.concepts(classId), [classId])

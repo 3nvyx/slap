@@ -1,12 +1,12 @@
 import { useEffect } from 'react'
-import { Navigate, useParams } from 'react-router-dom'
+import { Navigate, useParams } from 'react-router'
 import { ButtonLink, ErrorBox, Label, Logo, Spinner } from '../components/ui'
 import { ApiError, api } from '../lib/api'
 import { useApi } from '../lib/useApi'
 
 const POLL_MS = 5000
 
-export function JoinPage() {
+export default function JoinPage() {
   const { code = '' } = useParams()
   const join = useApi(() => api.join(code), [code])
 

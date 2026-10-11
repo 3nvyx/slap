@@ -2,8 +2,8 @@
 // (apps/api pipeline/studyPlan.ts) as typed tasks, so every task opens the page that does it.
 import type { StudyPlan, StudyPlanExam, StudyPlanTask, StudyTaskKind } from '@slap/contracts'
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Async, Button, Label, MasteryBar, Panel } from '../components/ui'
+import { Link } from 'react-router'
+import { Async, Button, Label, MasteryBar, Panel } from './ui'
 import { api } from '../lib/api'
 import { fmtDate, masteryColor, pct } from '../lib/format'
 import { useApi } from '../lib/useApi'
@@ -134,7 +134,7 @@ function Plan({ plan: p, classId, masteryOf }: { plan: StudyPlan; classId: strin
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{k.name}</span>
-                    <span className="label">{DATE_LABEL[k.kind] ?? k.kind}</span>
+                    <span className="label capitalize">{DATE_LABEL[k.kind] ?? k.kind}</span>
                   </div>
                   {k.note && <p className="mt-0.5 text-sm text-ink-2">{k.note}</p>}
                 </div>
@@ -181,7 +181,7 @@ function ExamCard({ exam: e, classId }: { exam: StudyPlanExam; classId: string }
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div className="flex min-w-0 items-baseline gap-2">
           <span className="text-lg font-bold tracking-tight">{e.name}</span>
-          <span className="label">{e.kind}</span>
+          <span className="label capitalize">{e.kind}</span>
         </div>
         <span className="shrink-0 font-mono text-xs text-muted">
           {fmtDate(e.date)} · {e.daysLeft === 0 ? 'today' : `in ${e.daysLeft}d`}

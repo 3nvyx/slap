@@ -15,6 +15,12 @@ constexpr unsigned long REARM_MS = 500;    // still this long before the next sh
 constexpr float AVERAGE_MS = 70.0f;        // time constant of the "recent average"
 constexpr float LEAK = 0.25f;              // ms of motion forgotten per ms without it
 
+// Bench helper: 1 prints the readings 20 times a second (acceleration in g, its distance from the
+// recent average, and the motion total that decides a shake). The server logs every line, so keep it 0.
+#ifndef IMU_PLOT
+#define IMU_PLOT 0
+#endif
+
 Vector3f avg;
 bool ready = false, haveAvg = false, fired = false;
 unsigned long lastRead = 0, quietSince = 0;
@@ -57,6 +63,23 @@ void loop() {
     if (motionMs < 0) motionMs = 0;
   }
   if (moved > QUIET_G) quietSince = now;
+
+#if IMU_PLOT
+  static unsigned long lastPlot = 0;
+  if (now - lastPlot >= 50) {
+    lastPlot = now;
+    Serial.print("ax:");
+    Serial.print(a.x, 2);
+    Serial.print(" ay:");
+    Serial.print(a.y, 2);
+    Serial.print(" az:");
+    Serial.print(a.z, 2);
+    Serial.print(" moved:");
+    Serial.print(moved, 2);
+    Serial.print(" motion_ms:");
+    Serial.println((int)motionMs);
+  }
+#endif
 
   if (!fired && motionMs >= SHAKE_MS) {
     fired = true;   // one event per shake, however long it goes on

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { AnnouncementList } from '../components/Announcements'
 import { useClass } from '../components/ClassLayout'
 import { ButtonLink, Dot, Label, PageTitle, Panel, Pill } from '../components/ui'
@@ -10,7 +10,7 @@ import { LANGUAGES } from '../lib/languages'
 import { useApi } from '../lib/useApi'
 
 /** One page for the person at the front: device, who is watching, the caption tail and the questions asked. */
-export function LecturerPage() {
+export default function LecturerPage() {
   const { classId, detail } = useClass()
   const live = detail.lectures.find((l) => l.status === 'live')
   const liveInfo = detail.live ?? null

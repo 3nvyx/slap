@@ -1,4 +1,4 @@
-# Measurements still needed (housing v3.0)
+# Measurements still needed (housing v3.5)
 
 Use calipers and give values to 0.1 mm. The SCAD parameter for each value is in brackets.
 
@@ -29,7 +29,7 @@ Use calipers and give values to 0.1 mm. The SCAD parameter for each value is in 
 
 ## INMP441 mic
 - [x] PCB diameter (`mic_d`): **14.0** (9 Oct)
-- [x] PCB thickness (`mic_pcb_t`, was assumed 1.0): **about 2.0** (builder, 11 Oct). Used as `mic_t` in `mic_snap_coupon.scad`; not yet copied into `housing_slab.scad`.
+- [x] PCB thickness (`mic_pcb_t`, was assumed 1.0): **about 2.0** (builder, 11 Oct).
 - [ ] Is the sound port hole at the PCB centre? If not, give its offset: ____ (`mic_port_dx/dy`)
 
 ## Cable and LED
@@ -71,7 +71,7 @@ IMU (the hole values are estimated from SunFounder's product render; no drawing 
 UNO R4 WiFi (outline, holes, header height and USB-C position are from Arduino's datasheet ABX00087; these are the values it does not give):
 - [ ] **DC jack**: how far it sticks out past the PCB edge (`uno_jack`, scaled 2.2) and its height above the PCB (assumed 11.0): ____ / ____
 - [ ] **USB-C**: how far it sticks out past the PCB edge (`uno_usb_over`, scaled 1.5): ____
-- [ ] **Longest solder tail under the board** (`uno_standoff` leaves 5.0): ____
+- [ ] **Longest solder tail under the board** (`uno_standoff` leaves 4.0): ____
 - [ ] **PCB thickness** (`uno_pcb_t`, assumed 1.6): ____
 - [ ] **Header socket height** above the PCB (`uno_hdr_h`, datasheet 8.5). The lid posts stop 0.5 mm above it: ____
 
@@ -82,11 +82,12 @@ USB-C cables, both:
 
 | Coupon | Result | Action |
 |---|---|---|
-| OLED pin frame | Rocks on the pins; the pin rectangle is slightly too small. Holes are about Ø2.5. | Open: needs the two hole spacings (OLED section above) |
+| OLED pin frame | Rocks on the pins; the pin rectangle is slightly too small. Holes are about Ø2.5. | `oled_pins = false` (v3.4): the posts and the lid pocket hold the OLED. Pins can come back once the two hole spacings are measured (OLED section above). |
 | UNO frame | Drops on, sits with a slight rock, lifts off if tilted | None: the lid posts hold it down |
 | IMU stub | Drops on, lifts off if tilted | `imu_pegs = true`; tape still holds it down |
 | Snap pair | Good | None |
 | USB bar | Both plugs pass | None |
 | OLED ring | Glass fits | None |
-| Mic plate | Pocket (15.2) is loose on the 14.0 board; the builder wants it to snap in | Snap-in holder drawn as its own coupon: `mic_snap_coupon.scad`, plate `print/Slap_fit_mic_snap_black_0.4.3mf`. Fold it into `housing_slab.scad` once it has been tried. |
+| Mic plate | Pocket (15.2) is loose on the 14.0 board; the builder wants it to snap in | Done (v3.4): snap-in holder, printed as a coupon and fits (builder, 11 Oct); now `mic_snap_up()` in `housing_slab.scad`. |
 | Button block | Good | None |
+| Speaker holder (`fit_speaker`, v3.3) | Fits well: the speaker clicks in (builder, 11 Oct) | None. `spk_w`, `spk_d`, `spk_t` stay at the STEP values, 31 × 28 × 14.92 |

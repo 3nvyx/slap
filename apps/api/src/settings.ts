@@ -33,6 +33,5 @@ export const settings = {
     diarize: env("FISH_DIARIZE", env("FISH_API_KEY") ? "1" : "0") === "1",
   },
   deviceKeys: (env("DEVICE_KEYS", "dev-device-key") ?? "").split(",").map(s => s.trim()).filter(Boolean),
-  webDist: env("WEB_DIST", "../web/dist")!,
-  siteDir: env("SITE_DIR", "../../website")!,       // the public landing page: plain files, served at /
+  webDir: env("WEB_DIR", "../web")!,                // the web app (apps/web); its build/ folder is what gets served
 };

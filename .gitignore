@@ -15,3 +15,7 @@ apps/api/fixtures/dev-credentials.local.md
 !.env.example
 hardware/housing/print/.venv/
 hardware/housing/print/sliced*/
+
+# React Router: generated route types and the built app
+apps/web/.react-router/
+apps/web/build/

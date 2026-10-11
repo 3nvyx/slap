@@ -1,9 +1,10 @@
-// One process: Hono REST API + two ws WebSocket paths + the landing page + the built web app, from one origin.
+// One process: Hono REST API + two ws WebSocket paths + the built web app (landing page included), from one origin.
 // In-memory session state lives in sessions.ts, so run exactly one instance.
-import { existsSync, readFileSync } from "node:fs";
+import { cpSync, mkdtempSync, rmSync, statSync, symlinkSync } from "node:fs";
 import type { Server } from "node:http";
+import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Health } from "@slap/contracts";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -20,8 +21,9 @@ import { handleLiveUpgrade } from "./ws/live.ts";
 import { startArduinoBridge } from "./arduino.ts";
 
 const apiDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const webDist = path.resolve(apiDir, settings.webDist);
-const siteDir = path.resolve(apiDir, settings.siteDir);
+const webDir = path.resolve(apiDir, settings.webDir);
+const webClient = path.join(webDir, "build/client");
+const webServerBuild = path.join(webDir, "build/server");
 
 function backends(dbUp: boolean): Health["backends"] {
   const has = (k: string | undefined) => !!k;
@@ -52,15 +54,73 @@ app.route("/api", routes);
 app.all("/api/*", c => c.json({ error: "not found" }, 404));
 app.all("/ws/*", c => c.json({ error: "WebSocket upgrade required" }, 426));
 
-// The landing page (website/) owns "/" and its own files; then the built web app, then SPA fallback for
-// client routes (paths without a file extension). Without website/, "/" falls through to the web app.
-app.use("/*", serveStatic({ root: path.relative(process.cwd(), siteDir) || "." }));
-app.use("/*", serveStatic({ root: path.relative(process.cwd(), webDist) || "." }));
-app.get("*", (c) => {
-  if (path.extname(c.req.path)) return c.text("not found", 404);
-  const index = path.join(webDist, "index.html");
-  if (!existsSync(index)) return c.text("web app not built (pnpm --filter @slap/web build)", 404);
-  return c.html(readFileSync(index, "utf8"));
+// The web app (apps/web, React Router), landing page included. Its built files come from build/client;
+// every other address is a page, rendered here on the server by build/server through apps/web/server.ts.
+// A rebuild is picked up without a restart. Before the first build, pages answer "not built".
+app.use("/*", serveStatic({
+  root: path.relative(process.cwd(), webClient) || ".",
+  // Files under assets/ carry a hash of their contents in the name, so a browser may keep them for good.
+  onFound: (file, c) => { if (file.includes("/assets/")) c.header("Cache-Control", "public, max-age=31536000, immutable"); },
+}));
+
+type PageHandler = (request: Request) => Promise<Response>;
+let pages: { builtAt: number; render: PageHandler } | undefined;     // the build being served
+let staged: { builtAt: number; dir: string; at: number } | undefined; // a newer build, copied and settling
+let pagesTmp: string | undefined;
+const SETTLE_MS = 1500;
+
+/** Where to load the server build from. In dev (`node --watch`) a change to any imported file restarts the
+ *  server, and a restart ends the live sessions. So a web rebuild must not touch a file this process has
+ *  imported: each build is copied to a temporary folder outside the repo, named after its build time, and
+ *  loaded from there. A link to apps/web/node_modules beside the copies lets them find React and React
+ *  Router. On macOS a file written just before it is imported also counts as changed, so a copy is left to
+ *  settle for SETTLE_MS before it is loaded. Copies are never deleted while running (that too would count
+ *  as a change); the folder goes when the process exits. If no copy can be made, the build is loaded in place. */
+function stableCopy(builtAt: number): string {
+  try {
+    if (!pagesTmp) {
+      const dir = mkdtempSync(path.join(os.tmpdir(), "slap-pages-"));
+      symlinkSync(path.join(webDir, "node_modules"), path.join(dir, "node_modules"), "dir");
+      process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
+      pagesTmp = dir;
+    }
+    const copy = path.join(pagesTmp, String(Math.round(builtAt)));
+    cpSync(webServerBuild, copy, { recursive: true });
+    return copy;
+  } catch {
+    return webServerBuild;
+  }
+}
+
+async function pageHandler(): Promise<PageHandler | undefined> {
+  let builtAt: number;
+  try { builtAt = statSync(path.join(webServerBuild, "index.js")).mtimeMs; } catch { return pages?.render; }
+  if (pages?.builtAt === builtAt) return pages.render;
+  // A build still being written (under a second old) waits while the previous one keeps serving.
+  if (pages && Date.now() - builtAt < 1000) return pages.render;
+  if (staged?.builtAt !== builtAt) staged = { builtAt, dir: stableCopy(builtAt), at: Date.now() };
+  const { dir, at } = staged;
+  const wait = dir === webServerBuild ? 0 : at + SETTLE_MS - Date.now();
+  if (wait > 0) {
+    if (pages) return pages.render;
+    await new Promise(resolve => setTimeout(resolve, wait));
+  }
+  if (pages?.builtAt !== builtAt) {
+    const web = await import(pathToFileURL(path.join(webDir, "server.ts")).href) as { pageHandler: (build: unknown) => PageHandler };
+    // The query string makes Node load a rebuilt file again instead of the one it already holds.
+    const build: unknown = await import(`${pathToFileURL(path.join(dir, "index.js")).href}?built=${builtAt}`);
+    pages = { builtAt, render: web.pageHandler(build) };
+  }
+  return pages.render;
+}
+
+app.all("*", async (c) => {
+  // A missing file is a 404, not a page. ".data" is how React Router's browser side asks for a page's data.
+  const ext = path.extname(c.req.path);
+  if (ext && ext !== ".data") return c.text("not found", 404);
+  const render = await pageHandler();
+  if (!render) return c.text("web app not built (pnpm --filter @slap/web build)", 404);
+  return render(c.req.raw);
 });
 
 app.onError((err, c) => {
@@ -89,6 +149,7 @@ export function start(port = settings.port): Server {
     socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
   });
   server.on("error", (e) => { console.error("[api] server error:", e.message); process.exit(1); });
+  void pageHandler().catch(e => console.error("[api] web app:", (e as Error).message)); // copy and load the web build now, so the first page does not wait
   resumePendingJobs().then(n => { if (n) console.log(`[api] resumed ${n} pending job(s)`); }, e => console.error("[api] resume jobs:", (e as Error).message));
   return server;
 }

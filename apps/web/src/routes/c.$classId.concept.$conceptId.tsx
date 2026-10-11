@@ -1,13 +1,13 @@
 import type { Card } from '@slap/contracts'
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router'
 import { useClass } from '../components/ClassLayout'
 import { Async, Bar, ButtonLink, Empty, ExamBadge, Label, MasteryBar } from '../components/ui'
 import { api } from '../lib/api'
 import { fmtTime, masteryColor, pct } from '../lib/format'
 import { useApi } from '../lib/useApi'
 
-export function ConceptPage() {
+export default function ConceptPage() {
   const { conceptId = '' } = useParams()
   const { classId } = useClass()
   const detail = useApi(() => api.concept(conceptId), [conceptId])

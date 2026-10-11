@@ -1,6 +1,6 @@
 import type { LectureAnswer, OutlineSection, Segment, StudyBundleStatus } from '@slap/contracts'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { useClass } from '../components/ClassLayout'
 import { ConceptText, useConceptMatcher } from '../components/ConceptText'
 import { Async, Button, ButtonLink, cx, Empty, ErrorBox, ExamBadge, inputCls, Label, MasteryBar, Pill } from '../components/ui'
@@ -10,7 +10,7 @@ import { LANGUAGES, storedLang, storeLang } from '../lib/languages'
 import type { LectureDetail } from '../lib/types'
 import { useApi } from '../lib/useApi'
 
-export function LecturePage() {
+export default function LecturePage() {
   const { id = '' } = useParams()
   const lecture = useApi(() => api.lecture(id), [id])
   return (
@@ -135,7 +135,7 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
       {lecture.status !== 'ready' && lecture.status !== 'live' && <BundleBanner lectureId={lecture.id} onDone={reload} />}
 
       <div className="grid gap-8 lg:grid-cols-[240px_1fr]">
-        <nav className="space-y-8 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:self-start lg:overflow-y-auto">
+        <nav className="space-y-8 lg:sticky lg:top-8 lg:max-h-[calc(100dvh-4rem)] lg:self-start lg:overflow-y-auto">
           <div>
             <Label className="mb-3">Outline</Label>
             {data.outline.length === 0 ? (

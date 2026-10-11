@@ -1,7 +1,7 @@
 // Learning partner: a spoken practice loop. The partner asks, you hold to answer, it grades, explains or moves on.
 import type { Concept, PartnerReply, PartnerSession, PartnerVoice } from '@slap/contracts'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { useClass } from '../components/ClassLayout'
 import { Button, cx, Empty, ErrorBox, inputCls, Label } from '../components/ui'
 import { api, ApiError } from '../lib/api'
@@ -63,7 +63,7 @@ function partnerError(err: unknown): unknown {
 let entrySeq = 0
 const nextId = () => ++entrySeq
 
-export function PartnerPage() {
+export default function PartnerPage() {
   const { classId, detail } = useClass()
   const readyLectures = useMemo(
     () => detail.lectures.filter((l) => l.status === 'ready').sort((a, b) => b.date.localeCompare(a.date)),
@@ -797,8 +797,8 @@ function Transcript({
                   {e.text || '…'}
                 </div>
                 <div className="flex items-center gap-2">
-                  {e.pending && <span className="label pulse">sending</span>}
-                  {e.via === 'voice' && !e.pending && <span className="label">spoken</span>}
+                  {e.pending && <span className="label pulse">Sending</span>}
+                  {e.via === 'voice' && !e.pending && <span className="label">Spoken</span>}
                   {e.grade && (
                     <span
                       title={e.grade.feedback}
@@ -819,7 +819,7 @@ function Transcript({
             <div key={e.id} className="flex flex-col items-start gap-1">
               <div className="max-w-[85%] rounded-md rounded-tl-none border border-line bg-bg px-3.5 py-2.5 text-sm leading-relaxed">{r.text}</div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="label">{r.intent}</span>
+                <span className="label capitalize">{r.intent}</span>
                 {r.intent === 'explanation' && r.conceptId && (
                   <Link
                     to={`/c/${classId}/concept/${r.conceptId}`}

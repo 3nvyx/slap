@@ -6,7 +6,7 @@ Companion to `PLAN.md`. Documentation only: nothing here is built before Saturda
 
 The same Node/TypeScript app runs on the laptop and in a container. Behaviour is set by environment variables (12-factor config), never by code branches or separate builds.
 
-Runtime: Node 22 LTS (the Mac has Node 26; the Docker image uses `node:22-alpine`), pnpm, and TypeScript run directly by Node (type stripping) in dev. One process, Hono (or Fastify) plus `ws`, serves the API, the two WebSocket paths (`/ws/device` and `/ws/live`), the landing page (`website/`, plain files, at `/`) and the built Vite app from one origin. The device protocol and caption event types live in `packages/contracts`, shared by `apps/api` and `apps/web`.
+Runtime: Node 22 LTS (the Mac has Node 26; the Docker image uses `node:22-alpine`), pnpm, and TypeScript run directly by Node (type stripping) in dev. One process, Hono (or Fastify) plus `ws`, serves the API, the two WebSocket paths (`/ws/device` and `/ws/live`), and the built web app (`apps/web`, React Router in framework mode: its files, and its pages rendered on the server, the landing page at `/` among them) from one origin. The device protocol and caption event types live in `packages/contracts`, shared by `apps/api` and `apps/web`.
 
 | Variable | Values | Meaning |
 |---|---|---|
@@ -25,7 +25,7 @@ Health is split in two. `GET /health` is liveness: cheap, no backend calls, used
 
 ## Local mode
 
-- Run: `pnpm dev` in `apps/api` (Node in watch mode, running the TypeScript directly), plus a browser tab (the Vite dev server, or the built `apps/web/dist` served by the Node server).
+- Run: `pnpm dev` in `apps/api` (Node in watch mode, running the TypeScript directly), plus a browser tab (the web app's dev server on :5173, or the built `apps/web/build` served by the Node server on :8787).
 - Data: connect to the Neon branch directly. There is no local Postgres. The project `slap` is linked from the repo root through `.neon` (git-ignored), and `neon env pull` writes `DATABASE_URL` and the other connection variables to `.env.local`.
 - Branches: `neon checkout <name> --create` makes an isolated database branch (for example a demo-data branch); `production` is the default branch. The free tier scales to zero, so the first query after idle has a short cold start.
 - Tooling: Neon CLI 8.x, the Neon agent skills (`.agents/skills/neon*`) and the Neon MCP server are installed for development.
@@ -41,14 +41,14 @@ For the hackathon, "local app" is the dev server plus a browser tab. A real Mac 
 
 ## Docker image
 
-Build context is the repo root; `.dockerignore` keeps `.git`, `.claude`, every `node_modules` and `dist`, env files and the non-app folders out of it. The host's `node_modules` must stay out, because they hold macOS binaries and would be copied over the image's.
+Build context is the repo root; `.dockerignore` keeps `.git`, `.claude`, every `node_modules`, `dist`, `build` and `.react-router`, env files and the non-app folders out of it. The host's `node_modules` must stay out, because they hold macOS binaries and would be copied over the image's.
 
 Four stages in `Dockerfile`, all on `node:22-alpine` (22.18 or later, so type stripping needs no flag):
 1. `base`: `corepack enable` (pnpm at the version in the root `packageManager` field) and the manifests only (`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` and the `package.json` of `apps/api`, `apps/web` and `packages/contracts`), so the dependency layers are cached until dependencies change. The lockfile is committed and never re-resolved in the build.
-2. `web`: `pnpm install --frozen-lockfile --filter "@slap/web..."`, then the source and `pnpm --filter @slap/web build`, output `apps/web/dist`.
-3. `prod-deps`: `pnpm install --frozen-lockfile --prod --filter "@slap/api..."`. Only `node_modules` leaves this stage; pnpm and its store do not reach the runtime image.
+2. `web`: `pnpm install --frozen-lockfile --filter "@slap/web..."`, then the source and `pnpm --filter @slap/web build`, output `apps/web/build` (`client/`: the files a browser downloads; `server/`: the code that renders pages).
+3. `prod-deps`: `pnpm install --frozen-lockfile --prod --filter "@slap/api..." --filter "@slap/web..."` (the web app's own dependencies are React and React Router, which render its pages on the server; its build tools are dev dependencies and stay out). Only `node_modules` leaves this stage; pnpm and its store do not reach the runtime image.
 4. Runtime, in the same layout as the repo under `/app`:
-   - `node_modules` from `prod-deps`, then the `apps/api` and `packages/contracts` source (TypeScript, run directly by Node), which includes the OLED fonts in `apps/api/fonts`, `apps/web/dist` from the web stage, and `website/`. The server finds the web app through the default `WEB_DIST` (`../web/dist`) and the landing page through the default `SITE_DIR` (`../../website`).
+   - `node_modules` from `prod-deps`, then the `apps/api` and `packages/contracts` source (TypeScript, run directly by Node), which includes the OLED fonts in `apps/api/fonts`, and `apps/web/build` from the web stage with `apps/web/server.ts`. The server finds the web app through the default `WEB_DIR` (`../web`): it serves `build/client` as files and renders every other address with `build/server`, loaded through `server.ts` so that it runs on the web app's own copy of React Router.
    - The workspace layout is required. Node does not strip types from files under `node_modules`, so `@slap/contracts` has to resolve through its workspace symlink to `/app/packages/contracts`. `pnpm deploy` copies it into `node_modules` as TypeScript and the server then fails at import with `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`.
    - `NODE_ENV=production`, `MODE=cloud`, non-root `node` user. The image is read-only to that user except `apps/api/.uploads` (uploaded PDFs until they are parsed).
    - `HEALTHCHECK` calls `/api/health` with `wget`.

@@ -2,8 +2,8 @@
 // syllabus they set the next exam, and the study plan (Today) works back from them.
 import type { AssessmentKind } from '@slap/contracts'
 import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
-import { Button, ErrorBox, inputCls, Panel } from '../components/ui'
+import { Link } from 'react-router'
+import { Button, ErrorBox, inputCls, Panel } from './ui'
 import { api } from '../lib/api'
 import { useAction } from '../lib/devices'
 import { daysUntil, fmtDate } from '../lib/format'
@@ -55,7 +55,7 @@ export function DatesPanel({ classId, onChange }: { classId: string; onChange: (
               <li key={d.id} className="flex items-center gap-3 py-2 text-sm">
                 <span className="w-14 shrink-0 font-mono text-xs text-muted">{fmtDate(d.date)}</span>
                 <span className="min-w-0 flex-1 truncate font-medium">{d.name}</span>
-                <span className="label">{days != null && days >= 0 ? `${d.kind} · ${days}d` : d.kind}</span>
+                <span className="label capitalize">{days != null && days >= 0 ? `${d.kind} · ${days}d` : d.kind}</span>
                 <button type="button" className="cursor-pointer px-1 text-muted hover:text-ink" disabled={a.busy} onClick={() => remove(d.id)} aria-label={`Remove ${d.name}`}>
                   ×
                 </button>

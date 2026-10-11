@@ -1,6 +1,6 @@
 import type { Concept } from '@slap/contracts'
 import { Fragment, useMemo, useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { masteryColor, pct } from '../lib/format'
 import { ExamBadge } from './ui'
 

@@ -1,12 +1,12 @@
 import { useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { useClass } from '../components/ClassLayout'
 import { Async, Bar, ButtonLink, Empty, ExamBadge, Label, MasteryBar, PageTitle } from '../components/ui'
 import { api } from '../lib/api'
 import { pct } from '../lib/format'
 import { useApi } from '../lib/useApi'
 
-export function ExamTopicsPage() {
+export default function ExamTopicsPage() {
   const { classId } = useClass()
   const topics = useApi(() => api.examTopics(classId), [classId])
   const concepts = useApi(() => api.concepts(classId), [classId])

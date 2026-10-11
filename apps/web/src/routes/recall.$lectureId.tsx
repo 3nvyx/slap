@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router'
 import type { Concept, RecallResult } from '@slap/contracts'
 import { TopBar } from '../components/Shell'
 import { Async, Button, ButtonLink, cx, ErrorBox, Label, textareaCls } from '../components/ui'
@@ -10,7 +10,7 @@ import { useApi } from '../lib/useApi'
 
 const DURATION = 180
 
-export function RecallPage() {
+export default function RecallPage() {
   const { lectureId = '' } = useParams()
   const lecture = useApi(() => api.lecture(lectureId), [lectureId])
   return (

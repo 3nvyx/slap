@@ -1,7 +1,8 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { errorMessage } from '../lib/api'
 import { masteryColor } from '../lib/format'
+import { LogoArt } from './LogoArt'
 
 export function cx(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(' ')
@@ -163,10 +164,7 @@ export function PageTitle({ kicker, title, children }: { kicker?: ReactNode; tit
 export function Logo({ className }: { className?: string }) {
   return (
     <span className={cx('inline-flex items-center gap-2 font-bold tracking-tight', className)}>
-      <span className="relative inline-flex h-5 w-7 items-center rounded-[4px] bg-ink">
-        <span className="ml-1 h-2 w-3 rounded-[1px] bg-bg" />
-        <span className="ml-auto mr-1 size-1.5 rounded-full bg-accent" />
-      </span>
+      <LogoArt className="h-[1.6em] w-auto flex-none" />
       slap
     </span>
   )

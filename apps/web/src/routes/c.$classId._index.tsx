@@ -1,7 +1,7 @@
 import type { LectureSummary } from '@slap/contracts'
 import { QRCodeSVG } from 'qrcode.react'
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router'
 import { useClass } from '../components/ClassLayout'
 import { AnnouncementList } from '../components/Announcements'
 import { Button, Empty, ErrorBox, inputCls, Label, PageTitle, Panel, Pill, textareaCls } from '../components/ui'
@@ -12,10 +12,10 @@ import { LANGUAGES } from '../lib/languages'
 import type { ClassDevice, ClassLive } from '../lib/types'
 import { deviceLabel, useAction, useOnlineDevices } from '../lib/devices'
 import { useApi } from '../lib/useApi'
-import { DatesPanel } from './Assessments'
-import { NoDeviceOnline } from './Devices'
+import { DatesPanel } from '../components/Assessments'
+import { NoDeviceOnline } from '../components/Devices'
 
-export function ClassHome() {
+export default function ClassHome() {
   const { classId, detail, reloadClass } = useClass()
   const cls = detail.class
   const live = detail.lectures.find((l) => l.status === 'live')
@@ -74,7 +74,7 @@ export function ClassHome() {
                 {detail.documents.map((d) => (
                   <li key={d.id} className="flex items-center justify-between gap-3 text-sm">
                     <span className="truncate">{d.title}</span>
-                    <span className="label">{d.kind}</span>
+                    <span className="label capitalize">{d.kind}</span>
                   </li>
                 ))}
               </ul>

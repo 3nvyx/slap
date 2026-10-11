@@ -1,6 +1,6 @@
-// What the server hands a browser: the landing page (website/) at "/" with its own files, and the web app
-// (or "not built") on client routes. Through the real app; nothing is written. Skipped without DATABASE_URL,
-// which server.ts needs to load.
+// What the server hands a browser: the web app's pages, rendered on the server (the landing page at "/"),
+// or "not built" before the first `pnpm --filter @slap/web build`. Through the real app; nothing is written.
+// Skipped without DATABASE_URL, which server.ts needs to load.
 import assert from "node:assert/strict";
 import { before, test } from "node:test";
 
@@ -15,24 +15,26 @@ before(async () => {
   app = (await import("../server.ts")).app;
 });
 
-test("/ is the landing page, with its files and its links into the app", { skip }, async () => {
+test("/ is the landing page, with its links into the app", { skip }, async () => {
   const home = await app.request("/");
-  assert.equal(home.status, 200);
   const html = await home.text();
-  assert.match(html, /data-app="\/demo"/);
-  assert.match(html, /data-app="\/classes"/);
-
-  const css = await app.request("/style.css");
-  assert.equal(css.status, 200);
-  assert.match(css.headers.get("content-type") ?? "", /text\/css/);
+  if (home.status === 404) return assert.match(html, /web app not built/);
+  assert.equal(home.status, 200);
+  assert.match(html, /What is Slap\?/);
+  assert.match(html, /href="\/demo"/);
+  assert.match(html, /href="\/home"/);
 });
 
-test("client routes get the web app, not the landing page", { skip }, async () => {
-  for (const p of ["/demo", "/classes"]) {
+test("app pages are rendered on the server; a missing file is a 404", { skip }, async () => {
+  for (const p of ["/demo", "/home", "/courses"]) {
     const r = await app.request(p);
     const body = await r.text();
     if (r.status === 404) assert.match(body, /web app not built/);
-    else assert.match(body, /id="root"/);
+    else {
+      assert.equal(r.status, 200);
+      assert.match(body, /<html lang="en">/);
+    }
   }
   assert.equal((await app.request("/missing.png")).status, 404);
+  assert.equal((await app.request("/api/nope")).status, 404);
 });

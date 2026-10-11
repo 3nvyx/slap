@@ -3,7 +3,7 @@
 // example: Lecture 1 with snippets of its transcript and the course's dates. Courses are found by their code.
 import type { ClassSummary, LectureSummary } from '@slap/contracts'
 import { QRCodeSVG } from 'qrcode.react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { TopBar } from '../components/Shell'
 import { Button, ButtonLink, ErrorBox, Label, PageTitle, Panel, Pill, Spinner } from '../components/ui'
 import { api } from '../lib/api'
@@ -16,7 +16,7 @@ const LIVE_CODE = 'OCCHACKS'
 const EXAMPLE_CODE = 'CS229'
 const SNIPPET_CHARS = 260
 
-export function DemoPage() {
+export default function DemoPage() {
   const classes = useApi(() => api.classes(), [])
   const devices = useOnlineDevices()
   const byCode = (code: string) => classes.data?.find((c) => c.code.toUpperCase() === code)
@@ -65,8 +65,8 @@ function Missing({ code }: { code: string }) {
     <Panel>
       <p className="text-sm text-muted">
         The demo course <span className="font-mono">{code}</span> does not exist yet. Create it under{' '}
-        <Link to="/classes" className="underline">
-          All classes
+        <Link to="/courses" className="underline">
+          Courses
         </Link>
         .
       </p>
@@ -281,7 +281,7 @@ function ExampleCourse({ course }: { course: ClassSummary }) {
                 <li key={d.id} className="flex items-center gap-3 py-2 text-sm first:pt-0 last:pb-0">
                   <span className="w-14 shrink-0 font-mono text-xs text-muted">{fmtDate(d.date)}</span>
                   <span className="min-w-0 flex-1 truncate font-medium">{d.name}</span>
-                  <span className="label">{d.kind}</span>
+                  <span className="label capitalize">{d.kind}</span>
                 </li>
               ))}
             </ul>

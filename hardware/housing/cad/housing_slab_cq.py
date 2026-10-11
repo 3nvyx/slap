@@ -1,4 +1,4 @@
-"""SLAP desk housing v3.3 "deep slab" rebuilt in CadQuery for a Fusion-openable STEP.
+"""SLAP desk housing v3.5 "deep slab" rebuilt in CadQuery for a Fusion-openable STEP.
 
 Mirror of ../housing_slab.scad (the source of truth). Parameter names match the
 OpenSCAD file one to one; change a value there first, then copy it here.
@@ -67,11 +67,11 @@ pry_w = 3
 pry_d = 1
 
 # Spacious margins (v3)
-zone_gap = 3.0
+zone_gap = 9.0
 dev_clear = 0.4
 
 # Height budget
-floor_clear = 2.5
+floor_clear = 5.5
 wire_bend = 2.0
 jumper_h = 14.0
 jumper_w = 2.54
@@ -95,15 +95,18 @@ oled_post = 4.0        # tray corner posts pressing the PCB up into the lid pock
 oled_post_gap = 0.15   # post top below the PCB back
 oled_rib_t = 2.0       # v3.1 divider wall under the back posts
 oled_rib_drop = 5.0    # divider top below the post tops
+oled_rib_fin = 4.0     # v3.5 wire crossing in the divider: fin kept beside the right-hand post
+oled_rib_gap_w = 16.0
+oled_rib_sill = 6.0
 oled_hdr_side = "left"  # left | right | back: edge the 4-pin header is soldered on, seen from the front
-oled_hdr_keep = 0      # extra inset of the two header-side posts
+oled_hdr_keep = 6.0    # header-side posts sit this far in from the corners (v3.5)
 oled_hdr_relief = 1.0  # lid seat cut back over the header strip
 oled_glass_dx = 0
 oled_glass_dy = 0
 oled_hole_inset_x = 2.0   # from the builder's reference model: 3.0 mm holes 2.0 mm from both edges
 oled_hole_inset_y = 2.0
 oled_hole_d = 2.5
-oled_pins = True       # locating pin on each tray post, into the corner holes
+oled_pins = False      # locating pin on each tray post; off (v3.4), the hole spacing is not measured
 oled_pin_d = 2.0
 oled_pin_h = 2.4
 oled_lead = 0.4        # lead-in chamfer on the window and pocket edges
@@ -117,9 +120,19 @@ clip_snap = 0.2
 
 # Mic INMP441 + grille
 mic_d = 14.0
-mic_clear = 0.45
-mic_ring_t = 1.2
-mic_ring_h = 1.2
+mic_pcb_t = 2.0
+# v3.4 snap-in holder (see mic_snap_up() in the SCAD)
+mic_c = 0.2
+mic_bar_t = 0.8
+mic_bar_len = 18.0
+mic_bar_gap = 0.6
+mic_hold_h = 3.4
+mic_hook_e = 0.55
+mic_hook_w = 3.0
+mic_hook_pre = 0.35
+mic_anchor = 1.6
+mic_cheek_x0 = 5.0
+mic_slot = 1.2
 grille_cols = 8
 grille_rows = 7
 grille_hole = 1.2
@@ -277,8 +290,11 @@ oled_pocket_h = oled_pcb_h + 2 * tol_fit
 oled_win_w = oled_glass_w + 2 * tol_window
 oled_win_h = oled_glass_h + 2 * tol_window
 oled_peg_d = oled_hole_d - 2 * tol_fit
-mic_pocket_dia = hole(mic_d + 2 * mic_clear)
-mic_ring_r = mic_pocket_dia / 2 + mic_ring_t
+mic_R = mic_d / 2 + mic_c
+mic_hx = mic_bar_len / 2 + mic_anchor
+mic_hy = mic_R + mic_bar_t
+mic_hk_z0 = mic_pcb_t - mic_hook_pre
+mic_hk_z1 = mic_hk_z0 + mic_hook_e
 led_bore = hole(led_d)
 led_boss_r = led_bore / 2 + tol_min_wall
 led_win_d = hole(led_win)
@@ -291,7 +307,7 @@ grille_span_y = (grille_rows - 1) * grille_pitch + grille_hole_d
 oled_left_k = wall + tol_fit + skirt_t + tol_snap + hook_t + 0.3 + oled_fence_t
 oled_front_k = wall + tol_fit + skirt_t + 0.2
 k_boot = wall + dev_usb_gap + dev_usb_overhang + dev_boot_v
-L_req = k_boot - mic_dx + mic_ring_r + oled_left_k + oled_pocket_w + oled_fence_t + 0.3
+L_req = k_boot - mic_dx + mic_hx + oled_left_k + oled_pocket_w + oled_fence_t + 0.3
 L_uno = 2 * wall + uno_usb_gap + uno_len + imu_plug_room + imu_pad_w + imu_wall_gap
 W_req = oled_front_k + oled_pocket_h + oled_fence_t + zone_gap + uno_w + uno_back_gap + wall
 L = max(L_min, math.ceil(max(L_req, L_uno) * 2) / 2)
@@ -581,6 +597,31 @@ def speaker_holder():
     return parts
 
 
+def mic_snap():
+    """SCAD mic_snap_up(), placed under the lid (SCAD: translate z = tray_h, mirror z)."""
+    mx, my = mic_xy
+    zl = tray_h
+    parts = []
+    # rigid cheeks on the +/-X sides, minus the pocket and the bars' flex slots
+    for sx in (-1, 1):
+        blk = box(mx + (mic_cheek_x0 if sx > 0 else -mic_hx), my - mic_hy, zl - mic_hold_h,
+                  mic_hx - mic_cheek_x0, 2 * mic_hy, mic_hold_h + 0.01)
+        cuts = [cyl(2 * mic_R, mic_hold_h + 2, mx, my, zl - mic_hold_h - 1)]
+        for sy in (-1, 1):
+            cuts.append(box(mx if sx > 0 else mx - mic_bar_len / 2,
+                            my + mic_R - mic_slot if sy > 0 else my - mic_hy - 1,
+                            zl - mic_hold_h - 1, mic_bar_len / 2, mic_bar_t + mic_slot + 1, mic_hold_h + 2))
+        parts.append(cut(blk, *cuts))
+    # spring bars on the +/-Y sides, each with a hook at mid-span
+    hook = [(mic_R + 0.01, mic_hk_z0 - 0.01), (mic_R - mic_hook_e, mic_hk_z1), (mic_R - mic_hook_e, mic_hk_z1 + 0.1),
+            (mic_R, mic_hold_h), (mic_R + 0.01, mic_hold_h)]
+    for sy in (-1, 1):
+        parts.append(box(mx - mic_bar_len / 2 - 0.01, my + mic_R if sy > 0 else my - mic_R - mic_bar_t,
+                         zl - mic_hold_h, mic_bar_len + 0.02, mic_bar_t, mic_hold_h - mic_bar_gap))
+        parts.append(yz_prism([(my + sy * y, zl - u) for y, u in hook], mic_hook_w).moved(cq.Location(V(mx, 0, 0))))
+    return parts
+
+
 def pry_slot(side, along):
     if side == "back":
         return box(along - pry_w / 2, in_hy - 0.1, tray_h - pry_d, pry_w, wall + 1, pry_d + 1)
@@ -658,10 +699,11 @@ def top():
     h_pad = oled_seat + oled_fence_h - plate_t + 0.01
     pad = cbox(oled_cx, oled_cy, z_pad, oled_pocket_w + 2 * oled_fence_t, oled_pocket_h + 2 * oled_fence_t, h_pad)
     adds.append(pad.intersect(rr_prism(2 * sk_ox, 2 * sk_oy, 0.5, z_pad - 1, h_pad + 2)))
-    # mic ring, LED socket, button guide, hold-down posts
-    adds.append(cq.Solid.makeCylinder(mic_ring_r, mic_ring_h + 0.01, V(mic_xy[0], mic_xy[1], tray_h - mic_ring_h)))
-    adds.append(cq.Solid.makeCylinder(led_boss_r, led_boss_depth - plate_t + 0.01,
-                                      V(led_xy[0], led_xy[1], H - led_boss_depth)))
+    # mic snap-in holder, LED socket (trimmed out of the mic pocket), button guide, hold-down posts
+    adds += mic_snap()
+    adds.append(cut(cq.Solid.makeCylinder(led_boss_r, led_boss_depth - plate_t + 0.01,
+                                          V(led_xy[0], led_xy[1], H - led_boss_depth)),
+                    cyl(2 * (mic_R + 0.01), led_boss_depth, mic_xy[0], mic_xy[1], H - led_boss_depth - 1)))
     adds.append(cq.Solid.makeCylinder(btn_guide_r, btn_guide_depth - plate_t + 0.01,
                                       V(gx, boot_xy[1], H - btn_guide_depth)))
     z_post = pcb_top + dev_usb_h + tol_fit
@@ -716,8 +758,6 @@ def top():
     if spk_enable:
         for qx, qy in spk_grille:
             cuts.append(cyl(grille_hole_d, plate_t + 1, spk_cx + qx, spk_cy + qy, tray_h - 0.01))
-    # mic pocket
-    cuts.append(cyl(mic_pocket_dia, mic_ring_h + 1, mic_xy[0], mic_xy[1], tray_h - mic_ring_h - 1))
     # LED bore + window (blind, led_skin left on top in "window" mode)
     cuts.append(cyl(led_bore, led_boss_depth + 1 - led_top_gap, led_xy[0], led_xy[1], H - led_boss_depth - 1))
     cuts.append(cyl(led_win_d, led_top_gap + 1 if led_mode == "hole" else led_top_gap - led_skin + 0.01,
@@ -785,7 +825,11 @@ def oled_post_braces():
     x1 = max(p[0] for p in oled_post_pos) + oled_post / 2
     y = max(p[1] for p in oled_post_pos)
     low = H - oled_stack_t - header_spacer - jumper_h - wire_bend - 2.0
-    parts = [box(x0, y - oled_rib_t / 2, floor_t - 0.01, x1 - x0, oled_rib_t, post_top - oled_rib_drop - floor_t + 0.01),
+    divider = cut(box(x0, y - oled_rib_t / 2, floor_t - 0.01, x1 - x0, oled_rib_t, post_top - oled_rib_drop - floor_t + 0.01),
+                  # wire crossing
+                  box(x1 - oled_post - oled_rib_fin - oled_rib_gap_w, y - oled_rib_t, floor_t + oled_rib_sill,
+                      oled_rib_gap_w, 2 * oled_rib_t, H))
+    parts = [divider,
              box(-in_hx - 0.5, y - oled_rib_t / 2, floor_t - 0.01, x0 + in_hx + 0.5 + 0.01, oled_rib_t, low - floor_t + 0.01)]
     for px, py in oled_post_pos:
         if py < oled_cy:
@@ -1032,7 +1076,7 @@ def verify(parts):
 
 def main():
     parts = build()
-    print(f"SLAB v3.3 (CadQuery): outer L x W x H = {L} x {W} x {H:.2f} mm, tray_h {tray_h:.2f}")
+    print(f"SLAB v3.5 (CadQuery): outer L x W x H = {L} x {W} x {H:.2f} mm, tray_h {tray_h:.2f}")
     for name, s in parts.items():
         (x0, y0, z0), (x1, y1, z1) = tight_bbox(s)
         print(f"{name:9s} valid {s.isValid()}  solids {len(s.Solids())}  vol {s.Volume():10.2f} mm3  "

@@ -1,8 +1,14 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/geist-mono";
 
-/* Slap design tokens: Teenage Engineering-ish. Light grey surfaces, near-black ink, one orange. */
+/* Slap design tokens. Light is Teenage Engineering: grey enamel surfaces, near-black ink. Dark is Linear:
+   near-black surfaces a few steps apart, hairline borders. One orange in both. The page follows the system's
+   light/dark setting (Tailwind's dark: variant does the same), so there is no .dark class. */
 :root {
   --bg: #d8d8d6;
+  --side: #d0d0cd;
   --panel: #e6e6e3;
   --panel-2: #cdcdca;
   --ink: #151515;
@@ -15,22 +21,31 @@
   --good: #2f9e44;
   --bad: #e03131;
 
-  /* auth-ui tokens (it falls back to these) */
-  --background: var(--panel);
+  /* shadcn/ui names (components/shadcn), pointed at the tokens above. Two shadcn names are not defined here
+     because Slap already uses them for something else: "accent" is the orange and "muted" is a text colour.
+     In the shadcn files bg-accent is written bg-panel-2 and text-accent-foreground is written text-ink. */
+  --background: var(--bg);
   --foreground: var(--ink);
   --card: var(--panel);
   --card-foreground: var(--ink);
   --popover: var(--panel);
   --popover-foreground: var(--ink);
   --primary: var(--ink);
-  --primary-foreground: #f2f2f0;
+  --primary-foreground: var(--bg);
   --secondary: var(--panel-2);
   --secondary-foreground: var(--ink);
-  --muted-foreground: var(--muted);
-  --accent-foreground: var(--ink);
+  --destructive: var(--bad);
   --border: var(--line);
   --input: var(--line);
   --ring: var(--accent);
+  --sidebar: var(--side);
+  --sidebar-foreground: var(--ink-2);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: var(--accent-ink);
+  --sidebar-accent: var(--panel-2);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--accent);
   --radius: 0.375rem;
 
   color-scheme: light;
@@ -38,15 +53,15 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1b1b1b;
-    --panel: #252525;
-    --panel-2: #303030;
-    --ink: #ececea;
-    --ink-2: #c4c4c0;
-    --muted: #8d8d89;
-    --line: #3b3b3b;
-    --dot: rgba(255, 255, 255, 0.1);
-    --primary-foreground: #151515;
+    --bg: #0f0f10;
+    --side: #0b0b0c;
+    --panel: #161617;
+    --panel-2: #212123;
+    --ink: #ededeb;
+    --ink-2: #b7b7b3;
+    --muted: #82827e;
+    --line: #29292b;
+    --dot: rgba(255, 255, 255, 0.09);
     color-scheme: dark;
   }
 }
@@ -63,8 +78,39 @@
   --color-accent-ink: var(--accent-ink);
   --color-good: var(--good);
   --color-bad: var(--bad);
-  --font-sans: "Helvetica Neue", Inter, "Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted-foreground: var(--muted);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Corners are tight: rounded-sm 2px (tags), rounded-md 4px (buttons, fields), rounded-lg 6px (panels). */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: "Inter Variable", Inter, "Helvetica Neue", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 }
 
 html,
@@ -76,12 +122,16 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-body {
-  margin: 0;
-  min-height: 100dvh;
+/* Mono type: numerals line up in columns and the zero is slashed, as on the device. In the base layer so
+   utility classes still win. */
+@layer base {
+  .font-mono, .label, code, kbd, pre {
+    font-feature-settings: "tnum", "zero";
+  }
 }
 
-#root {
+body {
+  margin: 0;
   min-height: 100dvh;
 }
 
@@ -93,8 +143,7 @@ body {
 .label {
   font-family: var(--font-mono);
   font-size: 0.6875rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
   color: var(--muted);
 }
 
@@ -117,9 +166,19 @@ body {
   animation: slap-flash 2.4s ease-out;
 }
 
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+/* In the base layer so a component can replace them with its own (the shadcn ones draw a ring instead). */
+@layer base {
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--line);
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 }
 
 /* Learning partner: the talk button's halo breathes while the partner speaks. */

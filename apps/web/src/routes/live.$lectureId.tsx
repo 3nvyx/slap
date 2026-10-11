@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router'
 import { api } from '../lib/api'
 import { type CaptionState, useCaptions } from '../lib/captions'
 import { LANGUAGES, storedLang, storeLang } from '../lib/languages'
+import { useHydrated } from '../lib/useHydrated'
 import { useApi } from '../lib/useApi'
 import { useWakeLock } from '../lib/wakeLock'
 
@@ -82,7 +83,14 @@ function TranslationLine({ state, lang, size }: { state: CaptionState; lang: str
   )
 }
 
-export function LivePage() {
+// The page starts from this browser's saved language and text size and opens the caption socket for that
+// language at once, so it is drawn in the browser only. The server sends the empty dark page.
+export default function LiveRoute() {
+  const hydrated = useHydrated()
+  return hydrated ? <LivePage /> : <div className="h-dvh bg-[#0d0d0d]" />
+}
+
+function LivePage() {
   const { lectureId = '' } = useParams()
   const [lang, setLang] = useState(storedLang)
   const [sizeIdx, setSizeIdx] = useState(readSize)

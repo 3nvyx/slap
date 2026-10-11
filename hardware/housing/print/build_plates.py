@@ -88,6 +88,6 @@ export("Slap_fit_tests_black_0.4", [
 export("Slap_housing_black_0.4", [
     ("slab_tray", "tray", 1), ("slab_top", "lid_face_down", 1), ("slab_button", "button_on_cap", 1),
 ])
-# Round 2 (11 Oct): the mic snap-in holder from ../mic_snap_coupon.scad, the one coupon that changed
-# after the first coupon plate was tried.
-export("Slap_fit_mic_snap_black_0.4", [("slab_fit_mic_snap", "fit_mic_snap", 1)])
+# Round 2 (11 Oct): the mic snap-in holder on its own, the one coupon that changed after the first
+# coupon plate was tried. It fitted; the same piece is fit_mic on the coupon plate.
+export("Slap_fit_mic_snap_black_0.4", [("slab_fit_mic", "fit_mic_snap", 1)])

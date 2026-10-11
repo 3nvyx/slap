@@ -1,12 +1,12 @@
 import type { Attempt, Concept, Question, QuestionKind } from '@slap/contracts'
 import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router'
 import { useClass } from '../components/ClassLayout'
 import { Button, cx, Empty, ErrorBox, Label, PageTitle, Spinner, textareaCls } from '../components/ui'
 import { api } from '../lib/api'
 import { useApi } from '../lib/useApi'
 
-export function PracticePage() {
+export default function PracticePage() {
   const { classId } = useClass()
   const { detail } = useClass()
   const [params, setParams] = useSearchParams()

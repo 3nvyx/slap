@@ -67,13 +67,13 @@ skirt_strip   = 1.6;   // skirt left below the catch window
 pry_w = 3;  pry_d = 1;
 
 /* [Spacious margins (v3): room for dimensions that are still assumed] */
-zone_gap   = 3.0;   // OLED fence to the UNO's front edge
+zone_gap   = 9.0;   // OLED fence to the UNO's front edge. v3.5: 3 -> 9, a channel across the box for wires
 dev_clear  = 0.4;   // per side: dev board between the cradle cheeks (was tol_fit 0.2)
 
 /* [Height budget] */
 // v2.1: Duponts plug onto the LONG pins under the dev board and hang down;
 // the board sits component-side up on two pedestals.
-floor_clear    = 2.5;   // floor to the wire bend under the Duponts (v3: +2 for longer Duponts)
+floor_clear    = 5.5;   // floor to the wire bend under the Duponts. v3.5: 2.5 -> 5.5, the builder asked for more room for the wires
 wire_bend      = 2.0;   // wire exits the housing end and turns horizontal
 jumper_h       = 14.0;  // ASSUMED F/F Dupont housing length
 jumper_w       = 2.54;
@@ -99,6 +99,11 @@ oled_post_gap  = 0.15;  // post top below the PCB back
 // the two front posts are tied to the front wall. Only the last few mm of each post is free.
 oled_rib_t     = 2.0;   // divider wall thickness
 oled_rib_drop  = 5.0;   // divider top below the post tops (room for parts on the OLED back)
+// v3.5 wire crossing: next to the right-hand back post the divider drops to a low sill, so the wires between the
+// dev board and the amp / UNO can pass from the front zone to the back bay
+oled_rib_fin   = 4.0;   // full-height divider kept beside the right-hand post, to brace it
+oled_rib_gap_w = 16.0;  // width of the crossing
+oled_rib_sill  = 6.0;   // sill height above the floor
 oled_glass_dx  = 0;     // ASSUMED glass centred on PCB
 oled_glass_dy  = 0;
 // Corner holes: REFERENCE MODEL the builder sent (10 Oct), a 72 x 43 variant of this module. Scaled from
@@ -106,7 +111,7 @@ oled_glass_dy  = 0;
 oled_hole_inset_x = 2.0;
 oled_hole_inset_y = 2.0;
 oled_hole_d    = 2.5;    // MEASURED, about (builder, 11 Oct); the reference model had 3.0
-oled_pins      = true;   // a locating pin on top of each tray post, into the corner holes
+oled_pins      = false;  // a locating pin on top of each tray post, into the corner holes. Off (v3.4): the fit_oled_pins coupon showed the pin rectangle is too small, and the hole spacing is not measured
 oled_pin_d     = 2.0;    // 0.5 per side in the hole: the hole positions are not measured on this board
 oled_pin_h     = 2.4;    // above the post top; the tip passes through the PCB into a relief in the lid
 oled_lead      = 0.4;    // lead-in chamfer on the window and pocket edges the OLED enters first
@@ -116,7 +121,7 @@ oled_proud     = 0;
 oled_hdr_side  = "left";  // [left, right, back] BUILDER (10 Oct): header soldered on the left short side, seen from the front
 oled_hdr_x     = 0;      // header centre along that edge, from the edge's middle (not measured; nothing depends on it)
 oled_hdr_inset = 2.0;    // ASSUMED pin row centre from the PCB edge (2.5 on the back edge)
-oled_hdr_keep  = 0;      // extra inset of the two header-side posts (0: the posts are at the corner holes, the header is between them)
+oled_hdr_keep  = 6.0;    // the two header-side posts sit this far in from the corners along the long edges. v3.5: back to 6 now the posts no longer carry pins; the builder's header is near a corner of the left side, where a corner post would foul its jumper plugs
 oled_hdr_relief = 1.0;   // lid seat cut back this deep over the header strip: the soldered pin ends stand just proud of the front
 oled_hdr_pins  = 4;
 peg_neck_d     = 1.2;    // clip groove on the peg
@@ -126,10 +131,20 @@ clip_snap      = 0.2;    // clip slot narrower than the neck (diameter)
 
 /* [Mic INMP441 + grille] */
 mic_d        = 14.0;  // MEASURED (9 Oct)
-mic_clear    = 0.45;  // per side: the 0.2 (tol_fit) pocket printed too small for the 14 mm board
-mic_pcb_t    = 1.0;   // ASSUMED
-mic_ring_t   = 1.2;
-mic_ring_h   = 1.2;
+mic_pcb_t    = 2.0;   // MEASURED, about (builder, 11 Oct): the board as it sits on the lid
+// v3.4 snap-in holder (was a round ring: 14.7 too tight, 15.2 loose, and nothing held the mic under the lid).
+// Printed as its own coupon and fits the builder's mic (11 Oct): leave these as they are.
+mic_c        = 0.2;   // per side, board to the cheeks and to the spring bars (pocket 14.4)
+mic_bar_t    = 0.8;   // spring bar thickness (two 0.4 lines)
+mic_bar_len  = 18.0;  // free span between the cheeks
+mic_bar_gap  = 0.6;   // bar underside above the lid (three layers, so the bridge cannot fuse to the lid)
+mic_hold_h   = 3.4;   // cheek and bar height above the lid
+mic_hook_e   = 0.55;  // hook depth
+mic_hook_w   = 3.0;   // hook length along the bar
+mic_hook_pre = 0.35;  // hook depth at the board's back face: 0.15 more than mic_c, the preload
+mic_anchor   = 1.6;   // cheek past each bar end
+mic_cheek_x0 = 5.0;   // cheeks start here (clear of the bars' flex slots)
+mic_slot     = 1.2;   // slot between each bar and the cheek tips
 mic_hdr_off  = 4.5;   // two 3-pin strips along Y at mic x +/- this
 grille_cols  = 8;
 grille_rows  = 7;
@@ -252,6 +267,7 @@ imu_peg_d    = 2.6;
 imu_peg_h    = 2.6;
 
 /* [Speaker "3128" 4-8 ohm 3 W: body from the builder's STEP file, ears and wire exit not used for holding] */
+// The holder was printed as the fit_speaker coupon and fits the builder's speaker (11 Oct): leave these as they are.
 spk_enable   = true;
 spk_w        = 31.0;   // STEP: body along X (the wires leave the +X end)
 spk_d        = 28.0;   // STEP: body along Y (the two mounting ears stick out of these faces, to 44 overall)
@@ -299,8 +315,12 @@ oled_pocket_h  = oled_pcb_h + 2*tol_fit;
 oled_win_w     = oled_glass_w + 2*tol_window;
 oled_win_h     = oled_glass_h + 2*tol_window;
 oled_peg_d     = oled_hole_d - 2*tol_fit;          // pin into a real (unprinted) hole
-mic_pocket_dia = hole(mic_d + 2*mic_clear);
-mic_ring_r     = mic_pocket_dia/2 + mic_ring_t;
+mic_R          = mic_d/2 + mic_c;                   // pocket radius
+mic_hx         = mic_bar_len/2 + mic_anchor;        // holder half-size in X
+mic_hy         = mic_R + mic_bar_t;                 // holder half-size in Y
+mic_hk_z0      = mic_pcb_t - mic_hook_pre;          // hook starts here, above the lid underside
+mic_hk_z1      = mic_hk_z0 + mic_hook_e;            // full depth from here (45 deg underside)
+mic_strain     = 300*(mic_hook_e - mic_c)*mic_bar_t/pow((mic_bar_len - mic_hook_w)/2, 2);   // %, fixed-fixed bar
 led_bore       = hole(led_d);                       // snug press for the LED body
 led_boss_r     = led_bore/2 + tol_min_wall;
 led_win_d      = hole(led_win);
@@ -313,7 +333,7 @@ grille_span_y  = (grille_rows - 1)*grille_pitch + grille_hole_d;
 oled_left_k  = wall + tol_fit + skirt_t + tol_snap + hook_t + 0.3 + oled_fence_t; // outer edge to PCB pocket
 oled_front_k = wall + tol_fit + skirt_t + 0.2;                                     // front edge to PCB pocket (the skirt doubles as the fence)
 k_boot       = wall + dev_usb_gap + dev_usb_overhang + dev_boot_v;                 // right outer edge to BOOT
-L_req = k_boot - mic_dx + mic_ring_r + oled_left_k + oled_pocket_w + oled_fence_t + 0.3;
+L_req = k_boot - mic_dx + mic_hx + oled_left_k + oled_pocket_w + oled_fence_t + 0.3;
 L_uno = 2*wall + uno_usb_gap + uno_len + imu_plug_room + imu_pad_w + imu_wall_gap;  // back bay: UNO + IMU pad
 W_req = oled_front_k + oled_pocket_h + oled_fence_t + zone_gap + uno_w + uno_back_gap + wall;
 L = max(L_min, ceil(max(L_req, L_uno)*2)/2);
@@ -442,7 +462,7 @@ rhook_led_gap = (hy_r - hook_half) - (led_xy[1] + led_boss_r);
 rhook_uno_gap = uno_y_f - (hy_r + hook_half);
 imu_bay_gap   = uno_x_far - (imu_cx + imu_pad_w/2);
 
-echo(str("SLAB v3.3: outer L x W x H = ", L, " x ", W, " x ", H, " mm (L_req ", L_req, ", L_uno ", L_uno, ", W_req ", W_req, ")"));
+echo(str("SLAB v3.5: outer L x W x H = ", L, " x ", W, " x ", H, " mm (L_req ", L_req, ", L_uno ", L_uno, ", W_req ", W_req, ")"));
 echo(str("  height budget: floor ", floor_t, " + clearance ", floor_clear, " + wire bend ", wire_bend,
          " + Dupont ", jumper_h, " + header spacer ", header_spacer, " = PCB bottom ", pcb_z0,
          "; + PCB ", dev_pcb_t, " = ", pcb_top));
@@ -470,7 +490,10 @@ assert(btn_guide_depth >= plate_t, "button guide shorter than the lid");
 assert(skirt_bot >= pcb_top + dev_usb_h + 0.3, "skirt hits the USB-C connectors");
 if (dev_pin_below - header_spacer < jumper_grip)
     echo(str("WARNING: only ", dev_pin_below - header_spacer, " mm of long pin inside the Dupont (need ", jumper_grip, ")"));
-assert((mic_xy[0] - mic_ring_r) - oled_fence_end >= 0.2, "mic ring hits OLED fence");
+assert((mic_xy[0] - mic_hx) - oled_fence_end >= 0.2, "mic holder hits OLED fence");
+assert(mic_hk_z1 + 0.1 < mic_hold_h - 0.6, "no room for the lead-in above the mic hook");
+assert(mic_hk_z0 > mic_bar_gap, "mic hook starts below the bar");
+assert(mic_strain < 2.0, "mic spring bar strain too high");
 assert(sk_ix - 0.2 >= led_xy[0] + led_boss_r, "LED socket hits the skirt");
 assert(gx - btn_guide_r >= oled_fence_end + 0.2, "button guide hits OLED fence");
 assert(rhook_led_gap >= 1.0, "right hook hits the LED socket");
@@ -603,8 +626,13 @@ oled_rib_low  = H - oled_stack_t - header_spacer - jumper_h - wire_bend - 2.0;
 oled_rib_y    = max([for (p = oled_post_pos) p[1]]);                    // back post row
 oled_tie_top  = skirt_bot - 0.6;                                        // front ties stop under the lid skirt
 module oled_post_braces() {
-    translate([oled_rib_x0, oled_rib_y - oled_rib_t/2, floor_t - 0.01])
-        cube([oled_rib_x1 - oled_rib_x0, oled_rib_t, oled_post_top - oled_rib_drop - floor_t + 0.01]);
+    difference() {
+        translate([oled_rib_x0, oled_rib_y - oled_rib_t/2, floor_t - 0.01])
+            cube([oled_rib_x1 - oled_rib_x0, oled_rib_t, oled_post_top - oled_rib_drop - floor_t + 0.01]);
+        // wire crossing
+        translate([oled_rib_x1 - oled_post - oled_rib_fin - oled_rib_gap_w, oled_rib_y - oled_rib_t, floor_t + oled_rib_sill])
+            cube([oled_rib_gap_w, 2*oled_rib_t, H]);
+    }
     translate([-in_hx - 0.5, oled_rib_y - oled_rib_t/2, floor_t - 0.01])
         cube([oled_rib_x0 + in_hx + 0.5 + 0.01, oled_rib_t, oled_rib_low - floor_t + 0.01]);
     for (p = oled_post_pos) if (p[1] < oled_cy)
@@ -661,6 +689,29 @@ module pry_slot(side, along) {
     else                      translate([-in_hx - wall - 0.9, along - pry_w/2, tray_h - pry_d]) cube([wall + 1, pry_w, pry_d + 1]);
 }
 
+// Mic snap-in holder, modelled as printed: z = 0 is the lid underside, +z points into the housing, origin at
+// the mic centre. The mic's two 3-pin strips sit at x = +/-mic_hdr_off, so the two rigid cheeks are on the +/-X
+// sides and the two spring bars on the +/-Y sides. Each bar is a strip bridged between the cheeks, clear of the
+// lid, with a hook at mid-span. Press the board straight in: both bars bow outward (mic_hook_e - mic_c) and
+// close over the back of the board; the 45 deg hook underside presses it against the lid.
+// To remove: push one bar outward with a fingernail and tip the board out.
+module mic_snap_up() {
+    for (sx = [-1, 1]) mirror([sx < 0 ? 1 : 0, 0, 0])
+        translate([0, 0, -0.01]) linear_extrude(mic_hold_h + 0.01) difference() {
+            translate([mic_cheek_x0, -mic_hy]) square([mic_hx - mic_cheek_x0, 2*mic_hy]);
+            circle(r = mic_R, $fn = 96);
+            for (sy = [-1, 1]) translate([0, sy > 0 ? mic_R - mic_slot : -mic_hy - 1])
+                square([mic_bar_len/2, mic_bar_t + mic_slot + 1]);
+        }
+    for (sy = [-1, 1]) mirror([0, sy < 0 ? 1 : 0, 0]) {
+        translate([-mic_bar_len/2 - 0.01, mic_R, mic_bar_gap]) cube([mic_bar_len + 0.02, mic_bar_t, mic_hold_h - mic_bar_gap]);
+        // hook profile in (y, z): 45 deg underside, short land, lead-in up to the bar top
+        rotate([90, 0, 90]) linear_extrude(mic_hook_w, center = true)
+            polygon([[mic_R + 0.01, mic_hk_z0 - 0.01], [mic_R - mic_hook_e, mic_hk_z1], [mic_R - mic_hook_e, mic_hk_z1 + 0.1],
+                     [mic_R, mic_hold_h], [mic_R + 0.01, mic_hold_h]]);
+    }
+}
+
 // Speaker holder, modelled as printed: z = 0 is the lid underside, +z points into the housing, origin at the
 // speaker centre. Four corner pads, corner walls, two fixed catch ramps on the +X (wire) side and one flexing
 // tongue on the -X side. Tilt the speaker in under the fixed ramps, then press the other side past the tongue.
@@ -715,10 +766,13 @@ module top_add() {
                 square([oled_pocket_w + 2*oled_fence_t, oled_pocket_h + 2*oled_fence_t], center = true);
                 translate([-oled_cx, -oled_cy]) rr(2*sk_ox, 2*sk_oy, 0.5);
             }
-    // mic ring
-    translate([mic_xy[0], mic_xy[1], tray_h - mic_ring_h]) cylinder(r = mic_ring_r, h = mic_ring_h + 0.01);
-    // LED socket
-    translate([led_xy[0], led_xy[1], H - led_boss_depth]) cylinder(r = led_boss_r, h = led_boss_depth - plate_t + 0.01);
+    // mic snap-in holder
+    translate([mic_xy[0], mic_xy[1], tray_h]) mirror([0, 0, 1]) mic_snap_up();
+    // LED socket, trimmed where its wall would stand inside the mic pocket
+    difference() {
+        translate([led_xy[0], led_xy[1], H - led_boss_depth]) cylinder(r = led_boss_r, h = led_boss_depth - plate_t + 0.01);
+        translate([mic_xy[0], mic_xy[1], H - led_boss_depth - 1]) cylinder(r = mic_R + 0.01, h = led_boss_depth, $fn = 96);
+    }
     // button guide
     translate([gx, boot_xy[1], H - btn_guide_depth]) cylinder(r = btn_guide_r, h = btn_guide_depth - plate_t + 0.01);
     // hold-down posts onto the USB-C shells
@@ -771,8 +825,6 @@ module top_cuts() {
     // speaker grille
     if (spk_enable) for (q = spk_grille)
         translate([spk_cx + q[0], spk_cy + q[1], tray_h - 0.01]) cylinder(d = grille_hole_d, h = plate_t + 1, $fn = 20);
-    // mic pocket inside the ring
-    translate([mic_xy[0], mic_xy[1], tray_h - mic_ring_h - 1]) cylinder(d = mic_pocket_dia, h = mic_ring_h + 1);
     // LED socket bore + window
     translate([led_xy[0], led_xy[1], 0]) {
         translate([0, 0, H - led_boss_depth - 1]) cylinder(d = led_bore, h = led_boss_depth + 1 - led_top_gap);
@@ -1033,22 +1085,26 @@ module fit_oled_frame() {
     translate([fw/2 + 3, 0, 0]) oled_clip();
 }
 
-// grille + mic ring + LED socket, face-down as printed
+// grille + mic snap-in holder + LED socket at its real offset, face-down as printed
 module fit_mic() {
-    lx = led_xy[0] - mic_xy[0];
-    s = 2*mic_ring_r + 4;
+    lx = led_xy[0] - mic_xy[0];  ly = led_xy[1] - mic_xy[1];
+    x0 = -mic_hx - 2;  x1 = lx + led_boss_r + 2;  y0 = -mic_hy - 2;  y1 = mic_hy + 2;
     difference() {
         union() {
-            ef_extrude(plate_t) translate([-s/2, -s/2]) square([s + lx, s]);
-            cylinder(r = mic_ring_r, h = plate_t + mic_ring_h);
-            translate([lx, 0, 0]) cylinder(r = led_boss_r, h = led_boss_depth);
+            difference() {
+                ef_extrude(plate_t) translate([x0, y0]) square([x1 - x0, y1 - y0]);
+                for (i = [0 : grille_cols - 1], j = [0 : grille_rows - 1])
+                    translate([-mic_dx + (i - (grille_cols - 1)/2)*grille_pitch, (j - (grille_rows - 1)/2)*grille_pitch, -1])
+                        cylinder(d = grille_hole_d, h = plate_t + 2, $fn = 20);
+            }
+            translate([0, 0, plate_t]) mic_snap_up();
+            difference() {   // as in the lid: the socket wall is trimmed out of the mic pocket
+                translate([lx, ly, 0]) cylinder(r = led_boss_r, h = led_boss_depth);
+                translate([0, 0, plate_t]) cylinder(r = mic_R + 0.01, h = led_boss_depth, $fn = 96);
+            }
         }
-        for (i = [0 : grille_cols - 1], j = [0 : grille_rows - 1])
-            translate([-mic_dx + (i - (grille_cols - 1)/2)*grille_pitch, (j - (grille_rows - 1)/2)*grille_pitch, -1])
-                cylinder(d = grille_hole_d, h = plate_t + 1.01, $fn = 20);
-        translate([0, 0, plate_t]) cylinder(d = mic_pocket_dia, h = mic_ring_h + 1);
-        translate([lx, 0, led_top_gap]) cylinder(d = led_bore, h = led_boss_depth);
-        translate([lx, 0, led_mode == "hole" ? -1 : led_skin]) cylinder(d = led_win_d, h = led_top_gap + 1);
+        translate([lx, ly, led_top_gap]) cylinder(d = led_bore, h = led_boss_depth);
+        translate([lx, ly, led_mode == "hole" ? -1 : led_skin]) cylinder(d = led_win_d, h = led_top_gap + 1);
     }
 }
 

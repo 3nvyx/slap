@@ -1,14 +1,14 @@
 import { useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { AnnouncementList } from '../components/Announcements'
 import { useClass } from '../components/ClassLayout'
 import { Async, ButtonLink, ExamBadge, Label, MasteryBar, PageTitle, Panel } from '../components/ui'
 import { api } from '../lib/api'
 import { examInfo, fmtDate, pct } from '../lib/format'
 import { useApi } from '../lib/useApi'
-import { StudyPlanPanel } from './StudyPlan'
+import { StudyPlanPanel } from '../components/StudyPlan'
 
-export function TodayPage() {
+export default function TodayPage() {
   const { classId } = useClass()
   const today = useApi(() => api.today(classId), [classId])
   const concepts = useApi(() => api.concepts(classId), [classId])
@@ -102,7 +102,7 @@ export function TodayPage() {
                       <li key={q.id} className="flex gap-3">
                         <span className="font-mono text-xs text-muted">{String(i + 1).padStart(2, '0')}</span>
                         <span className="min-w-0 flex-1">{q.prompt}</span>
-                        <span className="label shrink-0">{q.kind}</span>
+                        <span className="label shrink-0">{q.kind === 'mcq' ? 'Multiple choice' : q.kind === 'short' ? 'Short answer' : 'Relate'}</span>
                       </li>
                     ))}
                   </ol>

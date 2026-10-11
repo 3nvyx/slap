@@ -3,12 +3,12 @@
 // recordings card). Shared by the class list and the class home device panel.
 import type { ClassSummary, InboxLecture } from '@slap/contracts'
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
-import { Button, ErrorBox, inputCls, Label, Panel, Pill } from '../components/ui'
+import { Link } from 'react-router'
+import { Button, ErrorBox, inputCls, Label, Panel, Pill } from './ui'
 import { api } from '../lib/api'
-import { deviceLabel, useAction, useOnlineDevices } from '../lib/devices'
+import { deviceLabel, useAction } from '../lib/devices'
 import { fmtDate, fmtTime } from '../lib/format'
-import { useApi } from '../lib/useApi'
+import { useApi, type ApiState } from '../lib/useApi'
 import type { DeviceSummary } from '../lib/types'
 
 /** Shown when no device is connected to the server. */
@@ -24,9 +24,9 @@ export function NoDeviceOnline() {
   )
 }
 
-/** `/classes`: every device that is online, each with the course its recording goes into (optional: pick or create one). */
-export function OnlineDevicesCard({ classes, onClassesChanged }: { classes: ClassSummary[]; onClassesChanged: () => Promise<void> }) {
-  const devices = useOnlineDevices()
+/** Home: every device that is online, each with the course its recording goes into (optional: pick or create one).
+ *  `devices` is the page's `useOnlineDevices()`, so the page can use the same list. */
+export function OnlineDevicesCard({ devices, classes, onClassesChanged }: { devices: ApiState<DeviceSummary[]>; classes: ClassSummary[]; onClassesChanged: () => Promise<void> }) {
   const list = devices.data ?? []
   const reload = async () => {
     await devices.reload()
@@ -187,7 +187,7 @@ function InboxRow({ rec, classes, onChange }: { rec: InboxLecture; classes: Clas
   )
 }
 
-/** `/classes`: transcripts the device made that are not in a course yet, each with a course picker. */
+/** Home: transcripts the device made that are not in a course yet, each with a course picker. */
 export function NewRecordingsCard({ classes, onChange }: { classes: ClassSummary[]; onChange: () => Promise<void> }) {
   const inbox = useApi(() => api.inbox(), [])
   const reloadInbox = inbox.reload

@@ -1,6 +1,6 @@
 import type { Concept, ExamTopic } from '@slap/contracts'
 import { useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { useClass } from '../components/ClassLayout'
 import { Async, Button, ButtonLink, ExamBadge, PageTitle } from '../components/ui'
 import { api } from '../lib/api'
@@ -11,7 +11,7 @@ const SHEET_SIZE = 14
 
 /** One-page exam sheet: the top exam topics with their definitions and the lecturer's own words, weak spots first.
  *  Built from exam topics + concept notes + graph links; a re-reading aid, printable. */
-export function ExamSheetPage() {
+export default function ExamSheetPage() {
   const { classId, detail } = useClass()
   const topics = useApi(() => api.examTopics(classId), [classId])
   const concepts = useApi(() => api.concepts(classId), [classId])
