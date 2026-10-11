@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "settings.h"
+#include "splash.h"
 
 namespace {
 
@@ -23,6 +24,8 @@ bool g_frameDirty = false;
 bool g_showingServer = false;
 uint32_t g_frameAt = 0;
 uint32_t g_lastDraw = 0;
+bool g_splashShown = false;
+uint32_t g_splashAt = 0;
 
 const uint8_t* FONT_TEXT = u8g2_font_helvR10_tf;    // hint and detail lines, about 22 chars per line
 const uint8_t* FONT_TITLE = u8g2_font_helvB12_tr;
@@ -58,15 +61,15 @@ void wifiIcon(int x, int y, bool up, int rssi) {
 
 // Top corners of every local screen but ERROR: Wi-Fi strength, and an up and a down arrow while the
 // server socket is open; "No mic" on the left when the microphone did not start.
-void statusIcons(const DisplayModel& m) {
-  wifiIcon(117, 9, m.wifiUp, m.rssi);
+void statusIcons(const DisplayModel& m, int dx = 0) {
+  wifiIcon(117 + dx, 9, m.wifiUp, m.rssi);
   if (m.wsUp) {
-    u8g2.drawVLine(105, 1, 8);
-    u8g2.drawHLine(104, 2, 3);
-    u8g2.drawHLine(103, 3, 5);
-    u8g2.drawVLine(111, 1, 8);
-    u8g2.drawHLine(110, 7, 3);
-    u8g2.drawHLine(109, 6, 5);
+    u8g2.drawVLine(105 + dx, 1, 8);
+    u8g2.drawHLine(104 + dx, 2, 3);
+    u8g2.drawHLine(103 + dx, 3, 5);
+    u8g2.drawVLine(111 + dx, 1, 8);
+    u8g2.drawHLine(110 + dx, 7, 3);
+    u8g2.drawHLine(109 + dx, 6, 5);
   }
   if (!m.micOk) {
     u8g2.setFont(FONT_TEXT);
@@ -116,14 +119,12 @@ void wrapped(const char* s, int y, int pitch, int maxLines) {
 void drawLocal(uint32_t nowMs, const DisplayModel& m) {
   char buf[40];
   u8g2.clearBuffer();
-  if (m.state != AppState::BOOTING && m.state != AppState::ERROR) statusIcons(m);
+  // While recording the level column has the right edge, so the icons sit left of it.
+  if (m.state != AppState::BOOTING && m.state != AppState::ERROR) statusIcons(m, m.state == AppState::RECORDING ? -10 : 0);
 
   switch (m.state) {
     case AppState::BOOTING:
-      u8g2.setFont(FONT_BIG);
-      centered("Slap", 36);
-      u8g2.setFont(FONT_TEXT);
-      centered("Starting  v" FW_VERSION, 56);
+      u8g2.drawXBM(0, 0, 128, 64, kSplash);   // the switch-on art (splash.h)
       break;
 
     case AppState::WIFI:
@@ -158,21 +159,24 @@ void drawLocal(uint32_t nowMs, const DisplayModel& m) {
       break;
 
     case AppState::RECORDING: {
-      // The server's frames stopped: timer, how to stop, sound level.
+      // The server's frames stopped: timer, how to stop, and the server's level column and record dot.
       uint32_t s = (nowMs - m.recStartMs) / 1000;
       if (s >= 3600) snprintf(buf, sizeof buf, "%lu:%02lu:%02lu", (unsigned long)(s / 3600), (unsigned long)(s / 60 % 60), (unsigned long)(s % 60));
       else snprintf(buf, sizeof buf, "%02lu:%02lu", (unsigned long)(s / 60), (unsigned long)(s % 60));
       u8g2.setFont(FONT_BIG);
-      centered(buf, 27);
+      u8g2.drawStr((118 - u8g2.getStrWidth(buf)) / 2, 30, buf);
       u8g2.setFont(FONT_TEXT);
-      centered("Hold REC to", 41);
-      centered("save and turn off", 54);
-      // Level meter: sqrt-ish scale so speech (-30..-10 dBFS) spans the bar.
+      u8g2.drawStr((118 - u8g2.getStrWidth("Hold REC to")) / 2, 45, "Hold REC to");
+      u8g2.drawStr((118 - u8g2.getStrWidth("save and turn off")) / 2, 58, "save and turn off");
+      // Level: sqrt-ish scale so speech (-30..-10 dBFS) spans the column of 13 blocks.
       float l = m.level * 4.0f;
       if (l > 1.0f) l = 1.0f;
-      int w = (int)(l * 124.0f);
-      u8g2.drawFrame(0, 57, 128, 7);
-      if (w > 0) u8g2.drawBox(2, 59, w, 3);
+      int lit = (int)(l * 13.0f + 0.5f);
+      for (int i = 0; i < lit; i++) {
+        u8g2.drawBox(121, 49 - i * 4, 3, 3);
+        u8g2.drawBox(125, 49 - i * 4, 3, 3);
+      }
+      u8g2.drawDisc(124, 59, 3);
       break;
     }
 
@@ -209,6 +213,16 @@ bool display_setServerFrame(const uint8_t* data, size_t len, uint32_t nowMs) {
 void display_dropServerFrame() { g_haveFrame = false; }
 
 void display_update(uint32_t nowMs, const DisplayModel& m) {
+  // The switch-on art is drawn once, at once, and stays for SPLASH_MS while Wi-Fi joins behind it.
+  if (m.state == AppState::BOOTING) {
+    if (!g_splashShown) {
+      drawLocal(nowMs, m);
+      g_splashShown = true;
+      g_splashAt = g_lastDraw = nowMs;
+    }
+    return;
+  }
+  if (g_splashShown && nowMs - g_splashAt < SPLASH_MS && m.state != AppState::ERROR) return;
   if (nowMs - g_lastDraw < 1000u / OLED_MAX_FPS) return;
 
 #if OLED_SERVER_FRAME_TTL_MS > 0

@@ -204,6 +204,10 @@
 #ifndef OLED_SERVER_FRAME_TTL_MS
 #define OLED_SERVER_FRAME_TTL_MS 5000
 #endif
+// How long the switch-on art stays up before "Joining Wi-Fi" (Wi-Fi joins behind it meanwhile).
+#ifndef SPLASH_MS
+#define SPLASH_MS 1500
+#endif
 #ifndef OLED_MAX_FPS
 #define OLED_MAX_FPS 5
 #endif

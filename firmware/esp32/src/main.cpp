@@ -296,7 +296,7 @@ void setup() {
   boot.micOk = true;
   boot.ssid = WIFI_SSID;
   boot.host = SERVER_HOST;
-  display_update(millis() + 1000, boot);   // +1 s: bypass the 5 Hz limiter for this first draw
+  display_update(millis(), boot);   // the switch-on art; it stays up for SPLASH_MS
 
   if (!audio_begin()) Serial.println("[boot] mic unavailable: recording will send nothing");
 

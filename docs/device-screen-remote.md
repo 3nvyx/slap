@@ -14,7 +14,7 @@ Updated 2026-10-10. Agent-facing: one rule per line, imperative, no padding. Mat
 ## Where the pixels come from
 
 - Server frames: `apps/api/src/oled.ts` renders each 128 x 64 one-bit frame; `apps/api/src/ws/device.ts` picks the screen for the device state and resends it every `FRAME_REFRESH_MS` (3 s) over `/ws/device`.
-- Firmware screens: `firmware/esp32/src/display.cpp` draws "Slap" (boot), "Joining Wi-Fi", "Connecting", "Starting", "Saved" and "Asleep", and its own recording and error screens, when no server frame arrived within `OLED_SERVER_FRAME_TTL_MS` (5 s, `firmware/esp32/include/settings.h`).
+- Firmware screens: `firmware/esp32/src/display.cpp` draws the switch-on art, "Joining Wi-Fi", "Connecting", "Starting", "Saved" and "Asleep", and its own recording and error screens, when no server frame arrived within `OLED_SERVER_FRAME_TTL_MS` (5 s, `firmware/esp32/include/settings.h`).
 - USB carries power, flashing and the serial log only. No frame travels over USB.
 - A change to `oled.ts` or `ws/device.ts` needs no flash. A change to `display.cpp` needs a flash.
 

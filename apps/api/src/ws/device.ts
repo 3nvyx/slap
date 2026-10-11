@@ -74,7 +74,7 @@ function screen(d: DeviceLink, banner: boolean, message?: string): Uint8Array {
       if (banner) return renderLanguage(d.lang);
       const l = d.lectureId ? getLecture(d.lectureId) : undefined;
       const secs = l ? (Date.now() - l.startedAt) / 1000 : 0;
-      return renderRecording(secs, d.level, d.lastCaption, d.lang);
+      return renderRecording(secs, d.level, d.lastCaption);
     }
     case "error": return renderText(["Error", message ?? "something went wrong"]);
   }
@@ -237,7 +237,12 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
         link.refresh();
         setTimeout(() => link?.refresh(), LANG_BANNER_MS + 20).unref();
         break;
-      case "level": if (link && Number.isFinite(m.rms)) { link.level = meter(m.rms); deviceLevelAt = Date.now(); } break;
+      case "level":
+        if (!link || !Number.isFinite(m.rms)) break;
+        link.level = meter(m.rms);
+        deviceLevelAt = Date.now();
+        if (link.state === "recording") link.refresh();   // the level column follows the voice, not only the 1 s tick
+        break;
       case "pong": break;
     }
   }

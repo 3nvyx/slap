@@ -50,7 +50,7 @@ screen({
 });
 ```
 
-Leave the five `TODAY` screens as they are (Listening, Captions, Language, Saved, Error): they mirror `apps/api/src/oled.ts`, and the designer compares new ideas against them. To propose a change to one, copy it into `IDEAS` under a new name. The device has no home screen: it is either asleep or recording. The firmware draws "Joining Wi-Fi", "Connecting" and "Asleep" itself (`firmware/esp32/src/display.cpp`); they are not in the lab.
+Leave the six `TODAY` screens as they are (Switching on, Listening, Captions, Language, Saved, Error): the last five mirror `apps/api/src/oled.ts`, and the designer compares new ideas against them. To propose a change to one, copy it into `IDEAS` under a new name. The device has no home screen: it is either asleep or recording. The firmware draws "Joining Wi-Fi", "Connecting" and "Asleep" itself (`firmware/esp32/src/display.cpp`); they are not in the lab. "Switching on" is the sprite `screen/splash` in `sprites.js` (the whole 128 × 64 screen, the team's own drawing of a hand slapping the mascot). The device holds a copy in `firmware/esp32/src/splash.h`: after a change to the sprite, say that `node firmware/esp32/tools/splash_from_lab.mjs` and a flash are needed, which is outside this folder. Do not redraw it after someone else's picture or characters.
 
 `ctx` is a Canvas 2D context, already set to white fill and stroke with `textBaseline = "top"`. `d` is the mock data:
 

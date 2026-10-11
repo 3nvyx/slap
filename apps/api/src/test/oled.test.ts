@@ -4,7 +4,7 @@ import { DEVICE_LANGS, OLED_FRAME_BYTES } from "@slap/contracts";
 import { packXbm, render, renderLanguage, renderNotice, renderRecording, renderSaved, renderText } from "../oled.ts";
 
 const lit = (f: Uint8Array, x: number, y: number) => (f[y * 16 + (x >> 3)]! >> (x & 7)) & 1;
-// Caption area of a recording frame (above the level, language and timer strip), as rows of 0/1.
+// Caption area of a recording frame (left of the level column, above the timer), as rows of 0/1.
 const captionCell = (f: Uint8Array, x0: number, w: number) => {
   let s = "";
   for (let y = 0; y < 55; y++) for (let x = x0; x < x0 + w; x++) s += lit(f, x, y);
@@ -63,42 +63,48 @@ test("English, Vietnamese and Japanese have real glyphs: reordering the characte
   }
 });
 
-test("a caption in any of the three languages stays clear of the strip under it", () => {
-  // Full lines with descenders, stacked accents and kanji; the strip starts at row 55.
+test("a caption in any of the three languages stays clear of the level column and the timer", () => {
+  // Full lines with descenders, stacked accents and kanji; the timer starts at row 55, the column at x = 121.
   const long = [
     "gjpqy gjpqy gjpqy gjpqy gjpqy gjpqy gjpqy gjpqy gjpqy gjpqy gjpqy gjpqy",
     "Ế Ỗ ặ ự gjy Ế Ỗ ặ ự gjy Ế Ỗ ặ ự gjy Ế Ỗ ặ ự gjy Ế Ỗ ặ ự gjy Ế Ỗ ặ ự gjy",
     "では、ガウス分布はどんな形でしょうか。平均を中心とした釣鐘型の曲線です。データが十分にあれば、これはかなり良いモデルです。",
   ];
   for (const text of long) {
-    // Level 0: the middle columns of rows 54-57 are empty unless the caption reaches them.
+    // Level 0: nothing is lit below row 53 or right of x = 118 unless the caption reaches there.
     const f = renderRecording(0, 0, text);
     assert.ok(inkRows(f, 30, 54).length > 10, `${text.slice(0, 12)}: no caption drawn`);
-    assert.deepEqual(inkRows(f, 54, 58, 0, 80), [], `${text.slice(0, 12)}: caption runs into the strip`);
+    assert.deepEqual(inkRows(f, 54, 64, 0, 80), [], `${text.slice(0, 12)}: caption runs under its area`);
+    assert.deepEqual(inkRows(f, 0, 54, 118, 128), [], `${text.slice(0, 12)}: caption runs into the level column`);
   }
 });
 
-test("the level bar grows with the sound; the strip names the caption language", () => {
-  const count = (f: Uint8Array, x0: number, x1: number) => {
-    let n = 0;
-    for (let y = 58; y < 62; y++) for (let x = x0; x < x1; x++) n += lit(f, x, y);
-    return n;
-  };
-  const quiet = renderRecording(65, 0.1, "Gauss"), loud = renderRecording(65, 0.9, "Gauss");
-  assert.ok(count(loud, 0, 70) > count(quiet, 0, 70) + 100);
-  assert.ok(lit(loud, 2, 59) === 1 && lit(quiet, 60, 59) === 0);
-  assert.notDeepEqual(renderRecording(65, 0.5, "Gauss", "en"), renderRecording(65, 0.5, "Gauss", "vi"));
+test("the level column on the right grows upwards with the sound, without a frame", () => {
+  const column = (level: number) => inkRows(renderRecording(65, level, "Gauss"), 0, 53, 121, 128);
+  assert.deepEqual(column(0), [], "silence lights nothing: there is no frame");
+  const quiet = column(0.2), loud = column(0.9);
+  assert.ok(quiet.length > 0 && loud.length > quiet.length + 15);
+  assert.equal(quiet.at(-1), 51, "it stands on its foot");
+  assert.ok(loud[0]! < 12, "loud reaches near the top");
+  assert.equal(new Set(loud.map(y => (y - 1) % 4)).size, 3, "blocks of three rows with a dark row between them");
 });
 
-test("with no caption yet the screen shows the timer large", () => {
-  const a = renderRecording(5, 0.3, ""), b = renderRecording(6, 0.3, "");
-  assert.notDeepEqual(a, b);
-  assert.ok(inkRows(a, 0, 24).length > 15, "large timer in the top rows");
+test("a record dot sits under the level column with the elapsed time beside it", () => {
+  const a = renderRecording(65, 0, "Gauss"), b = renderRecording(66, 0, "Gauss");
+  assert.ok(lit(a, 124, 59) === 1 && lit(a, 124, 54) === 0, "the dot");
+  assert.ok(inkRows(a, 55, 63, 85, 119).length >= 6, "the time, left of the dot");
+  assert.notDeepEqual(a, b, "the time moves");
+});
+
+test("until the first caption the screen says Listening, with the same level column and timer", () => {
+  const f = renderRecording(5, 0.9, "");
+  assert.ok(inkRows(f, 18, 38, 10, 110).length > 8, "Listening... in the caption area");
+  assert.ok(inkRows(f, 0, 53, 121, 128).length > 30 && lit(f, 124, 59) === 1);
 });
 
 test("Japanese captions never start a line with closing punctuation", () => {
-  const f = renderRecording(0, 0, "かなり良いモデルです。");   // ten characters fit; the full stop is the eleventh
-  // The second line holds two characters (す。), not a lone full stop: ink reaches past the first cell.
+  const f = renderRecording(0, 0, "かなり良いモデルだ。");   // nine characters fit; the full stop is the tenth
+  // The second line holds two characters (だ。), not a lone full stop: ink reaches past the first cell.
   let right = 0;
   for (let y = 14; y < 27; y++) for (let x = 0; x < 128; x++) if (lit(f, x, y)) right = Math.max(right, x);
   assert.ok(right > 14, `second line should start with a character, ink ends at x=${right}`);

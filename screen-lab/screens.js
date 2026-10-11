@@ -28,36 +28,38 @@ const DEVICE_LANGS = ["en", "vi", "ja"];
 const LANG_NAMES = { en: "English", vi: "Tiếng Việt", ja: "日本語" };
 const deviceLang = d => DEVICE_LANGS.includes(d.lang.code) ? d.lang.code : "en";
 
-// Bottom strip of the recording screen (rows 55-62): sound level growing from the left, then the caption
-// language and the elapsed time.
-function recordingFooter(ctx, seconds, level, lang) {
+const CAPTION_W = 116;      // captions keep clear of the level column on the right
+const LEVEL_STEPS = 13;     // blocks in the level column
+
+// Right edge of the recording screen: the sound level as a column of blocks growing upwards (two 3 px squares
+// per step, no frame), a record dot under it, and the elapsed time to the left of the dot.
+function recordingSide(ctx, seconds, level) {
+  const lit = Math.round(clamp01(level) * LEVEL_STEPS);
+  for (let i = 0; i < lit; i++) {
+    const y = 49 - i * 4;
+    ctx.fillRect(121, y, 3, 3);
+    ctx.fillRect(125, y, 3, 3);
+  }
+  ctx.beginPath();
+  ctx.arc(124.5, 59.5, 3.5, 0, Math.PI * 2);
+  ctx.fill();
   ctx.font = font(10, true);
-  const t = `${lang.toUpperCase()} ${mmss(seconds)}`, tw = Math.ceil(ctx.measureText(t).width);
-  ctx.fillText(t, W - tw, 63);
-  const w = W - tw - 5;
-  ctx.fillRect(0, 61, w, 1);
-  ctx.fillRect(0, 58, Math.round(clamp01(level) * w), 4);
+  const t = mmss(seconds);
+  ctx.fillText(t, 118 - Math.ceil(ctx.measureText(t).width), 63);
 }
 
-// The server's renderRecording: with no caption yet the timer is large; after that the caption fills the screen.
-function drawRecording(ctx, seconds, level, caption, lang) {
+// The server's renderRecording: the caption fills the screen (until the first one, "Listening...").
+function drawRecording(ctx, seconds, level, caption) {
   ctx.textBaseline = "alphabetic";
   if (!caption.trim()) {
-    ctx.font = font(26, true);
-    centered(ctx, mmss(seconds), 21);
-    ctx.font = font(13);
-    centered(ctx, "Listening...", 39);
-    ctx.fillRect(0, 53, W, 1);
-    ctx.fillRect(0, 62, W, 1);
-    ctx.fillRect(0, 53, 1, 10);
-    ctx.fillRect(W - 1, 53, 1, 10);
-    ctx.fillRect(2, 55, Math.round(clamp01(level) * (W - 4)), 6);
-    return;
+    ctx.font = font(15);
+    centered(ctx, "Listening...", 32, 0, CAPTION_W + 2);
+  } else {
+    const style = captionStyle(caption);
+    ctx.font = font(style.px, false, caption);
+    wrapText(ctx, caption, CAPTION_W).slice(-style.lines).forEach((l, i) => ctx.fillText(l, 1, style.base + i * style.pitch));
   }
-  const style = captionStyle(caption);
-  ctx.font = font(style.px, false, caption);
-  wrapText(ctx, caption, W - 2).slice(-style.lines).forEach((l, i) => ctx.fillText(l, 1, style.base + i * style.pitch));
-  recordingFooter(ctx, seconds, level, lang);
+  recordingSide(ctx, seconds, level);
 }
 
 // One large line with a hint under it (the server's renderNotice).
@@ -70,22 +72,31 @@ function drawNotice(ctx, big, small) {
 }
 
 screen({
+  name: "Switching on",
+  group: TODAY,
+  note: "For the first second and a half after a shake, while the device joins Wi-Fi. The picture is the sprite screen/splash in sprites.js; the device itself holds a copy (see the note there).",
+  draw(ctx) {
+    drawSprite(ctx, "screen/splash", 0, 0, 1);
+  },
+});
+
+screen({
   name: "Listening",
   group: TODAY,
   note: "The session has started (it starts by itself once the device is switched on) and nothing has been said yet.",
   led: true,
   draw(ctx, d) {
-    drawRecording(ctx, d.seconds, d.level, "", deviceLang(d));
+    drawRecording(ctx, d.seconds, d.level, "");
   },
 });
 
 screen({
   name: "Captions",
   group: TODAY,
-  note: "During a lecture: the latest three lines of caption (four in Japanese), with the sound level, the caption language and the timer in a thin strip under them. Choose the language on the right.",
+  note: "During a lecture: the latest three lines of caption (four in Japanese). On the right the sound level is a column of blocks that rises with the voice, with a record dot and the timer at its foot. Choose the language on the right of the page.",
   led: true,
   draw(ctx, d) {
-    drawRecording(ctx, d.seconds, d.level, d.caption, deviceLang(d));
+    drawRecording(ctx, d.seconds, d.level, d.caption);
   },
 });
 

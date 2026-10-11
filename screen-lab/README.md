@@ -22,7 +22,7 @@ then open http://localhost:4173.
 
 ## What is on the page
 
-- **Left:** the list of screens. "On the device today" are the five the real device shows once it is on: listening, captions, the language name after a tilt, saved, and an error. (Before that it shows "Joining Wi-Fi" and "Connecting", which the device draws itself.) "Ideas to play with" are examples to change or replace.
+- **Left:** the list of screens. "On the device today" are the six the real device shows: the picture while it switches on, listening, captions, the language name after a tilt, saved, and an error. (Between the picture and listening it shows "Joining Wi-Fi" and "Connecting", which the device draws itself.) "Ideas to play with" are examples to change or replace.
 - **Middle:** the screen, enlarged, and below it a copy at about the real size (55 × 27 mm).
 - **Right:** the made-up data (language, caption, class code, sound level…), the font, the avatar, and the display colour.
 - **Top:** "All screens" shows every screen at once. "All languages" shows the current screen in the device's three languages: English, Vietnamese and Japanese. "Real size" shows the device as large as the real one. "Play" runs the clock, the sound level and the caption.
