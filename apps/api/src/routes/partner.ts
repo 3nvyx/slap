@@ -1,10 +1,11 @@
 /**
  * Learning partner routes (docs/api.md "Learning partner"), mounted under /api.
- *   GET    /partner/voices                    signed-in   curated Fish voices, default first
- *   POST   /classes/:classId/partner/session  member      { lectureId?, voiceId?, lang? } -> PartnerSession
- *   POST   /partner/:sessionId/turn           session's user; multipart { audio?, text? } (JSON { text } also accepted) -> PartnerTurn
- *   GET    /partner/audio/:id                 public      mp3 from the in-memory cache (unguessable id, ~10 min)
- *   DELETE /partner/:sessionId                session's user
+ *   GET    /partner/voices                    curated Fish voices, default first
+ *   POST   /classes/:classId/partner/session  { lectureId?, voiceId?, lang? } -> PartnerSession
+ *   POST   /partner/:sessionId/turn           multipart { audio?, text? } (JSON { text } also accepted) -> PartnerTurn
+ *   GET    /partner/audio/:id                 mp3 from the in-memory cache (unguessable id, ~10 min)
+ *   DELETE /partner/:sessionId
+ * Nothing is access-checked (there is no sign-in). A session grades for the caller that started it (user.ts).
  * Turn and session responses return as soon as the reply text exists: each reply carries up to
  * two clip ids (feedbackAudioUrl = short lead, audioUrl = the next question) whose TTS streams
  * render in parallel in the background; GET /partner/audio/:id streams the bytes as they arrive.
@@ -16,7 +17,7 @@ import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { requireClassRole, requireUser, type UserEnv } from "../auth.ts";
+import { classOr404, type UserEnv } from "../user.ts";
 import { FishError, PARTNER_VOICES, defaultVoiceId, isKnownVoice, readWav } from "../pipeline/fishAudio.ts";
 import { MAX_TURN_AUDIO_S, PartnerInputError, clipBytes, clipReady, endSession, getClip, getSession, startSession, turn, type PartnerState } from "../pipeline/partner.ts";
 import { normalizeLang } from "../pipeline/translate.ts";
@@ -59,21 +60,20 @@ export function audioMime(declared: string | undefined, buf: Buffer): string | n
   return null;
 }
 
-function ownSession(c: C): PartnerState {
+function sessionParam(c: C): PartnerState {
   const id = idParam(c, "sessionId", "partner session");
   const s = getSession(id);
   if (!s) throw new HTTPException(404, { message: "partner session not found or expired" });
-  if (s.userId !== c.var.user.id) throw new HTTPException(403, { message: "not your partner session" });
   return s;
 }
 
 export const partnerRoutes = new Hono<UserEnv>();
 
-partnerRoutes.get("/partner/voices", requireUser, c => c.json(PARTNER_VOICES));
+partnerRoutes.get("/partner/voices", c => c.json(PARTNER_VOICES));
 
-partnerRoutes.post("/classes/:classId/partner/session", requireUser, async c => {
+partnerRoutes.post("/classes/:classId/partner/session", async c => {
   const classId = idParam(c, "classId", "class");
-  await requireClassRole(c.var.user.id, classId, "member");
+  await classOr404(classId);
   const raw = await c.req.json().catch(() => ({}));
   const r = SessionBody.safeParse(raw ?? {});
   if (!r.success) throw new HTTPException(400, { message: r.error.issues.map(i => `${i.path.join(".") || "body"}: ${i.message}`).join("; ") });
@@ -91,10 +91,10 @@ partnerRoutes.post("/classes/:classId/partner/session", requireUser, async c => 
   return c.json(session, 201);
 });
 
-partnerRoutes.post("/partner/:sessionId/turn", requireUser,
+partnerRoutes.post("/partner/:sessionId/turn",
   bodyLimit({ maxSize: MAX_AUDIO_BYTES + 64 * 1024, onError: c => c.json({ error: "audio too large (max 10 MB)" }, 413) }),
   async c => {
-    const s = ownSession(c);
+    const s = sessionParam(c);
     let text: string | null = null;
     let audio: { data: Buffer; mime: string } | null = null;
     const ctype = c.req.header("content-type") ?? "";
@@ -158,8 +158,8 @@ partnerRoutes.get("/partner/audio/:id", async c => {
   return c.body(stream, 200, headers);
 });
 
-partnerRoutes.delete("/partner/:sessionId", requireUser, c => {
-  const s = ownSession(c);
+partnerRoutes.delete("/partner/:sessionId", c => {
+  const s = sessionParam(c);
   endSession(s.id);
   return c.json({ ok: true });
 });

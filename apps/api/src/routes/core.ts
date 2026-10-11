@@ -1,23 +1,27 @@
-// Public, device and signed-in routes from docs/api.md (the Study section lives in study.ts).
+// Class, lecture, concept and device routes from docs/api.md (the Study section lives in study.ts).
+// Nothing is access-checked (there is no sign-in); per-student state is keyed by the caller's id from user.ts.
 // Paths are relative to /api (mounted by routes/index.ts).
 import type { ClassSummary, Concept, ConceptLink, ConceptMention, LectureSummary, OutlineSection, Segment, CaptionWord, Card } from "@slap/contracts";
 import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
-import { requireClassRole, requireUser } from "../auth.ts";
 import { db, schema } from "../db/index.ts";
 import { getMastery } from "../pipeline/mastery.ts";
 import { unpackAnnouncements } from "../pipeline/outline.ts";
 import { isSourceLang, normalizeLang } from "../pipeline/translate.ts";
+import { buildVault, noteName } from "../pipeline/vault.ts";
+import { zipStore } from "../pipeline/zip.ts";
+import { classOr404, type UserEnv } from "../user.ts";
 import {
-  DeviceBusyError, deviceForWebStart, effectiveOwner, findLiveLecture, getDevice, getDeviceRow, getLecture, importLecture, isUuid,
-  listUserDevices, pairDevice, setActiveClass, startSession, stopSession, toSummary, unpairDevice,
+  DeviceBusyError, deviceForWebStart, findLiveLecture, getDevice, getDeviceRow, getLecture, importLecture, isUuid,
+  listDevices, liveLectureInMemory, pairDevice, ReplayError, setActiveClass, startReplay, startSession, stopSession, toSummary, unpairDevice, viewerLanguages,
 } from "../sessions.ts";
 
-const { classes, enrollments, lectures, segments, translations, concepts, conceptLinks, conceptMentions, outlines, documents, cards, cardState, questions, devices } = schema;
+const { classes, lectures, segments, translations, concepts, conceptLinks, conceptMentions, outlines, documents, cards, cardState, questions, devices } = schema;
 
-export const coreRoutes = new Hono();
+// `user` is set by withUser in routes/index.ts.
+export const coreRoutes = new Hono<UserEnv>();
 
 // ---------- helpers ----------
 
@@ -87,30 +91,25 @@ async function nextExams(classIds: string[]): Promise<Map<string, { name: string
   return out;
 }
 
-async function classSummaries(userId: string, classIds?: string[]): Promise<ClassSummary[]> {
-  const rows = await db.selectDistinct({ id: classes.id, name: classes.name, code: classes.code, owner: classes.ownerUserId, role: enrollments.role })
-    .from(classes).leftJoin(enrollments, and(eq(enrollments.classId, classes.id), eq(enrollments.userId, userId)))
-    .where(and(or(eq(classes.ownerUserId, userId), eq(enrollments.userId, userId)), classIds ? inArray(classes.id, classIds) : undefined))
-    .orderBy(asc(classes.name));
+/** Every class (or the given ones), by name. */
+async function classSummaries(classIds?: string[]): Promise<ClassSummary[]> {
+  const rows = await db.select({ id: classes.id, name: classes.name, code: classes.code }).from(classes)
+    .where(classIds ? inArray(classes.id, classIds) : undefined).orderBy(asc(classes.name));
   if (!rows.length) return [];
   const ids = rows.map(r => r.id);
   const counts = await db.select({ classId: lectures.classId, n: count() }).from(lectures).where(inArray(lectures.classId, ids)).groupBy(lectures.classId);
   const n = new Map(counts.map(r => [r.classId, r.n]));
   const exams = await nextExams(ids);
-  return rows.map(r => ({
-    id: r.id, name: r.name, code: r.code,
-    role: r.owner === userId || r.role === "owner" ? "owner" : "student",
-    lectureCount: n.get(r.id) ?? 0, nextExam: exams.get(r.id)?.date ?? null,
-  }));
+  return rows.map(r => ({ id: r.id, name: r.name, code: r.code, lectureCount: n.get(r.id) ?? 0, nextExam: exams.get(r.id)?.date ?? null }));
 }
 
-async function oneSummary(userId: string, classId: string): Promise<ClassSummary> {
-  const [s] = await classSummaries(userId, [classId]);
+async function oneSummary(classId: string): Promise<ClassSummary> {
+  const [s] = await classSummaries([classId]);
   if (!s) throw new HTTPException(404, { message: "class not found" });
   return s;
 }
 
-// ---------- public ----------
+// ---------- join and captions ----------
 
 coreRoutes.get("/join/:code", async (c) => {
   const code = c.req.param("code").trim().toUpperCase();
@@ -123,6 +122,18 @@ coreRoutes.get("/join/:code", async (c) => {
 coreRoutes.get("/lectures/:id/public", async (c) => {
   const id = uuidParam(c, "id");
   const lang = normalizeLang(c.req.query("lang"));
+  // A replay has no database row: answer from memory.
+  const mem = getLecture(id);
+  if (mem && !mem.persistent) {
+    const [cls] = await db.select({ name: classes.name }).from(classes).where(eq(classes.id, mem.classId)).limit(1);
+    return c.json({
+      title: mem.title, className: cls?.name ?? "", classId: mem.classId, status: mem.status, replay: !!mem.replay,
+      finals: mem.finals.map(f => {
+        const tr = lang && !isSourceLang(lang) ? f.tr.get(lang)?.text : undefined;
+        return { segmentId: f.segmentId, text: f.text, start: f.start, end: f.end, ...(tr !== undefined ? { translation: tr } : {}) };
+      }),
+    });
+  }
   const [row] = await db.select({ l: lectures, className: classes.name }).from(lectures)
     .innerJoin(classes, eq(classes.id, lectures.classId)).where(eq(lectures.id, id)).limit(1);
   if (!row) return c.json({ error: "lecture not found" }, 404);
@@ -136,13 +147,13 @@ coreRoutes.get("/lectures/:id/public", async (c) => {
     for (const r of rows) tr.set(r.segmentId, r.text);
   }
   return c.json({
-    title: row.l.title, className: row.className, status: row.l.status,
+    title: row.l.title, className: row.className, classId: row.l.classId, status: row.l.status,
     finals: segs.map(s => ({ segmentId: s.id, text: s.text, start: s.start, end: s.end, ...(tr.has(s.id) ? { translation: tr.get(s.id) } : {}) })),
   });
 });
 
 // ---------- device ----------
-// A device belongs to a user (devices.ownerUserId) and records into its active class (devices.classId).
+// Paired devices are shared by everyone; each records into its active class (devices.classId).
 
 /** 409 for a change that would cut a recording short. */
 async function busy409(c: Context, fn: () => Promise<Response>): Promise<Response> {
@@ -152,124 +163,169 @@ async function busy409(c: Context, fn: () => Promise<Response>): Promise<Respons
   }
 }
 
-/** The device if the caller owns it (404 otherwise, so ids of other users' devices are not confirmed). */
-async function ownDevice(c: Context, userId: string) {
+/** A paired device (404 for an unknown or unpaired one). */
+async function pairedDevice(c: Context) {
   const id = uuidParam(c, "id");
   const r = await getDeviceRow(id);
-  if (!r || r.owner !== userId) throw new HTTPException(404, { message: "device not found" });
+  if (!r?.owner) throw new HTTPException(404, { message: "device not found" });
   return r.row;
 }
 
-coreRoutes.post("/devices/pair", requireUser, async (c) => {
+coreRoutes.post("/devices/pair", async (c) => {
   const b = await body(c, z.object({ pairCode: z.string().trim().min(4).max(12), classId: z.uuid().optional() }));
-  const u = c.var.user;
   let classId = b.classId ?? null;
-  if (classId) await requireClassRole(u.id, classId, "member");
+  if (classId) await classOr404(classId);
   else {
-    const mine = await classSummaries(u.id);
-    if (mine.length === 1) classId = mine[0]!.id;
+    const all = await classSummaries();
+    if (all.length === 1) classId = all[0]!.id;
   }
-  const r = await pairDevice(b.pairCode, u.id, classId);
+  const r = await pairDevice(b.pairCode, c.var.user.id, classId);
   if (!r) return c.json({ error: "no device is showing that code" }, 404);
   return c.json(r);
 });
 
-coreRoutes.get("/devices", requireUser, async (c) => c.json(await listUserDevices(c.var.user.id)));
+coreRoutes.get("/devices", async (c) => c.json(await listDevices()));
 
-coreRoutes.post("/devices/:id/active-class", requireUser, async (c) => {
-  const u = c.var.user;
-  const row = await ownDevice(c, u.id);
+coreRoutes.post("/devices/:id/active-class", async (c) => {
+  const row = await pairedDevice(c);
   const b = await body(c, z.object({ classId: z.uuid() }));
-  await requireClassRole(u.id, b.classId, "member");
-  return busy409(c, async () => c.json(await setActiveClass(row.id, u.id, b.classId)));
+  await classOr404(b.classId);
+  return busy409(c, async () => c.json(await setActiveClass(row.id, c.var.user.id, b.classId)));
 });
 
-coreRoutes.delete("/devices/:id", requireUser, async (c) => {
-  const row = await ownDevice(c, c.var.user.id);
+coreRoutes.delete("/devices/:id", async (c) => {
+  const row = await pairedDevice(c);
   return busy409(c, async () => { await unpairDevice(row.id); return c.json({ ok: true }); });
 });
 
-// ---------- signed in ----------
+// ---------- classes ----------
 
-coreRoutes.get("/me", requireUser, async (c) => {
-  const u = c.var.user;
-  return c.json({ userId: u.id, email: u.email, classes: await classSummaries(u.id) });
-});
+coreRoutes.get("/classes", async (c) => c.json(await classSummaries()));
 
 const CODE = z.string().trim().min(2).max(16).regex(/^[A-Za-z0-9-]+$/, "letters, digits and dashes only").transform(s => s.toUpperCase());
 
-coreRoutes.post("/classes", requireUser, async (c) => {
+coreRoutes.post("/classes", async (c) => {
   const b = await body(c, z.object({ name: z.string().trim().min(1).max(120), code: CODE }));
-  const u = c.var.user;
   const [dup] = await db.select({ id: classes.id }).from(classes).where(sql`upper(${classes.code}) = ${b.code}`).limit(1);
   if (dup) return c.json({ error: "that class code is taken" }, 409);
   const id = crypto.randomUUID();
-  await db.batch([
-    db.insert(classes).values({ id, name: b.name, code: b.code, ownerUserId: u.id }),
-    db.insert(enrollments).values({ userId: u.id, classId: id, role: "owner" }),
-  ]);
-  return c.json(await oneSummary(u.id, id), 201);
+  await db.insert(classes).values({ id, name: b.name, code: b.code, ownerUserId: c.var.user.id });
+  return c.json(await oneSummary(id), 201);
 });
 
-coreRoutes.post("/classes/join", requireUser, async (c) => {
-  const b = await body(c, z.object({ code: CODE }));
-  const u = c.var.user;
-  const [cls] = await db.select().from(classes).where(sql`upper(${classes.code}) = ${b.code}`).limit(1);
-  if (!cls) return c.json({ error: "no class with that code" }, 404);
-  await db.insert(enrollments).values({ userId: u.id, classId: cls.id, role: cls.ownerUserId === u.id ? "owner" : "student" }).onConflictDoNothing();
-  return c.json(await oneSummary(u.id, cls.id));
-});
-
-// Polled by the web app every ~8 s for the device chip: keep it to a role check plus three parallel queries.
-coreRoutes.get("/classes/:classId", requireUser, async (c) => {
+// Polled by the web app every ~8 s for the device chip: keep it to four parallel queries.
+coreRoutes.get("/classes/:classId", async (c) => {
   const classId = uuidParam(c, "classId");
-  const u = c.var.user;
-  const role = await requireClassRole(u.id, classId, "member");
   const [[cls], lectureRows, deviceRows, docRows] = await Promise.all([
-    db.select({ name: classes.name, code: classes.code, owner: classes.ownerUserId }).from(classes).where(eq(classes.id, classId)).limit(1),
+    db.select({ name: classes.name, code: classes.code }).from(classes).where(eq(classes.id, classId)).limit(1),
     db.select().from(lectures).where(eq(lectures.classId, classId)).orderBy(desc(lectures.date), desc(lectures.startedAt)),
-    db.select({ id: devices.id, name: devices.name, ownerUserId: devices.ownerUserId }).from(devices).where(eq(devices.classId, classId)).orderBy(asc(devices.name), asc(devices.id)),
+    db.select({ id: devices.id, name: devices.name }).from(devices).where(eq(devices.classId, classId)).orderBy(asc(devices.name), asc(devices.id)),
     db.select({ id: documents.id, kind: documents.kind, title: documents.title, parsed: documents.parsed }).from(documents)
       .where(eq(documents.classId, classId)).orderBy(desc(documents.createdAt)),
   ]);
   if (!cls) return c.json({ error: "class not found" }, 404);
   const nextExam = earliestExam(docRows.filter(d => d.kind === "syllabus").map(d => d.parsed));
-  // "The device" of a class: one whose active class is this class; the caller's own first, then a connected one.
-  const dev = deviceRows.find(d => effectiveOwner(d, cls.owner) === u.id) ?? deviceRows.find(d => getDevice(d.id)) ?? deviceRows[0];
+  // "The device" of a class: one whose active class is this class, a connected one first.
+  const dev = deviceRows.find(d => getDevice(d.id)) ?? deviceRows[0];
   const link = dev ? getDevice(dev.id) : undefined;
-  const summary: ClassSummary = { id: classId, name: cls.name, code: cls.code, role, lectureCount: lectureRows.length, nextExam: nextExam?.date ?? null };
+  const summary: ClassSummary = { id: classId, name: cls.name, code: cls.code, lectureCount: lectureRows.length, nextExam: nextExam?.date ?? null };
+  // Who is watching right now (in-memory only; absent when nothing is live in this process).
+  const liveMem = liveLectureInMemory(classId);
   return c.json({
     class: summary,
     lectures: lectureRows.map(r => lectureSummary(r)),
     device: { paired: !!dev, state: link ? link.state : "offline", name: dev?.name ?? null },
+    live: liveMem ? { lectureId: liveMem.id, title: liveMem.title, replay: !!liveMem.replay, viewers: liveMem.viewers.size, languages: viewerLanguages(liveMem) } : null,
     nextExam,
     documents: docRows.map(d => ({ id: d.id, kind: d.kind, title: d.title })),
   });
 });
 
-// Records with the caller's device: one pointed at this class, else the caller's device is switched here first.
-coreRoutes.post("/classes/:classId/sessions/start", requireUser, async (c) => {
+// Obsidian vault: every concept note and lecture note as markdown with [[links]], zipped (store-only).
+coreRoutes.get("/classes/:classId/export", async (c) => {
   const classId = uuidParam(c, "classId");
-  const u = c.var.user;
-  await requireClassRole(u.id, classId, "owner");
+  const [[cls], conceptRows, linkRows, mentionRows, lectureRows, mastery] = await Promise.all([
+    db.select({ name: classes.name, code: classes.code }).from(classes).where(eq(classes.id, classId)).limit(1),
+    db.select().from(concepts).where(eq(concepts.classId, classId)),
+    db.select().from(conceptLinks).innerJoin(concepts, eq(concepts.id, conceptLinks.fromId)).where(eq(concepts.classId, classId)),
+    db.select({ conceptId: conceptMentions.conceptId, lectureId: conceptMentions.lectureId, start: segments.startS, excerpt: conceptMentions.excerpt })
+      .from(conceptMentions).innerJoin(lectures, eq(lectures.id, conceptMentions.lectureId)).leftJoin(segments, eq(segments.id, conceptMentions.segmentId))
+      .where(eq(lectures.classId, classId)).orderBy(asc(lectures.date), asc(segments.startS)),
+    db.select({ l: lectures, o: outlines }).from(lectures).leftJoin(outlines, eq(outlines.lectureId, lectures.id))
+      .where(and(eq(lectures.classId, classId), inArray(lectures.status, ["ready", "ended"]))).orderBy(asc(lectures.date)),
+    getMastery(c.var.user.id, classId),
+  ]);
+  if (!cls) return c.json({ error: "class not found" }, 404);
+  const files = buildVault({
+    className: cls.name, classCode: cls.code,
+    concepts: conceptRows.map(r => toConcept(r, mastery)),
+    links: linkRows.map(r => ({ from: r.concept_links.fromId, to: r.concept_links.toId, relation: r.concept_links.relation })),
+    mentions: mentionRows,
+    lectures: lectureRows.map(({ l, o }) => ({
+      id: l.id, title: l.title, date: l.date, summary: o?.summary ?? "", sections: (o?.sections ?? []) as OutlineSection[],
+      announcements: unpackAnnouncements(o?.announcements).announcements,
+    })),
+  });
+  const zip = zipStore(files);
+  c.header("Content-Type", "application/zip");
+  c.header("Content-Disposition", `attachment; filename="${noteName(cls.code).replace(/"/g, "")}-vault.zip"`);
+  c.header("Content-Length", String(zip.length));
+  return c.body(new Uint8Array(zip));
+});
+
+// Announcements across the class's lectures (from each study bundle's outline), dated ones first.
+coreRoutes.get("/classes/:classId/announcements", async (c) => {
+  const classId = uuidParam(c, "classId");
+  await classOr404(classId);
+  const rows = await db.select({ lectureId: lectures.id, lectureTitle: lectures.title, lectureDate: lectures.date, raw: outlines.announcements })
+    .from(outlines).innerJoin(lectures, eq(lectures.id, outlines.lectureId)).where(eq(lectures.classId, classId));
+  const out = rows.flatMap(r => unpackAnnouncements(r.raw).announcements.map(a => ({ ...a, lectureId: r.lectureId, lectureTitle: r.lectureTitle, lectureDate: r.lectureDate })));
+  out.sort((a, b) => (a.when && b.when ? a.when.localeCompare(b.when) : a.when ? -1 : b.when ? 1 : b.lectureDate.localeCompare(a.lectureDate)));
+  return c.json(out);
+});
+
+// Records with a paired device: one pointed at this class, else a device is switched here first.
+coreRoutes.post("/classes/:classId/sessions/start", async (c) => {
+  const classId = uuidParam(c, "classId");
+  await classOr404(classId);
   let title: string | undefined;
   if (c.req.header("content-type")?.includes("json")) title = (await body(c, z.object({ title: z.string().trim().max(200).optional() }))).title;
   return busy409(c, async () => {
-    const deviceId = await deviceForWebStart(u.id, classId);
+    const deviceId = await deviceForWebStart(c.var.user.id, classId);
     return c.json(await startSession(classId, { title, source: "browser", deviceId }));
   });
 });
 
-coreRoutes.post("/lectures/:id/stop", requireUser, async (c) => {
-  const row = await lectureOr404(uuidParam(c, "id"));
-  await requireClassRole(c.var.user.id, row.classId, "owner");
+coreRoutes.post("/lectures/:id/stop", async (c) => {
+  const id = uuidParam(c, "id");
+  const mem = getLecture(id);
+  if (mem && !mem.persistent) return c.json(await stopSession(id));   // a replay: in memory only
+  const row = await lectureOr404(id);
   const s = await stopSession(row.id);
   return s ? c.json(s) : c.json({ error: "lecture not found" }, 404);
 });
 
-coreRoutes.post("/classes/:classId/lectures/import", requireUser, async (c) => {
+// Demo replay: plays a saved lecture's captions back through the live path as a new, in-memory lecture of the class.
+// Viewers join it like any live lecture (/j/:code finds it); status events and the public lecture say `replay`.
+coreRoutes.post("/lectures/:id/replay", async (c) => {
+  const row = await lectureOr404(uuidParam(c, "id"));
+  const opts = c.req.header("content-type")?.includes("json")
+    ? await body(c, z.object({ from: z.number().min(0).optional(), to: z.number().min(0).optional(), speed: z.number().min(0.25).max(10).optional() }))
+    : {};
+  return busy409(c, async () => {
+    try {
+      const s = await startReplay(row.id, opts);
+      return s ? c.json(s, 201) : c.json({ error: "lecture not found" }, 404);
+    } catch (e) {
+      if (e instanceof ReplayError) return c.json({ error: e.message }, 400);
+      throw e;
+    }
+  });
+});
+
+coreRoutes.post("/classes/:classId/lectures/import", async (c) => {
   const classId = uuidParam(c, "classId");
-  await requireClassRole(c.var.user.id, classId, "owner");
+  await classOr404(classId);
   const b = await body(c, z.object({
     title: z.string().trim().min(1).max(200),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD"),
@@ -283,13 +339,13 @@ coreRoutes.post("/classes/:classId/lectures/import", requireUser, async (c) => {
   }
 });
 
-coreRoutes.get("/lectures/:id", requireUser, async (c) => {
+coreRoutes.get("/lectures/:id", async (c) => {
   const row = await lectureOr404(uuidParam(c, "id"));
-  await requireClassRole(c.var.user.id, row.classId, "member");
-  const [segRows, [outline], mentionRows] = await Promise.all([
+  const [segRows, [outline], mentionRows, mastery] = await Promise.all([
     db.select().from(segments).where(eq(segments.lectureId, row.id)).orderBy(asc(segments.idx)),
     db.select().from(outlines).where(eq(outlines.lectureId, row.id)).limit(1),
     db.select().from(conceptMentions).where(eq(conceptMentions.lectureId, row.id)),
+    getMastery(c.var.user.id, row.classId),
   ]);
   const conceptIds = [...new Set(mentionRows.map(m => m.conceptId))];
   const conceptRows = conceptIds.length ? await db.select().from(concepts).where(inArray(concepts.id, conceptIds)) : [];
@@ -305,14 +361,13 @@ coreRoutes.get("/lectures/:id", requireUser, async (c) => {
     summary: outline?.summary ?? "",
     announcements,
     questionsAsked,
-    concepts: conceptRows.map(r => toConcept(r)),
+    concepts: conceptRows.map(r => toConcept(r, mastery)),
     mentions,
   });
 });
 
-coreRoutes.get("/lectures/:id/translations", requireUser, async (c) => {
+coreRoutes.get("/lectures/:id/translations", async (c) => {
   const row = await lectureOr404(uuidParam(c, "id"));
-  await requireClassRole(c.var.user.id, row.classId, "member");
   const lang = normalizeLang(c.req.query("lang"));
   if (!lang) return c.json({ error: "lang is required, e.g. ?lang=es" }, 400);
   const rows = await db.select({ segmentId: translations.segmentId, text: translations.text }).from(translations)
@@ -321,24 +376,22 @@ coreRoutes.get("/lectures/:id/translations", requireUser, async (c) => {
   return c.json(Object.fromEntries(rows.map(r => [String(r.segmentId), r.text])) as Record<string, string>);
 });
 
-coreRoutes.get("/classes/:classId/concepts", requireUser, async (c) => {
+coreRoutes.get("/classes/:classId/concepts", async (c) => {
   const classId = uuidParam(c, "classId");
-  const u = c.var.user;
-  await requireClassRole(u.id, classId, "member");
+  await classOr404(classId);
   const [rows, mastery] = await Promise.all([
     db.select().from(concepts).where(eq(concepts.classId, classId)).orderBy(desc(concepts.emphasis), asc(concepts.name)),
-    getMastery(u.id, classId),
+    getMastery(c.var.user.id, classId),
   ]);
   return c.json(rows.map(r => toConcept(r, mastery)));
 });
 
-coreRoutes.get("/classes/:classId/graph", requireUser, async (c) => {
+coreRoutes.get("/classes/:classId/graph", async (c) => {
   const classId = uuidParam(c, "classId");
-  const u = c.var.user;
-  await requireClassRole(u.id, classId, "member");
+  await classOr404(classId);
   const [rows, mastery] = await Promise.all([
     db.select().from(concepts).where(eq(concepts.classId, classId)),
-    getMastery(u.id, classId),
+    getMastery(c.var.user.id, classId),
   ]);
   const ids = rows.map(r => r.id);
   const linkRows = ids.length ? await db.select().from(conceptLinks).where(inArray(conceptLinks.fromId, ids)) : [];
@@ -347,12 +400,11 @@ coreRoutes.get("/classes/:classId/graph", requireUser, async (c) => {
   return c.json({ nodes: rows.map(r => toConcept(r, mastery)), links });
 });
 
-coreRoutes.get("/concepts/:id", requireUser, async (c) => {
+coreRoutes.get("/concepts/:id", async (c) => {
   const id = uuidParam(c, "id");
-  const u = c.var.user;
   const [row] = await db.select().from(concepts).where(eq(concepts.id, id)).limit(1);
   if (!row) return c.json({ error: "concept not found" }, 404);
-  await requireClassRole(u.id, row.classId, "member");
+  const u = c.var.user;
   const [linkRows, mentionRows, cardRows, [qc], mastery] = await Promise.all([
     db.select().from(conceptLinks).where(or(eq(conceptLinks.fromId, id), eq(conceptLinks.toId, id))),
     db.select({ lectureId: conceptMentions.lectureId, lectureTitle: lectures.title, segmentId: conceptMentions.segmentId, excerpt: conceptMentions.excerpt, start: segments.startS })

@@ -21,6 +21,8 @@
   #play.on { border-color: var(--accent); color: var(--accent); }
   #live { color: var(--dim); font-size: 12px; margin-left: auto; }
 
+  #dead { padding: 10px 16px; background: #3a2a14; border-bottom: 1px solid #6b4d25; }
+  #dead p { margin: 0 0 4px; font-weight: 600; }
   #error { display: flex; gap: 12px; align-items: flex-start; padding: 10px 16px; background: #3a1614; border-bottom: 1px solid #6b2a25; }
   #error pre { margin: 0; white-space: pre-wrap; font: 12px/1.5 ui-monospace, Menlo, monospace; flex: 1; }
   #error p { margin: 0 0 4px; font-weight: 600; }
@@ -49,6 +51,7 @@
   .about strong { font-size: 16px; }
   .about p { margin: 4px 0 0; color: var(--dim); }
   .about #stats { font-size: 12px; }
+  .about #warn { color: #ffb86b; }
   .real { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--dim); font-size: 12px; }
   .real canvas { width: calc(55 * var(--mm)); height: auto; border: calc(2.5 * var(--mm)) solid #000; border-radius: 3px; outline: 1px solid var(--line); }
 
@@ -119,6 +122,11 @@
   <span id="live">Opened as a file: refresh the page after a change</span>
 </header>
 
+<div id="dead">
+  <p>The lab has not started: this view could not load its files.</p>
+  Open <b>http://localhost:4173</b> instead (ask your AI helper to "start the screen-lab preview"), or double-click <b>index.html</b> in Finder to open it in your own browser.
+</div>
+
 <div id="error" hidden>
   <div style="flex:1">
     <p>Something in the lab's files is broken. Copy this to your AI helper:</p>
@@ -143,6 +151,7 @@
       <div class="about">
         <strong id="name"></strong>
         <p id="note"></p>
+        <p id="warn" hidden></p>
         <p id="stats"></p>
       </div>
       <div class="real">

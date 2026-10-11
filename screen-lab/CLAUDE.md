@@ -15,8 +15,6 @@ Start the `screen-lab` launch configuration (`.claude/launch.json`: `python3 -m 
 
 A broken file shows a red bar at the top of the page with the error text. Check for it after every edit.
 
-The browser pane inside the Claude app blocks the microphone. Anything that needs real sound has to be tried by the designer in Chrome or Safari; to check the code yourself, feed `navigator.mediaDevices.getUserMedia` a generated tone from the page console.
-
 ## Files
 
 | File | Role |
@@ -34,6 +32,7 @@ The browser pane inside the Claude app blocks the microphone. Anything that need
 - Physical size is 55 × 27 mm, read from across a desk. Judge legibility on the real-size copy under the main view.
 - Latin text reads down to about 10 px. CJK, Devanagari and Arabic need about 12 px or more. At 11 px Helvetica a full-width line holds about 26 Latin characters.
 - Thin strokes (1 px, or anti-aliased curves) can vanish. Use `lineWidth = 2` for outlines and whole-number coordinates for rectangles.
+- Chinese, Japanese, Korean, Hindi and Arabic (`deviceBoxes: true` in `data.js`) come out as empty boxes on the real device, because its server has no font for them. The lab draws them with this computer's fonts and warns on the page. A design for these languages cannot ship until a font file for the script is added to the server; tell the designer when their request depends on it.
 - Arabic is right-to-left: set `ctx.direction = "rtl"` and `ctx.textAlign = "right"` and draw from the right edge (see "Big caption").
 
 ## Add or change a screen
@@ -70,6 +69,8 @@ Helpers (globals from `lab.js`):
 | `drawSprite(ctx, name, x, y, scale = 1)` | Draws an avatar from `sprites.js`. |
 | `spriteFit(name, boxW, boxH)` | `{ w, h, scale }` at the largest whole scale that fits. |
 | `W`, `H` | 128, 64. |
+
+Leave `ctx.textBaseline` as `"top"` and give `fillText` the y of the text's top edge. The lab moves `"top"` text to where the server's canvas library puts it (`matchServerText` in `lab.js`); other baselines are not matched and will land differently on the device.
 
 Keep `draw` portable: synchronous, Canvas 2D calls and these helpers only. No DOM, no images loaded by URL, no reading the clock (use `d.t` and `d.seconds`). The same function later runs on the server under `@napi-rs/canvas`.
 

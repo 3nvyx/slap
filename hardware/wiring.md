@@ -21,7 +21,7 @@ Same wiring on the desk and inside the housing.
 | MPU6050 SCL | GPIO 9 | shared I2C bus with the OLED |
 | MPU6050 SDA | GPIO 8 | shared I2C bus; address 0x68, no conflict with the OLED at 0x3C |
 | MPU6050 INT | GPIO 7 | interrupt, wake source from deep sleep |
-| LED anode (long leg) | GPIO 2 via 220 Ω | recording light |
+| LED anode (long leg) | GPIO 10 via 220 Ω | recording light (was GPIO 2; every used pin is now on the 3V3 column) |
 | LED cathode | GND | |
 | Start/stop | BOOT button (GPIO 0) | onboard, nothing to wire |
 | Power | USB-C | laptop (also serial log) or USB power bank |
@@ -78,7 +78,7 @@ Avoid 6–11 (flash), 1 and 3 (serial), 12 (strapping).
 
 ## Bench test order (stock examples, one connection at a time)
 
-1. Blink on GPIO 2 → LED and resistor.
+1. Blink on GPIO 10 → LED and resistor.
 2. Button example on GPIO 0 → BOOT button.
 3. U8g2 HelloWorld, hardware I2C constructor → OLED.
 4. Arduino-ESP32 I2S example (core 3.x toolchain, see Notes), serial plotter → mic; capture 32-bit, left slot, shift to 16-bit, check gain and clipping.

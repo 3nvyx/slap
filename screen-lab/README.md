@@ -6,7 +6,9 @@ Everything for it lives in this folder. Nothing here is used by the real device 
 
 ## Open it
 
-Double-click `index.html`. After a change to a file, refresh the page.
+Double-click `index.html` in Finder so it opens in your browser. After a change to a file, refresh the page.
+
+(Opening the file inside Claude's own file preview does not work: it shows the page without starting it. Use the server below instead.)
 
 With an AI helper (Claude Code): open this `screen-lab` folder as the project and ask it to "open the screen lab". It starts a small local server, and the page then updates by itself whenever a file changes.
 
@@ -49,6 +51,7 @@ Where the lit area sits inside the glass is not measured yet; the lab centres it
 - 128 pixels wide, 64 tall. That is all the room there is.
 - Each pixel is either on or off. No grey, no colours, no see-through. Soft edges and thin lines turn blocky or vanish; the lab shows exactly that.
 - Text smaller than about 10 px is hard to read. Chinese, Japanese, Korean, Hindi and Arabic need to be larger than English to stay readable.
+- Those five languages do not show on the real device yet (they come out as empty boxes). The lab draws them anyway and tells you so.
 - The glass is the size of a matchbox and people read it from across a desk. Check the real-size copy, not only the enlarged one.
 
 ## Change things
@@ -118,9 +121,11 @@ Only fonts kept as files in `fonts/` can later be put on the real device. Fonts 
 
 Each `draw(ctx, d)` uses plain Canvas 2D calls plus helpers with the same names and behaviour as `apps/api/src/oled.ts` (`font`, `wrapText`, `centered`, `fitFont`, `drawQr`, `mmss`), on the same black canvas with white ink and `textBaseline = "top"`, thresholded by the same `packXbm`. A draw function can be pasted into a `render(ctx => { … })` there with `d.…` swapped for real values. `drawSprite` and `spriteFit` exist only in the lab (`lab.js`) and would need to move too.
 
-Two differences from the server:
+How close the lab is to the server (checked on 10 October against `@napi-rs/canvas` 0.1.100 on a Mac):
 
-- **Fonts.** The lab uses this computer's fonts, including its fallbacks for Chinese, Hindi, Arabic and so on. The server uses whatever is registered with `@napi-rs/canvas`. Text matches only when the same font file is registered there.
+- **Text position and line breaks match.** `@napi-rs/canvas` puts `textBaseline = "top"` text 1 to 4 px higher than a browser, and thickens regular Helvetica instead of using Helvetica Bold; `matchServerText` in `lab.js` copies both. The five current screens were rendered both ways in Helvetica and compared pixel by pixel: 60 to 190 of the 8,192 pixels differ per screen, all single pixels on letter edges. For Arial, Verdana, Georgia, Menlo and Courier New, text edges land within 1 px of the server (2 px for large bold Courier New).
+- **Other fonts are close, not exact.** For a Google or file font the lab estimates the same offset; expect text to sit up to 2 px off until the font is registered on the server and measured.
+- **Chinese, Japanese, Korean, Hindi and Arabic do not work on the server yet.** It has no font for them and draws every character as an empty box. The lab draws them with this computer's fonts and shows a warning. They are marked `deviceBoxes: true` in `data.js`.
 - **QR pattern.** The lab uses `vendor/qrcode.js` (qrcode-generator, MIT); the server uses the `qrcode` package. Both are valid codes for the same link, but the dot pattern and sometimes the size can differ.
 
 ## The data a screen receives
