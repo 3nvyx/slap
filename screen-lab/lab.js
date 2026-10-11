@@ -110,7 +110,12 @@ function spriteFit(name, boxW, boxH) {
 //     bold is the regular outline thickened (Skia fake bold), with the regular widths.
 // Measured from @napi-rs/canvas 0.1.100 on macOS, as fractions of the font size. A font that is
 // not listed gets its ascent from the browser and a typical underline value: close, not exact.
+// Since 10 October 2026 the server draws with the files in apps/api/fonts, not Helvetica: Noto Sans
+// (regular and a real bold, so no fakeBold), and Fusion Pixel 12px for Chinese, Japanese and Korean.
+// Their entries apply once FONTS in data.js has those files under these names.
 const SERVER_FONTS = {
+  "Noto Sans": { ascent: 1.069, under: 0.15 },
+  "Fusion Pixel 12px": { ascent: 1.0833, under: 0.1667, fakeBold: true },
   "Helvetica": { ascent: 0.77, under: 0.125, fakeBold: true },
   "Arial": { ascent: 0.9053, under: 0.1792 },
   "Verdana": { ascent: 1.0054, under: 0.1465 },

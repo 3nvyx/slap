@@ -55,7 +55,7 @@ Two stages:
 
 Building on Apple Silicon for an x86 VPS needs explicit platform flags (for example `docker buildx build --platform linux/amd64`, or `platform: linux/amd64` in Compose); otherwise the image is arm64 and will not run there.
 
-Alpine is fine for the runtime now that there is no Python. The one thing to check is that `@napi-rs/canvas` (OLED frames) installs its musl prebuilt binary in the image; if it does not, switch the runtime stage to `node:22-slim`. The Noto fonts are shipped in the repo and registered from a path, not taken from the system.
+Alpine is fine for the runtime now that there is no Python. The one thing to check is that `@napi-rs/canvas` (OLED frames) installs its musl prebuilt binary in the image; if it does not, switch the runtime stage to `node:22-slim`. The OLED fonts (Noto Sans, Fusion Pixel for Chinese, Japanese and Korean, Noto Sans Devanagari and Arabic) are shipped in `apps/api/fonts` and registered from a path, not taken from the system; the Alpine image has no system fonts.
 
 The image contains no models. Cloud mode uses Deepgram and a hosted LLM; local WhisperLiveKit/MLX Whisper and Ollama are laptop-only (see above).
 
