@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DEVICE_LANGS, OLED_FRAME_BYTES } from "@slap/contracts";
-import { CaptionRoll, packXbm, render, renderLanguage, renderNotice, renderRecording, renderSaved, renderStandby, renderText, SHAKE_MS, shakeFrame } from "../oled.ts";
+import { CaptionRoll, DIZZY_AFTER_MS, DIZZY_MS, packXbm, render, renderDizzy, renderLanguage, renderNotice, renderRecording, renderSaved, renderStandby, renderText, SHAKE_FADE_MS, SHAKE_MAX_MS, shakeFrame, shakeLook } from "../oled.ts";
 
 const lit = (f: Uint8Array, x: number, y: number) => (f[y * 16 + (x >> 3)]! >> (x & 7)) & 1;
 // Caption area of a recording frame (left of the level column, above the timer), as rows of 0/1.
@@ -187,19 +187,59 @@ test("captions: a finished sentence takes the place of the same words without re
   assert.deepEqual(r.frame(0, 0, 4500), renderRecording(0, 0, "おはようございます。"));
 });
 
-test("a shake throws the caption text about for a moment and leaves the level column and timer alone", () => {
+test("while the device is shaken the caption text blurs and trembles; the level column and timer stay put", () => {
   const f = renderRecording(754, 0.55, "So what does a Gaussian look like? It is a bell curve centred on the mean.");
   const side = (g: Uint8Array) => { let s = ""; for (let y = 0; y < 64; y++) for (let x = 119; x < 128; x++) s += lit(g, x, y); return s; };
   const foot = (g: Uint8Array) => { let s = ""; for (let y = 54; y < 64; y++) for (let x = 0; x < 128; x++) s += lit(g, x, y); return s; };
-  const frames = [0, 50, 100, 200, 300].map(ms => shakeFrame(f, ms));
+  const ink = (g: Uint8Array) => { let n = 0; for (let y = 0; y < 54; y++) for (let x = 0; x < 119; x++) n += lit(g, x, y); return n; };
+  const frames = [0, 50, 100, 200, 300, 2000].map(ms => shakeFrame(f, ms));
   for (const g of frames) {
     assert.notDeepEqual(g, f);
     assert.equal(side(g), side(f));
     assert.equal(foot(g), foot(f));
+    assert.ok(ink(g) > ink(f) * 1.5, "the smear lights more pixels than the sharp text");
   }
   assert.equal(new Set(frames.map(g => Buffer.from(g).toString("hex"))).size, frames.length, "it keeps moving");
-  assert.deepEqual(shakeFrame(f, SHAKE_MS), f, "and comes to rest exactly where it was");
+  // Once the shaking stops the blur sharpens over SHAKE_FADE_MS and the text comes to rest exactly where it was.
+  const fading = [0, 100, 200].map(over => ink(shakeFrame(f, 2000, over)));
+  assert.ok(fading[0]! > fading[1]! && fading[1]! > fading[2]!, `sharpens as it dies away: ${fading.join(" > ")}`);
+  assert.deepEqual(shakeFrame(f, 2000, SHAKE_FADE_MS), f);
   assert.deepEqual(shakeFrame(f, -1), f);
+});
+
+test("a shake blurs the words, a long one makes the mascot dizzy for a while, and a shake that never ends is given up on", () => {
+  // A short shake: blurred while it goes on, then the blur dies away.
+  assert.deepEqual(shakeLook(1000, Infinity, 900), { kind: "still" });
+  assert.deepEqual(shakeLook(1000, Infinity, 1000), { kind: "blur", ms: 0, over: 0 });
+  assert.deepEqual(shakeLook(1000, Infinity, 1800), { kind: "blur", ms: 800, over: 0 });
+  assert.deepEqual(shakeLook(1000, 2000, 2100), { kind: "blur", ms: 1100, over: 100 });
+  assert.deepEqual(shakeLook(1000, 2000, 2000 + SHAKE_FADE_MS), { kind: "still" });
+  // The older sketch's single blow: over as soon as it began, so only the dying-away blur.
+  assert.deepEqual(shakeLook(1000, 1000, 1100), { kind: "blur", ms: 100, over: 100 });
+  // A long shake: dizzy from DIZZY_AFTER_MS in, while it goes on and for DIZZY_MS after it stops.
+  assert.deepEqual(shakeLook(1000, Infinity, 1000 + DIZZY_AFTER_MS - 1).kind, "blur");
+  assert.deepEqual(shakeLook(1000, Infinity, 1000 + DIZZY_AFTER_MS), { kind: "dizzy", ms: 0 });
+  assert.deepEqual(shakeLook(1000, Infinity, 1000 + DIZZY_AFTER_MS + 700), { kind: "dizzy", ms: 700 });
+  const end = 1000 + DIZZY_AFTER_MS + 1500;
+  assert.deepEqual(shakeLook(1000, end, end + DIZZY_MS - 1), { kind: "dizzy", ms: 1500 + DIZZY_MS - 1 });
+  assert.deepEqual(shakeLook(1000, end, end + DIZZY_MS), { kind: "still" });
+  // No end ever reported: the shake counts as over after SHAKE_MAX_MS.
+  assert.deepEqual(shakeLook(1000, Infinity, 1000 + SHAKE_MAX_MS + DIZZY_MS), { kind: "still" });
+});
+
+test("the dizzy mascot sways in the caption area with stars over its head, beside the level column and timer", () => {
+  const plain = renderRecording(754, 0.55, "So what does a Gaussian look like?");
+  const side = (g: Uint8Array) => { let s = ""; for (let y = 0; y < 64; y++) for (let x = 119; x < 128; x++) s += lit(g, x, y); return s; };
+  const foot = (g: Uint8Array) => { let s = ""; for (let y = 54; y < 64; y++) for (let x = 0; x < 128; x++) s += lit(g, x, y); return s; };
+  const frames = [0, 100, 300, 600, 1200].map(ms => renderDizzy(754, 0.55, ms));
+  for (const g of frames) {
+    assert.equal(g.length, OLED_FRAME_BYTES);
+    assert.equal(side(g), side(plain));
+    assert.equal(foot(g), foot(plain));
+    assert.ok(inkRows(g, 10, 54, 0, 119).length >= 40, "the cat's head fills most of the caption area");
+    assert.ok(inkRows(g, 0, 10, 0, 119).length > 0, "with stars above it");
+  }
+  assert.equal(new Set(frames.map(g => Buffer.from(g).toString("hex"))).size, frames.length, "and it keeps swaying");
 });
 
 test("the waiting name moves: it pops in, takes a slap now and then, and rests exactly as the still frame", () => {

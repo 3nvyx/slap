@@ -62,10 +62,10 @@ function SourceLine({ state, size }: { state: CaptionState; size: string }) {
 }
 
 /** The finished sentences above the current one, oldest first and faintest. */
-function History({ lines, size, rtl, lang }: { lines: { id: number | string; text: string }[]; size: string; rtl?: boolean; lang?: string }) {
+function History({ lines, size, lang }: { lines: { id: number | string; text: string }[]; size: string; lang?: string }) {
   if (lines.length === 0) return null
   return (
-    <div className="space-y-1" dir={rtl ? 'rtl' : undefined} lang={lang} aria-hidden="true">
+    <div className="space-y-1" lang={lang} aria-hidden="true">
       {lines.map((l, i) => (
         <p key={l.id} className={`leading-[1.25] tracking-tight transition-colors duration-500 ${i === lines.length - 1 ? 'text-white/55' : 'text-white/35'}`} style={{ fontSize: `calc(${size} * ${HISTORY_SCALE})` }}>
           {l.text}
@@ -78,7 +78,6 @@ function History({ lines, size, rtl, lang }: { lines: { id: number | string; tex
 /** Translation block, subtitle style: the last few translated sentences (small, dim) over the current one, which
  *  is the sentence being spoken translated as it grows (bold), or between sentences the latest translated final. */
 function TranslationLine({ state, lang, size }: { state: CaptionState; lang: string; size: string }) {
-  const rtl = LANGUAGES.find((l) => l.code === lang)?.rtl
   const items = useMemo(() => {
     if (lang === 'en') return state.finals.map((f) => ({ id: f.segmentId, text: f.text }))
     return state.finals.filter((f) => state.translations[f.segmentId]).map((f) => ({ id: f.segmentId, text: state.translations[f.segmentId] }))
@@ -91,8 +90,8 @@ function TranslationLine({ state, lang, size }: { state: CaptionState; lang: str
   const history = live ? items.slice(-(KEEP - 1)) : items.slice(-KEEP, -1)
   return (
     <div className="space-y-2">
-      <History lines={history} size={size} rtl={rtl} lang={lang} />
-      <p dir={rtl ? 'rtl' : undefined} lang={lang} className="leading-[1.22] tracking-tight" style={{ fontSize: size }} aria-live="polite">
+      <History lines={history} size={size} lang={lang} />
+      <p lang={lang} className="leading-[1.22] tracking-tight" style={{ fontSize: size }} aria-live="polite">
         {live ? (
           <span className="font-bold text-white">{live.text}</span>
         ) : (

@@ -5,8 +5,9 @@
 // UNO R4 WiFi's small Qwiic socket uses Wire1.
 SunFounder_IMU imu(&Wire1);
 
-// One shake starts or stops a recording. A shake is motion that lasts: the acceleration stays
-// SHAKE_G away from its recent average for SHAKE_MS in total. A knock on the desk is over in
+// A shake prints SHAKE when it begins and STILL once it is over (REARM_MS of calm): the server starts
+// a recording on the first, or blurs the captions in between. A shake is motion that lasts: the acceleration
+// stays SHAKE_G away from its recent average for SHAKE_MS in total. A knock on the desk is over in
 // tens of milliseconds and turning the case over changes too slowly, so neither adds up.
 constexpr float SHAKE_G = 0.40f;           // lower = more sensitive
 constexpr float SHAKE_MS = 120.0f;         // lower = fires sooner, but a hard knock may count
@@ -118,11 +119,12 @@ void loop() {
 #endif
 
   if (!fired && motionMs >= SHAKE_MS) {
-    fired = true;   // one event per shake, however long it goes on
+    fired = true;   // one SHAKE per shake, however long it goes on; STILL follows when it is over
     Serial.println("SHAKE");
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
   }
   if (now - quietSince >= REARM_MS) {
+    if (fired) Serial.println("STILL");   // the shake is over: the server stops blurring the captions
     // Motion that ended without counting: printed so SHAKE_G and SHAKE_MS can be tuned.
     if (!fired && episodeMs >= 20.0f) {
       Serial.print("motion peak_g=");

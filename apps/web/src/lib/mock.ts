@@ -573,7 +573,7 @@ const routes: Array<[string, RegExp, Handler]> = [
       })(),
       live: (() => {
         const live = ls.find((l) => l.status === 'live')
-        return live ? { lectureId: live.id, title: live.title, replay: false, viewers: 23, languages: ['en', 'es', 'zh'] } : null
+        return live ? { lectureId: live.id, title: live.title, replay: false, viewers: 23, languages: ['en', 'vi'] } : null
       })(),
       nextExam: cls.id === CLASS_ID ? { name: 'Midterm', date: EXAM_DATE } : null,
       documents: cls.id === CLASS_ID ? documents : [],
@@ -810,7 +810,7 @@ export function startMockCaptionStream(lang: string, emit: (ev: CaptionEvent) =>
   line = 3
   t = 15
   emit({ type: 'snapshot', seq: ++seq, finals: pre })
-  emit({ type: 'status', state: 'recording', viewers: 23, languages: ['en', 'es', 'zh', 'vi'], latencyMs: 280 })
+  emit({ type: 'status', state: 'recording', viewers: 23, languages: ['en', 'vi'], latencyMs: 280 })
 
   const speakLine = () => {
     if (stopped) return
@@ -842,7 +842,7 @@ export function startMockCaptionStream(lang: string, emit: (ev: CaptionEvent) =>
   at(600, speakLine)
 
   const statusTimer = setInterval(() => {
-    emit({ type: 'status', state: 'recording', viewers: 20 + Math.floor(Math.random() * 8), languages: ['en', 'es', 'zh', 'vi'], latencyMs: 220 + Math.floor(Math.random() * 160) })
+    emit({ type: 'status', state: 'recording', viewers: 20 + Math.floor(Math.random() * 8), languages: ['en', 'vi'], latencyMs: 220 + Math.floor(Math.random() * 160) })
   }, 5000)
 
   return () => {

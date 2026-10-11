@@ -5,6 +5,7 @@
 import { fileURLToPath } from "node:url";
 import { createCanvas, GlobalFonts, type SKRSContext2D } from "@napi-rs/canvas";
 import { DEVICE_LANGS, OLED_FRAME_BYTES, OLED_HEIGHT as H, OLED_WIDTH as W, type DeviceLang } from "@slap/contracts";
+import { SPRITES, type SpriteName } from "./sprites.ts";
 
 // The fonts ship in ../fonts (SIL OFL 1.1, sources in fonts/README.md) and are registered under private
 // names, so a frame is the same on every host: system fonts differ per machine, and the Docker image has none.
@@ -280,31 +281,87 @@ export function renderLanguage(lang: DeviceLang): Uint8Array {
   });
 }
 
-export const SHAKE_MS = 450;   // how long the captions react to a shake
+// ---- A shake while recording. The USB motion sensor beside the device says when a shake begins and when it is
+// over (arduino.ts). While it shakes the words blur; a shake that goes on too long leaves the mascot dizzy.
+export const SHAKE_FADE_MS = 300;    // the blur dies away over this long once the shaking stops
+export const SHAKE_MAX_MS = 10_000;  // a shake whose end was never reported counts as over after this long
+export const DIZZY_AFTER_MS = 2500;  // shaking this long makes the mascot dizzy (the sensor reports the end about half a second late)
+export const DIZZY_MS = 3000;        // and it stays dizzy this long after the shaking stops
 
-/** The recording frame `ms` after the device was shaken: the caption text is thrown about (each row slides
- *  sideways by its own amount, so the letters bend, and the whole block hops up and down), with short movement
- *  lines beside it. It dies away over SHAKE_MS. The level column and the timer on the right stay put. */
-export function shakeFrame(frame: Uint8Array, ms: number): Uint8Array {
-  if (ms < 0 || ms >= SHAKE_MS) return frame;
-  const left = 1 - ms / SHAKE_MS, edge = CAPTION_W + 3;   // the caption area is x < edge, rows 0-53
+export type ShakeLook = { kind: "still" } | { kind: "blur"; ms: number; over: number } | { kind: "dizzy"; ms: number };
+
+/** What the recording screen shows at `now` for a shake that began at `startedAt` and ended at `endedAt`
+ *  (Infinity while it goes on): the words blurred while it shakes (`ms` since it began) and for a moment after
+ *  (`over` ms since it ended), or the mascot dizzy (`ms` since it got that way) once the shake went on for
+ *  DIZZY_AFTER_MS, which it stays for DIZZY_MS after the shaking stops. */
+export function shakeLook(startedAt: number, endedAt: number, now: number): ShakeLook {
+  if (!(now >= startedAt)) return { kind: "still" };
+  endedAt = Math.min(endedAt, startedAt + SHAKE_MAX_MS);
+  if (Math.min(endedAt, now) - startedAt >= DIZZY_AFTER_MS) {
+    return now - endedAt < DIZZY_MS ? { kind: "dizzy", ms: now - startedAt - DIZZY_AFTER_MS } : { kind: "still" };
+  }
+  const over = Math.max(0, now - endedAt);
+  return over < SHAKE_FADE_MS ? { kind: "blur", ms: now - startedAt, over } : { kind: "still" };
+}
+
+/** The recording frame while the device is shaken (`ms` since the shake began) and for SHAKE_FADE_MS after
+ *  (`over` ms since it ended): the caption text is blurred, each letter smeared sideways with a dotted fringe
+ *  for the grey the screen cannot show, and the whole block trembles. The level column and the timer on the
+ *  right stay put. */
+export function shakeFrame(frame: Uint8Array, ms: number, over = 0): Uint8Array {
+  if (ms < 0 || over >= SHAKE_FADE_MS) return frame;
+  const s = 1 - Math.max(0, over) / SHAKE_FADE_MS, edge = CAPTION_W + 3;   // the caption area is x < edge, rows 0-53
   const bit = (x: number, y: number) => x >= 0 && x < edge && y >= 0 && y < 54 ? (frame[y * 16 + (x >> 3)]! >> (x & 7)) & 1 : 0;
   const out = Uint8Array.from(frame);
   const put = (x: number, y: number, v: number) => { if (v) out[y * 16 + (x >> 3)]! |= 1 << (x & 7); else out[y * 16 + (x >> 3)]! &= ~(1 << (x & 7)); };
-  const dy = Math.round(2 * left * Math.cos(ms / 11));
+  const spread = s > 0.66 ? 2 : s > 0.33 ? 1 : 0;   // how far each pixel smears to either side; the blur sharpens as it dies away
+  const dy = Math.round(s * Math.cos(ms / 9));
   for (let y = 0; y < 54; y++) {
-    const dx = Math.round(left * (5 * Math.sin(ms / 14) + 2.5 * Math.sin(ms / 9 + y / 5)));
-    for (let x = 0; x < edge; x++) put(x, y, bit(x - dx, y - dy));
-  }
-  // Movement lines in the gaps between the caption lines, flicking from side to side.
-  const phase = Math.floor(ms / 60);
-  if (left > 0.25) {
-    for (const [k, y] of [19, 37, 1].entries()) {
-      const len = 5 + 2 * ((phase + k) % 3), right = (phase + k) % 2 === 0;
-      for (let i = 0; i < len; i++) put(right ? edge - 1 - i : i, y, 1);
+    const dx = Math.round(s * (2 * Math.sin(ms / 13) + Math.sin(ms / 7 + y / 6)));
+    for (let x = 0; x < edge; x++) {
+      let v = 0;
+      for (let k = -spread; k <= spread && !v; k++) {
+        // The smear thins with distance (every other pixel one step out, every fourth two steps out), so the
+        // edge of each letter reads as grey on a screen that has no grey, and the words stay just legible.
+        if (Math.abs(k) === 1 && ((x + y) & 1)) continue;
+        if (Math.abs(k) === 2 && ((x + 2 * y) & 3)) continue;
+        v = bit(x - dx - k, y - dy);
+      }
+      put(x, y, v);
     }
   }
   return out;
+}
+
+/** Draws a pixel sprite from sprites.ts with its top-left corner at (x, y); each art pixel becomes scale x scale. */
+function drawSprite(ctx: SKRSContext2D, name: SpriteName, x: number, y: number, scale = 1) {
+  SPRITES[name].rows.forEach((row, r) => {
+    for (let c = 0; c < row.length; c++) if (row[c] === "#") ctx.fillRect(x + c * scale, y + r * scale, scale, scale);
+  });
+}
+
+/** The recording frame while the mascot is dizzy, `ms` after it got that way: the cat fills the caption area
+ *  with spirals for eyes, swaying from side to side, with three little stars circling over its head. The level
+ *  column and the timer on the right stay as they are. */
+export function renderDizzy(seconds: number, level: number, ms: number): Uint8Array {
+  return render(ctx => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, CAPTION_W + 2, 54);
+    ctx.clip();
+    const head = SPRITES["mascot/cat/head"], scale = 2;
+    const cx = Math.floor((CAPTION_W + 2) / 2), sway = Math.round(4 * Math.sin(ms / 170));
+    const x = cx - head.w * scale / 2 + sway, y = 54 - head.h * scale - 2 + Math.round(Math.cos(ms / 230));
+    for (const layer of ["head", "dizzy", "quiet"] as const) drawSprite(ctx, `mascot/cat/${layer}`, x, y, scale);
+    for (let k = 0; k < 3; k++) {
+      const a = ms / 260 + k * 2 * Math.PI / 3;
+      const sx = Math.round(cx + sway / 2 + 22 * Math.cos(a)), sy = Math.round(5 + 3 * Math.sin(a));
+      ctx.fillRect(sx - 1, sy, 3, 1);
+      ctx.fillRect(sx, sy - 1, 1, 3);
+    }
+    ctx.restore();
+    recordingSide(ctx, seconds, level);
+  });
 }
 
 /** One large line with a hint under it. */

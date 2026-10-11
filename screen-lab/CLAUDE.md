@@ -37,10 +37,11 @@ A broken file shows a red bar at the top of the page with the error text. Check 
 
 ## Motion
 
-Play advances `d.t` 20 times a second, the most the device draws. Two things move on the device, and the lab shows both:
+Play advances `d.t` 20 times a second, the most the device draws. Three things move on the device, and the lab shows them all:
 
 - **Captions** (`CaptionRoll` in `screens.js`, a copy of the server's in `apps/api/src/oled.ts`): a word stays where it was first drawn, new words fade in over 160 ms (a dither, since a pixel is on or off), and when a line fills up the lines roll up by one over 200 ms. Change the times or the motion in both places.
 - **Switching on**: the six frames above.
+- **Shaken** (`shakeLook`, `blurCaptions` and `drawDizzyCat` in `screens.js`, copies of the server's in `apps/api/src/oled.ts`): the words blur while the device is shaken and sharpen over 300 ms after; a shake longer than 2.5 s shows the cat dizzy (the `mascot/cat/dizzy` layer in `sprites.js`) for 3 s after it stops. Change the times or the look in both places; after a change to the cat's art run `node apps/api/src/scripts/sprites_from_lab.mjs` so the server has it too.
 
 Stopped (`d.t` = 0) every screen is a still frame. Check motion with Play, and in "Real size".
 

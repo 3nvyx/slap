@@ -7,7 +7,7 @@ import { AUDIO_FRAME_BYTES, DEVICE_LANGS, type DeviceLang, type DeviceToServer, 
 import { eq } from "drizzle-orm";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { db, schema } from "../db/index.ts";
-import { CaptionRoll, renderLanguage, renderSaved, renderStandby, renderText, SHAKE_MS, shakeFrame } from "../oled.ts";
+import { CaptionRoll, renderDizzy, renderLanguage, renderSaved, renderStandby, renderText, shakeFrame, shakeLook, type ShakeLook } from "../oled.ts";
 import { pcmRms } from "../pipeline/stt.ts";
 import { attachDevice, detachDevice, getLecture, pushAudio, setDeviceLang, startDeviceSession, stopSession, type DeviceLink } from "../sessions.ts";
 import { settings } from "../settings.ts";
@@ -26,14 +26,16 @@ interface DeviceAuth { key: string; row: DeviceRow | null }
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 const sockets = new Map<string, WebSocket>();   // device id -> current socket
-const usbTargets = new Map<string, { socket: WebSocket; shake: () => Promise<void> }>();
+export type ShakePhase = "start" | "end" | "slap";   // a shake begins, is over, or was a single blow (the older sketch)
+const usbTargets = new Map<string, { socket: WebSocket; shake: (phase: ShakePhase) => Promise<void> }>();
 
 /** A shake seen by the USB motion sensor that sits with the device (arduino.ts): it starts a recording, or, while
- *  one runs, only throws the captions about for a moment. It never stops one (that is REC held for 1 s). False if the device is offline. */
-export async function triggerUsbSlap(firmwareDeviceId: string): Promise<boolean> {
+ *  one runs, blurs the captions for as long as it goes on and leaves the mascot dizzy if it went on too long
+ *  (shakeLook). It never stops one (that is REC held for 1 s). False if the device is offline. */
+export async function triggerUsbSlap(firmwareDeviceId: string, phase: ShakePhase = "slap"): Promise<boolean> {
   const target = usbTargets.get(firmwareDeviceId);
   if (!target || target.socket.readyState !== WebSocket.OPEN) return false;
-  await target.shake();
+  await target.shake(phase);
   return true;
 }
 
@@ -70,7 +72,7 @@ function meter(rms: number): number {
 
 const isLang = (v: unknown): v is DeviceLang => (DEVICE_LANGS as readonly unknown[]).includes(v);
 
-function screen(d: DeviceLink, roll: CaptionRoll, banner: boolean, idleMs: number, message?: string): Uint8Array {
+function screen(d: DeviceLink, roll: CaptionRoll, banner: boolean, idleMs: number, look: ShakeLook, message?: string): Uint8Array {
   switch (d.state) {
     // Idle: waiting for a shake after power-up, or just saved (the device then sleeps or goes dark).
     case "idle": return d.savedSeconds === null ? renderStandby(idleMs < STANDBY_MOVES_MS ? idleMs : Infinity) : renderSaved(d.savedSeconds);
@@ -79,7 +81,9 @@ function screen(d: DeviceLink, roll: CaptionRoll, banner: boolean, idleMs: numbe
       const l = d.lectureId ? getLecture(d.lectureId) : undefined;
       const secs = l ? (Date.now() - l.startedAt) / 1000 : 0;
       roll.update(d.caption, Date.now());
-      return roll.frame(secs, d.level, Date.now());   // refresh() adds the wobble
+      if (look.kind === "dizzy") return renderDizzy(secs, d.level, look.ms);
+      const frame = roll.frame(secs, d.level, Date.now());
+      return look.kind === "blur" ? shakeFrame(frame, look.ms, look.over) : frame;
     }
     case "error": return renderText(["Error", message ?? "something went wrong"]);
   }
@@ -102,7 +106,8 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
   const roll = new CaptionRoll();   // where each caption word sits on this device's screen
   let idleAt = Date.now();          // when it last became idle: the waiting name moves for a while from then
   let wasIdle = false;
-  let shakenAt = -Infinity;         // a shake during a recording: the captions are thrown about for SHAKE_MS
+  let shakeStart = -Infinity;       // a shake during a recording: when it began, and when it ended (Infinity while it goes on)
+  let shakeEnd = -Infinity;
   let animation: NodeJS.Timeout | undefined;
 
   const send = (m: ServerToDevice) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m)); };
@@ -171,15 +176,15 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
         if (ws.bufferedAmount > MAX_BUFFERED) return;
         if (d.state === "idle" && !wasIdle) idleAt = Date.now();
         wasIdle = d.state === "idle";
-        const drawn = screen(d, roll, Date.now() < bannerUntil, Date.now() - idleAt, errorMessage);
-        const frame = d.state === "recording" ? shakeFrame(drawn, Date.now() - shakenAt) : drawn;
+        const look: ShakeLook = d.state === "recording" ? shakeLook(shakeStart, shakeEnd, Date.now()) : { kind: "still" };
+        const frame = screen(d, roll, Date.now() < bannerUntil, Date.now() - idleAt, look, errorMessage);
         if (!lastFrame || Buffer.compare(frame, lastFrame) !== 0 || Date.now() - lastFrameAt >= FRAME_REFRESH_MS) {
           ws.send(frame, { binary: true });
           lastFrame = frame;
           lastFrameAt = Date.now();
         }
         // Captions rolling up or fading in, a shake, or the waiting name moving: keep drawing until it has settled.
-        const moving = d.state === "recording" ? roll.animating(Date.now()) || Date.now() - shakenAt < SHAKE_MS
+        const moving = d.state === "recording" ? roll.animating(Date.now()) || look.kind !== "still"
           : d.state === "idle" && d.savedSeconds === null && Date.now() - idleAt < STANDBY_MOVES_MS + ANIMATION_MS;
         if (!animation && moving) {
           animation = setTimeout(() => { animation = undefined; d.refresh(); }, ANIMATION_MS);
@@ -240,10 +245,17 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
     }
   }
 
-  async function onShake() {
+  async function onShake(phase: ShakePhase) {
     if (!link) return;
+    if (phase === "end") {
+      if (shakeEnd !== Infinity) return;      // nothing is shaking (or the shake started the recording)
+      shakeEnd = Date.now();
+      link.refresh();
+      return;
+    }
     if (!link.lectureId) return onButton();   // not recording: a shake starts
-    shakenAt = Date.now();
+    shakeStart = Date.now();
+    shakeEnd = phase === "slap" ? shakeStart : Infinity;
     link.refresh();
   }
 

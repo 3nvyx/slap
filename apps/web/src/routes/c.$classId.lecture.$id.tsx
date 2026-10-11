@@ -72,7 +72,6 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
   const tr = useApi(() => api.translations(lecture.id, lang), [lecture.id, lang], { enabled: lang !== 'en' && data.segments.length > 0 })
   const trText = lang !== 'en' ? tr.data : undefined
   const trCount = trText ? data.segments.filter((s) => trText[String(s.id)]).length : 0
-  const rtl = LANGUAGES.find((l) => l.code === lang)?.rtl
 
   // Deep link: #seg-<id> scrolls to and flashes that segment.
   useEffect(() => {
@@ -293,7 +292,7 @@ function LectureView({ data, reload }: { data: LectureDetail; reload: () => Prom
                             ))}
                           </p>
                           {translated && (
-                            <p lang={lang} dir={rtl ? 'rtl' : undefined} className="mt-1.5 border-l-2 border-line pl-3 text-sm leading-relaxed text-ink-2">
+                            <p lang={lang} className="mt-1.5 border-l-2 border-line pl-3 text-sm leading-relaxed text-ink-2">
                               {translated}
                             </p>
                           )}

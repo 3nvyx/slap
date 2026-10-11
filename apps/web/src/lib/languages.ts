@@ -1,23 +1,13 @@
+// Lectures are spoken in English; captions are shown in English or live-translated to Vietnamese.
 export interface Language {
   code: string
   name: string
   native: string
-  rtl?: boolean
 }
 
 export const LANGUAGES: Language[] = [
   { code: 'en', name: 'English', native: 'English' },
-  { code: 'es', name: 'Spanish', native: 'Español' },
-  { code: 'zh', name: 'Chinese', native: '中文' },
   { code: 'vi', name: 'Vietnamese', native: 'Tiếng Việt' },
-  { code: 'ko', name: 'Korean', native: '한국어' },
-  { code: 'hi', name: 'Hindi', native: 'हिन्दी' },
-  { code: 'ar', name: 'Arabic', native: 'العربية', rtl: true },
-  { code: 'fr', name: 'French', native: 'Français' },
-  { code: 'de', name: 'German', native: 'Deutsch' },
-  { code: 'pt', name: 'Portuguese', native: 'Português' },
-  { code: 'ja', name: 'Japanese', native: '日本語' },
-  { code: 'tl', name: 'Tagalog', native: 'Tagalog' },
 ]
 
 const KEY = 'slap.lang'

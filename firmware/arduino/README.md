@@ -21,9 +21,9 @@ these settings. Port names can change; use Arduino IDE to identify the Arduino
 port rather than choosing the ESP32 port. Unset `ARDUINO_PORT` to disable this bridge.
 
 The server logs `USB connected`, and the sketch prints `IMU ready` at boot.
-One shake emits `SHAKE`: the acceleration has to stay 0.40 g away from its recent
+One shake emits `SHAKE` when it begins: the acceleration has to stay 0.40 g away from its recent
 average for 120 ms in total. A knock on the desk is too short to count, and turning
-the case over is too slow. The next shake counts after 0.5 s of stillness.
+the case over is too slow. After 0.5 s of stillness it emits `STILL` (the shake is over), and the next shake counts.
 `SHAKE_G` and `SHAKE_MS` in the sketch control sensitivity. Motion that did not
 count is printed as `motion peak_g=… ms=…` (the server logs it), which shows how
 far off a failed shake was. The built-in Arduino LED toggles on each shake.
@@ -40,10 +40,12 @@ while the sensor is shaken causes the last two. To watch the readings, build wit
 To build without Arduino IDE, use the `arduino-cli` bundled in it with the board
 `arduino:renesas_uno:unor4wifi`. Stop the API first: it holds the serial port.
 
-The API routes `SHAKE` (and `SLAP` from the earlier double-slap sketch) to the connected ESP32 named by
-`ARDUINO_DEVICE_ID` (`triggerUsbSlap` in `apps/api/src/ws/device.ts`). A shake starts a recording: the ESP32
-plays its slap animation, then shows captions. While a recording runs, a shake only throws the caption text about for
-half a second (it shifts, bends and gets small movement lines); it never stops one (hold REC on the ESP32 for 1 s to save and stop). Events while the ESP32 is
+The API routes `SHAKE` and `STILL` (and `SLAP` from the earlier double-slap sketch, a shake that is over at once) to
+the connected ESP32 named by `ARDUINO_DEVICE_ID` (`triggerUsbSlap` in `apps/api/src/ws/device.ts`). A shake starts a
+recording: the ESP32 plays its slap animation, then shows captions. While a recording runs, a shake only blurs the
+caption text for as long as it goes on (`shakeFrame` in `apps/api/src/oled.ts`), and one that goes on for more than
+about two seconds leaves the cat mascot dizzy for three seconds (`renderDizzy`); it never stops one (hold REC on the
+ESP32 for 1 s to save and stop). Events while the ESP32 is
 offline are discarded, and a shake cannot wake an ESP32 from deep sleep. With no motion sensor of its own the
 ESP32 therefore does not sleep after a recording: it stays connected and darkens its screen (standby).
 

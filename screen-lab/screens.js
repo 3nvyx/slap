@@ -229,6 +229,93 @@ screen({
   },
 });
 
+// ---- A shake while recording, as the server draws it (shakeLook, shakeFrame and renderDizzy in apps/api/src/oled.ts).
+// The motion sensor on the USB cable says when a shake begins and when it is over. In between the words blur,
+// and a shake that goes on too long leaves the cat dizzy for a while.
+const SHAKE_FADE_MS = 300;    // the blur dies away over this long once the shaking stops
+const DIZZY_AFTER_MS = 2500;  // shaking this long makes the cat dizzy
+const DIZZY_MS = 3000;        // and it stays dizzy this long after the shaking stops
+
+// What the screen shows at `now` for a shake that began at `startedAt` and ended at `endedAt` (Infinity while it
+// goes on): { kind: "still" }, { kind: "blur", ms, over } (ms since it began, ms since it ended) or { kind: "dizzy", ms }.
+function shakeLook(startedAt, endedAt, now) {
+  if (!(now >= startedAt)) return { kind: "still" };
+  if (Math.min(endedAt, now) - startedAt >= DIZZY_AFTER_MS) {
+    return now - endedAt < DIZZY_MS ? { kind: "dizzy", ms: now - startedAt - DIZZY_AFTER_MS } : { kind: "still" };
+  }
+  const over = Math.max(0, now - endedAt);
+  return over < SHAKE_FADE_MS ? { kind: "blur", ms: now - startedAt, over } : { kind: "still" };
+}
+
+// Blurs the caption area already drawn on ctx (x < CAPTION_W + 3, rows 0-53): each lit pixel is smeared sideways,
+// thinner with distance (every other pixel one step out, every fourth two steps out) so the edge of a letter reads
+// as grey on a screen that has no grey, and the whole block trembles. The level column and the timer are left alone.
+function blurCaptions(ctx, ms, over = 0) {
+  if (ms < 0 || over >= SHAKE_FADE_MS) return;
+  const s = 1 - Math.max(0, over) / SHAKE_FADE_MS, edge = CAPTION_W + 3;
+  const img = ctx.getImageData(0, 0, edge, 54).data;
+  const bit = (x, y) => x >= 0 && x < edge && y >= 0 && y < 54 && img[(y * edge + x) * 4] >= 128 ? 1 : 0;
+  const spread = s > 0.66 ? 2 : s > 0.33 ? 1 : 0;
+  const dy = Math.round(s * Math.cos(ms / 9));
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, edge, 54);
+  ctx.fillStyle = "#fff";
+  for (let y = 0; y < 54; y++) {
+    const dx = Math.round(s * (2 * Math.sin(ms / 13) + Math.sin(ms / 7 + y / 6)));
+    for (let x = 0; x < edge; x++) {
+      let v = 0;
+      for (let k = -spread; k <= spread && !v; k++) {
+        if (Math.abs(k) === 1 && ((x + y) & 1)) continue;
+        if (Math.abs(k) === 2 && ((x + 2 * y) & 3)) continue;
+        v = bit(x - dx - k, y - dy);
+      }
+      if (v) ctx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+
+// The dizzy cat in the caption area, `ms` after it got that way: spirals for eyes, swaying from side to side,
+// with three little stars circling over its head. Drawn over the recording screen, so the side stays.
+function drawDizzyCat(ctx, d, ms) {
+  drawRecording(ctx, d, d.caption);      // keeps the caption's own motion going underneath
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, CAPTION_W + 2, 54);
+  ctx.fillStyle = "#fff";
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, CAPTION_W + 2, 54);
+  ctx.clip();
+  const head = LAB.sprites["mascot/cat/head"], scale = 2;
+  const cx = Math.floor((CAPTION_W + 2) / 2), sway = Math.round(4 * Math.sin(ms / 170));
+  const x = cx - head.w * scale / 2 + sway, y = 54 - head.h * scale - 2 + Math.round(Math.cos(ms / 230));
+  for (const layer of ["head", "dizzy", "quiet"]) drawSprite(ctx, `mascot/cat/${layer}`, x, y, scale);
+  for (let k = 0; k < 3; k++) {
+    const a = ms / 260 + k * 2 * Math.PI / 3;
+    const sx = Math.round(cx + sway / 2 + 22 * Math.cos(a)), sy = Math.round(5 + 3 * Math.sin(a));
+    ctx.fillRect(sx - 1, sy, 3, 1);
+    ctx.fillRect(sx, sy - 1, 1, 3);
+  }
+  ctx.restore();
+}
+
+const LAB_SHAKES = [[0, 1200], [3000, 6000]];   // the lab's loop: a short shake, then one that goes on too long (ms)
+const SHAKE_LOOP_MS = 9500;
+
+screen({
+  name: "Shaken",
+  group: TODAY,
+  note: "A shake while recording (the motion sensor on the USB cable feels it): the words blur for as long as it goes on, then sharpen again. Press Play: a short shake first, then one that goes on for too long, which leaves the cat dizzy for three seconds. The sound level and the timer stay put.",
+  led: true,
+  draw(ctx, d) {
+    const now = d.t ? (d.t * 1000) % SHAKE_LOOP_MS : 0;
+    const [start, end] = LAB_SHAKES.findLast(([s]) => s <= now) ?? LAB_SHAKES[0];
+    const look = shakeLook(start, d.t ? end : Infinity, now);
+    if (look.kind === "dizzy") return drawDizzyCat(ctx, d, look.ms);
+    drawRecording(ctx, d, d.caption);
+    if (look.kind === "blur") blurCaptions(ctx, look.ms, look.over);
+  },
+});
+
 screen({
   name: "Language (after a tilt)",
   group: TODAY,
