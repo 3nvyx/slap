@@ -148,11 +148,12 @@ export interface DocumentDetail {
   parsed: unknown
 }
 
-/** A device that is online now (`GET /api/devices`). There is no pairing: it is listed as soon as it connects
- *  and records into its active class. */
+/** A device that is online now (`GET /api/devices`). A device that is on records, with no pairing and no course to
+ *  pick first. `activeClass` is the course its recording was put into; null while it is still a new recording. */
 export interface DeviceSummary {
   id: string
   name: string | null
   activeClass: { id: string; name: string; code: string } | null
   state: DeviceState
+  lectureId: string | null
 }

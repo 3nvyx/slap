@@ -19,6 +19,7 @@ import type {
   RecallResult,
   StudyBundleStatus,
   StudyPlan,
+  InboxLecture,
 } from '@slap/contracts'
 import { API_BASE, MOCK } from './env'
 import type {
@@ -119,8 +120,14 @@ export const api = {
   removeAssessment: (id: string) => request<{ ok: true }>('DELETE', `/api/assessments/${enc(id)}`),
   /** Devices that are online now. */
   devices: () => get<DeviceSummary[]>('/api/devices'),
+  /** Puts what the device is recording into a course. */
   setActiveClass: (deviceId: string, classId: string) =>
     post<DeviceSummary>(`/api/devices/${enc(deviceId)}/active-class`, { classId }),
+  /** Device recordings that are not in a course yet. */
+  inbox: () => get<InboxLecture[]>('/api/inbox'),
+  /** Puts a recording into a course; a finished one then gets its notes and cards. */
+  assignLecture: (lectureId: string, classId: string) => post<LectureSummary>(`/api/lectures/${enc(lectureId)}/assign`, { classId }),
+  discardRecording: (lectureId: string) => request<{ ok: true }>('DELETE', `/api/inbox/${enc(lectureId)}`),
   lecture: (id: string) => get<LectureDetail>(`/api/lectures/${enc(id)}`),
   translations: (id: string, lang: string) =>
     get<Record<string, string>>(`/api/lectures/${enc(id)}/translations?lang=${enc(lang)}`),

@@ -297,6 +297,14 @@ bool slap_prepareSleep() {
   return digitalRead(PIN_IMU_INT) == HIGH;
 }
 
+bool slap_readAccel(float g[3]) {
+  uint8_t b[6];
+  if (!g_imuOk || !imuRead(REG_ACCEL_XOUT_H, b, 6)) return false;
+  // +-8 g full scale: 4096 LSB per g.
+  for (int i = 0; i < 3; i++) g[i] = (int16_t)(b[i * 2] << 8 | b[i * 2 + 1]) / 4096.0f;
+  return true;
+}
+
 void slap_imuPlot(uint32_t nowMs) {
 #if IMU_PLOT
   static uint32_t last = 0;

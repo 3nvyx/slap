@@ -318,7 +318,7 @@ function MicRow({
   )
 }
 
-/** Devices that are online: the one recording into this course, and a switch to this course for the others. */
+/** Devices that are online: the one recording into this course, and for one whose recording is not in a course yet, a way to put it here. */
 function DevicePanel({ classId, onChange }: { classId: string; onChange: () => Promise<void> }) {
   const devices = useOnlineDevices()
   const a = useAction()
@@ -345,14 +345,14 @@ function DevicePanel({ classId, onChange }: { classId: string; onChange: () => P
                   <Pill status={d.state} />
                   <span className="min-w-0 truncate">
                     {deviceLabel(d)}{' '}
-                    {here ? 'records into this course' : d.activeClass ? <>records into <span className="font-mono">{d.activeClass.code}</span></> : 'has no course picked'}
+                    {here ? 'records into this course' : d.activeClass ? <>records into <span className="font-mono">{d.activeClass.code}</span></> : recording ? 'is recording; not in a course yet' : 'has stopped and is going to sleep'}
                   </span>
                 </div>
                 {!here && (
                   <Button
                     variant="ink"
                     className="mt-3 w-full"
-                    disabled={a.busy || recording}
+                    disabled={a.busy || !recording || !!d.activeClass}
                     onClick={() => void a.run(async () => {
                       await api.setActiveClass(d.id, classId)
                       await reload()
@@ -361,7 +361,7 @@ function DevicePanel({ classId, onChange }: { classId: string; onChange: () => P
                     {a.busy ? 'Switching…' : 'Record into this course'}
                   </Button>
                 )}
-                {!here && recording && <p className="mt-2 text-xs text-muted">It is recording now. Stop that lecture first.</p>}
+                {!here && d.activeClass && <p className="mt-2 text-xs text-muted">It is recording another course now. Stop that lecture first.</p>}
               </div>
             )
           })}

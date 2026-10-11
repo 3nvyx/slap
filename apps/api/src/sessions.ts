@@ -1,8 +1,8 @@
 // In-memory registry of connected devices and live lectures (single process, no cluster).
 // Lectures own the STT stream, the caption sequence counter, a ring of recent finals for
 // reconnect snapshots, the viewers and their languages, and the translation cache.
-import type { CaptionEvent, CaptionMode, CaptionModeInfo, CaptionWord, DeviceState, LectureSummary } from "@slap/contracts";
-import { AUDIO_SAMPLE_RATE } from "@slap/contracts";
+import type { CaptionEvent, CaptionMode, CaptionModeInfo, CaptionWord, DeviceLang, DeviceState, LectureSummary } from "@slap/contracts";
+import { AUDIO_SAMPLE_RATE, INBOX_CODE } from "@slap/contracts";
 import { and, asc, count, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { db, schema } from "./db/index.ts";
 import { enqueueStudyBundle } from "./pipeline/bundle.ts";
@@ -15,6 +15,8 @@ const RING = 200;                         // finals kept in memory per lecture f
 const RESUME_WINDOW_MS = 6 * 3600_000;    // a "live" lecture older than this is not resumed
 const BACKFILL = 20;                      // finals translated when a new language joins mid-lecture
 const INTERIM_TR_GAP_MS = 700;            // the sentence being spoken is translated at most this often per language
+const DEVICE_GONE_MS = 90_000;            // a device that stays away this long has its recording ended and saved
+const RESUME_GAP_MS = 5 * 60_000;         // after a server restart a device carries on in its lecture if that was active this recently
 const DEVICE_CAPTION_CHARS = 160;         // tail of the transcript sent to the device screen (it shows the last three or four lines)
 const ID_BATCH = 32;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -41,19 +43,25 @@ export interface Viewer {
 }
 
 /** A connected device as seen by sessions; ws/device.ts owns the socket and implements refresh().
- *  There is no pairing: a device that connects with a known key is usable at once and records into its
- *  active class (`classId`). Devices are shared: every caller sees and controls the ones that are online. */
+ *  A device that is on records: attachDevice starts a lecture for it in the inbox (the hidden class INBOX_CODE),
+ *  with no pairing and no course to pick first. The app puts the recording into a course while it runs or
+ *  afterwards (assignLecture). Devices are shared: every caller sees and controls the ones that are online. */
 export interface DeviceLink {
   readonly id: string;
   name: string | null;
   state: DeviceState;
-  /** Active class: where a start records. Null = no course picked. */
+  /** The course its current recording was put into. Null = still in the inbox, or not recording. */
   classId: string | null;
   classCode: string | null;
   className: string | null;
   lectureId: string | null;
   level: number;            // 0..1 for the OLED meter
+  /** Caption language on the device's own screen (tilt left or right on the device). */
+  lang: DeviceLang;
+  /** Tail of the caption in `lang`. */
   lastCaption: string;
+  /** Length in seconds of the recording that just ended, for the "Saved" screen. Null before the first stop. */
+  savedSeconds: number | null;
   /** Re-sends state JSON and the OLED frame if either changed. */
   refresh(): void;
 }
@@ -302,12 +310,12 @@ async function takeSegmentId(l: LiveLecture): Promise<number> {
 function onInterim(l: LiveLecture, r: SttResult) {
   if (r.latencyMs !== undefined) pushCapped(l.latency.interim, r.latencyMs);
   broadcast(l, { type: "interim", seq: ++l.seq, text: r.text, words: r.words, start: r.start, end: r.end });
-  const dev = l.deviceId ? devices.get(l.deviceId) : undefined;
-  if (dev && dev.lectureId === l.id) {
+  const dev = deviceOf(l);
+  if (dev && isSourceLang(dev.lang)) {
     dev.lastCaption = `${l.finals.at(-1)?.text ?? ""} ${r.text}`.trim().slice(-DEVICE_CAPTION_CHARS);
     dev.refresh();
   }
-  for (const lang of viewerLanguages(l)) {
+  for (const lang of captionLanguages(l)) {
     if (isSourceLang(lang)) continue;
     let st = l.interimTr.get(lang);
     if (!st) l.interimTr.set(lang, st = { next: null, busy: false, lastAt: 0, timer: null });
@@ -334,7 +342,13 @@ function pumpInterimTranslation(l: LiveLecture, lang: string, st: InterimTransla
   st.lastAt = Date.now();
   translate(text, lang)
     .then(out => {
-      if (l.utterance === utterance && l.status === "live") broadcast(l, { type: "interimTranslation", seq: ++l.seq, lang, text: out }, lang);
+      if (l.utterance !== utterance || l.status !== "live") return;
+      broadcast(l, { type: "interimTranslation", seq: ++l.seq, lang, text: out }, lang);
+      const dev = deviceOf(l);
+      if (dev && dev.lang === lang) {
+        dev.lastCaption = `${l.finals.at(-1)?.tr.get(lang)?.text ?? ""} ${out}`.trim().slice(-DEVICE_CAPTION_CHARS);
+        dev.refresh();
+      }
     })
     .catch(logErr(`translate interim ${lang}`))
     .finally(() => { st.busy = false; pumpInterimTranslation(l, lang, st); });
@@ -360,15 +374,48 @@ async function handleFinal(l: LiveLecture, r: SttResult, stored?: Map<string, st
     broadcast(l, { type: "translation", seq, segmentId, lang, text }, lang);
   }
 
-  const dev = l.deviceId ? devices.get(l.deviceId) : undefined;
-  if (dev && dev.lectureId === l.id) { dev.lastCaption = f.text.slice(-DEVICE_CAPTION_CHARS); dev.refresh(); }
+  const dev = deviceOf(l);
+  if (dev && isSourceLang(dev.lang)) { dev.lastCaption = f.text.slice(-DEVICE_CAPTION_CHARS); dev.refresh(); }
 
   if (segmentId > 0) {
     l.persist = l.persist.then(async () => {
       await db.insert(schema.segments).values({ id: segmentId, lectureId: l.id, idx: f.idx, startS: f.start, endS: f.end, text: f.text, words: f.words });
     }).catch(logErr("segment insert"));
   }
-  for (const lang of viewerLanguages(l)) if (!isSourceLang(lang)) void translateEntries(l, [f], lang);
+  for (const lang of captionLanguages(l)) if (!isSourceLang(lang)) void translateEntries(l, [f], lang);
+}
+
+/** The device recording this lecture right now, if any. */
+function deviceOf(l: LiveLecture): DeviceLink | undefined {
+  const d = l.deviceId ? devices.get(l.deviceId) : undefined;
+  return d && d.lectureId === l.id ? d : undefined;
+}
+
+/** Languages someone is reading now: the viewers', plus the one on the device's own screen. */
+function captionLanguages(l: LiveLecture): string[] {
+  const d = deviceOf(l);
+  return [...new Set([...viewerLanguages(l), ...(d ? [d.lang] : [])])];
+}
+
+/** Puts the newest finished sentence on the device's screen in the device's language, once it is translated. */
+function showLatestOnDevice(l: LiveLecture) {
+  const d = deviceOf(l), last = l.finals.at(-1);
+  if (!d || !last) return;
+  const text = isSourceLang(d.lang) ? last.text : last.tr.get(d.lang)?.text;
+  if (text === undefined) return;
+  d.lastCaption = text.slice(-DEVICE_CAPTION_CHARS);
+  d.refresh();
+}
+
+/** Switches the caption language on the device's screen. The English caption stays up until the first translation arrives. */
+export function setDeviceLang(d: DeviceLink, lang: DeviceLang) {
+  d.lang = lang;
+  const l = d.lectureId ? lectures.get(d.lectureId) : undefined;
+  if (l) {
+    showLatestOnDevice(l);
+    if (!isSourceLang(lang)) void translateEntries(l, l.finals.slice(-2), lang);
+  }
+  d.refresh();
 }
 
 async function translateEntries(l: LiveLecture, entries: FinalEntry[], lang: string) {
@@ -385,6 +432,7 @@ async function translateEntries(l: LiveLecture, entries: FinalEntry[], lang: str
       broadcast(l, { type: "translation", seq, segmentId: f.segmentId, lang, text }, lang);
       if (f.segmentId > 0) rows.push({ segmentId: f.segmentId, lang, text });
     });
+    if (deviceOf(l)?.lang === lang && todo.includes(l.finals.at(-1)!)) showLatestOnDevice(l);
     if (rows.length) {
       l.persist = l.persist.then(async () => {
         await db.insert(schema.translations).values(rows)
@@ -502,8 +550,9 @@ function bindDevice(l: LiveLecture, d: DeviceLink) {
   }
   d.lectureId = l.id;
   d.state = "recording";
-  d.lastCaption = l.finals.at(-1)?.text ?? "";
+  d.lastCaption = "";
   ensureStt(l);
+  showLatestOnDevice(l);
   d.refresh();
   broadcastStatus(l);
 }
@@ -515,42 +564,131 @@ function canBind(l: LiveLecture, d: DeviceLink): boolean {
   return !cur || cur === d || cur.lectureId !== l.id;
 }
 
-/** Registers a connected device; if its active class has a live lecture it resumes recording into it. */
+// ---------- the inbox: device recordings that are not in a course yet ----------
+
+let inbox: Promise<string> | null = null;
+
+/** Id of the hidden class that holds device recordings until someone puts them into a course (made on first use). */
+export function inboxClassId(): Promise<string> {
+  inbox ??= (async () => {
+    const { classes } = schema;
+    const [made] = await db.insert(classes).values({ name: "New recordings", code: INBOX_CODE, ownerUserId: "system" }).onConflictDoNothing().returning({ id: classes.id });
+    if (made) return made.id;
+    const [row] = await db.select({ id: classes.id }).from(classes).where(eq(classes.code, INBOX_CODE)).limit(1);
+    if (!row) throw new Error("inbox class is missing");
+    return row.id;
+  })().catch(e => { inbox = null; throw e; });
+  return inbox;
+}
+
+function recordingTitle(d = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `Recording ${d.getDate()} ${d.toLocaleString("en-US", { month: "short" })} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Shows on the device link which course its recording is in (none while it is in the inbox). */
+async function pointDeviceAt(d: DeviceLink, classId: string) {
+  const [cls] = classId === await inboxClassId() ? [] : await db.select({ id: schema.classes.id, name: schema.classes.name, code: schema.classes.code })
+    .from(schema.classes).where(eq(schema.classes.id, classId)).limit(1);
+  Object.assign(d, { classId: cls?.id ?? null, classCode: cls?.code ?? null, className: cls?.name ?? null });
+}
+
+const startingDevice = new Map<string, Promise<LectureSummary | null>>();
+const goneTimers = new Map<string, NodeJS.Timeout>();
+
+/** Starts recording for a connected device: it carries on in its own live lecture after a short drop, otherwise
+ *  a new lecture is made in the inbox. Null if the device went away meanwhile. */
+export function startDeviceSession(d: DeviceLink): Promise<LectureSummary | null> {
+  let p = startingDevice.get(d.id);
+  if (!p) {
+    p = doStartDevice(d).finally(() => startingDevice.delete(d.id));
+    startingDevice.set(d.id, p);
+  }
+  return p;
+}
+
+async function doStartDevice(d: DeviceLink): Promise<LectureSummary | null> {
+  const cur = d.lectureId ? lectures.get(d.lectureId) : undefined;
+  if (cur?.status === "live") return toSummary(cur);
+  const resume = async (l: LiveLecture) => {
+    await pointDeviceAt(d, l.classId);
+    if (devices.get(d.id) !== d) return null;
+    bindDevice(l, d);
+    return toSummary(l);
+  };
+  // A Wi-Fi drop: this process still has the device's lecture.
+  for (const l of lectures.values()) {
+    if (l.status === "live" && l.deviceId === d.id && l.persistent && !l.replay && !l.stopping && canBind(l, d)) return resume(l);
+  }
+  // Lectures the device left live in the database (the server restarted, or the device lost power): the newest
+  // carries on if it was active a moment ago, the others are ended and saved.
+  const left = await db.select({ id: schema.lectures.id }).from(schema.lectures)
+    .where(and(eq(schema.lectures.deviceId, d.id), eq(schema.lectures.status, "live"))).orderBy(desc(schema.lectures.startedAt));
+  let recent: LiveLecture | null = null;
+  for (const row of left) {
+    const l = await loadLecture(row.id);
+    if (!l || l.status !== "live") continue;
+    const lastActive = l.startedAt + (l.finals.at(-1)?.end ?? 0) * 1000;
+    if (!recent && Date.now() - lastActive < RESUME_GAP_MS && canBind(l, d)) recent = l;
+    else await stopSession(l.id).catch(logErr("stop left-over lecture"));
+  }
+  if (devices.get(d.id) !== d) return null;
+  if (recent) return resume(recent);
+  const [row] = await db.insert(schema.lectures).values({
+    classId: await inboxClassId(), title: recordingTitle(), date: today(), status: "live", deviceId: d.id, source: "device",
+  }).returning();
+  const l = newLecture(row!);
+  lectures.set(l.id, l);
+  void refillIds(l);
+  log(`device ${d.id} started recording ${l.id} "${l.title}"`);
+  Object.assign(d, { classId: null, classCode: null, className: null });
+  bindDevice(l, d);
+  return toSummary(l);
+}
+
+/** Registers a connected device and starts recording for it. */
 export async function attachDevice(d: DeviceLink): Promise<void> {
   devices.set(d.id, d);
-  if (d.classId) {
-    const l = await findLiveLecture(d.classId).catch(() => null);
-    if (l && devices.get(d.id) === d && !d.lectureId && canBind(l, d)) bindDevice(l, d);
-  }
+  clearTimeout(goneTimers.get(d.id));
+  goneTimers.delete(d.id);
+  await startDeviceSession(d);
   d.refresh();
 }
 
-/** Called when a device socket closes. Its lecture stays live (the device may reconnect) but the STT stream is closed. */
+/** Called when a device socket closes. Its lecture stays live for DEVICE_GONE_MS in case the device comes back
+ *  (the STT stream is closed meanwhile); after that it is ended and saved like any other. */
 export function detachDevice(d: DeviceLink) {
   if (devices.get(d.id) !== d) return;
   devices.delete(d.id);
   const l = d.lectureId ? lectures.get(d.lectureId) : undefined;
-  if (l) {
-    void closeStt(l).then(() => broadcastStatus(l));
-    broadcastStatus(l);
-  }
+  if (!l) return;
+  void closeStt(l).then(() => broadcastStatus(l));
+  broadcastStatus(l);
+  if (l.status !== "live" || l.source !== "device") return;
+  const t = setTimeout(() => {
+    goneTimers.delete(d.id);
+    if (l.status === "live" && !deviceOf(l)) void stopSession(l.id).catch(logErr("end recording of a device that left"));
+  }, DEVICE_GONE_MS);
+  t.unref();
+  goneTimers.set(d.id, t);
 }
 
 /** Thrown when a device change would cut a recording short (routes answer 409). */
 export class DeviceBusyError extends Error {}
 
 export interface ActiveClass { id: string; name: string; code: string }
-/** A connected device, as the app lists it. */
+/** A connected device, as the app lists it. `activeClass`: the course its recording is in (null = the inbox). */
 export interface DeviceView {
   id: string;
   name: string | null;
   activeClass: ActiveClass | null;
   state: DeviceState;
+  lectureId: string | null;
 }
 
 function deviceView(d: DeviceLink): DeviceView {
   return {
-    id: d.id, name: d.name, state: d.state,
+    id: d.id, name: d.name, state: d.state, lectureId: d.lectureId,
     activeClass: d.classId && d.classCode ? { id: d.classId, name: d.className ?? d.classCode, code: d.classCode } : null,
   };
 }
@@ -561,40 +699,62 @@ export function listDevices(): DeviceView[] {
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "") || a.id.localeCompare(b.id));
 }
 
-/** Sets a connected device's active class (the caller checked that the class exists). Null if the device is not online.
- *  Throws DeviceBusyError while the device records into another class. */
+/** Puts a recording from the inbox into a course (the caller checked that the class exists): a live one carries
+ *  on there, a finished one gets its study bundle. Null if there is no such lecture. Throws DeviceBusyError when
+ *  it is already in a course, or the course has another live lecture. */
+export async function assignLecture(lectureId: string, classId: string, title?: string): Promise<LectureSummary | null> {
+  const l = await loadLecture(lectureId);
+  if (!l || !l.persistent) return null;
+  if (l.classId === classId) return toSummary(l);
+  if (l.classId !== await inboxClassId()) throw new DeviceBusyError("the recording is already in a course");
+  if (l.stopping) await l.stopping;
+  if (l.status === "live") {
+    const other = await findLiveLecture(classId);
+    if (other && other.id !== l.id) throw new DeviceBusyError("that course has a live lecture; stop it first");
+  }
+  const name = title?.trim() || await defaultTitle(classId);
+  await db.update(schema.lectures).set({ classId, title: name }).where(eq(schema.lectures.id, l.id));
+  l.classId = classId;
+  l.title = name;
+  const d = deviceOf(l);
+  if (d) { await pointDeviceAt(d, classId); d.refresh(); }
+  if (l.status === "ended" && l.finals.length) {
+    await db.update(schema.lectures).set({ status: "processing" }).where(eq(schema.lectures.id, l.id));
+    l.status = await enqueueBundle(l.id) ? "processing" : "ended";
+    if (l.status === "ended") await db.update(schema.lectures).set({ status: "ended" }).where(eq(schema.lectures.id, l.id)).catch(logErr("lecture status"));
+  }
+  log(`recording ${l.id} put into class ${classId} as "${name}"`);
+  broadcastStatus(l);
+  maybeEvict(l);
+  return toSummary(l);
+}
+
+/** Puts what a connected device is recording into a course. Null if the device is not online.
+ *  Throws DeviceBusyError while it records into another course. */
 export async function setActiveClass(deviceId: string, classId: string): Promise<DeviceView | null> {
   const d = devices.get(deviceId);
   if (!d) return null;
-  if (d.lectureId) {
-    const l = lectures.get(d.lectureId);
-    if (l && l.classId !== classId && l.status === "live") throw new DeviceBusyError("the device is recording another course; stop that lecture first");
-  }
-  const [cls] = await db.select({ id: schema.classes.id, name: schema.classes.name, code: schema.classes.code })
-    .from(schema.classes).where(eq(schema.classes.id, classId)).limit(1);
-  if (!cls) throw new Error("class not found");
-  await db.update(schema.devices).set({ classId }).where(eq(schema.devices.id, deviceId));
-  // Points the live link at the class and re-sends its state and idle frame.
-  Object.assign(d, { classId: cls.id, classCode: cls.code, className: cls.name });
-  if (!d.lectureId && d.state !== "error") d.state = "idle";
-  d.refresh();
-  log(`device ${deviceId} now records into ${cls.code}`);
+  if (d.classId && d.classId !== classId && d.lectureId) throw new DeviceBusyError("the device is recording another course; stop that lecture first");
+  if (!d.lectureId) await startDeviceSession(d);
+  if (d.lectureId) await assignLecture(d.lectureId, classId);
   return deviceView(d);
 }
 
-/** For a web start of `classId`: the device that should record it. One already pointed at the class is used as
- *  it is; otherwise an online device that is not recording is switched to the class. Null if no device is online
- *  (the browser microphone records instead). Throws DeviceBusyError if every online device is recording another class. */
+/** For a web start of `classId`: the device that records it. One already recording into the class is used as it
+ *  is; otherwise a device recording into the inbox has its recording put into the class. Null if there is none,
+ *  or the class is live already (the browser microphone records instead).
+ *  Throws DeviceBusyError if every online device is recording another class. */
 export async function deviceForWebStart(classId: string): Promise<string | null> {
-  const all = listDevices();
-  const here = all.find(x => x.activeClass?.id === classId);
+  const all = [...devices.values()];
+  const here = all.find(d => d.classId === classId && d.lectureId);
   if (here) return here.id;
-  const idle = all.find(x => x.state !== "recording");
-  if (!idle) {
-    if (all[0]) throw new DeviceBusyError(`the device is recording ${all[0].activeClass?.code ?? "another course"}; stop that lecture first`);
+  if (await findLiveLecture(classId)) return null;
+  const free = all.find(d => d.lectureId && !d.classId);   // not one that was stopped and is about to sleep
+  if (!free) {
+    if (all.some(d => d.lectureId)) throw new DeviceBusyError(`the device is recording ${all.find(d => d.lectureId)?.classCode ?? "another course"}; stop that lecture first`);
     return null;
   }
-  return (await setActiveClass(idle.id, classId)) ? idle.id : null;
+  return (await setActiveClass(free.id, classId)) ? free.id : null;
 }
 
 // ---------- session lifecycle ----------
@@ -675,21 +835,34 @@ export async function stopSession(lectureId: string): Promise<LectureSummary | n
     l.status = "ended";
     l.endedAt = Date.now();
     if (l.replay?.timer) { clearInterval(l.replay.timer); l.replay.timer = null; }
-    const d = l.deviceId ? devices.get(l.deviceId) : undefined;
-    if (d && d.lectureId === l.id) { d.lectureId = null; d.state = "idle"; d.lastCaption = ""; d.refresh(); }
+    const d = deviceOf(l);
+    if (d) {
+      Object.assign(d, { lectureId: null, state: "idle", lastCaption: "", classId: null, classCode: null, className: null, savedSeconds: Math.round((l.endedAt - l.startedAt) / 1000) });
+      d.refresh();
+    }
     l.browserAudio?.close("lecture ended");
     l.browserAudio = null;
     await closeStt(l);
     await l.persist;
-    // Last diarization chunk runs in the background; it refreshes the outline's questionsAsked when done.
-    if (l.persistent) void flushLecture(l.id, () => settled(l)).catch(logErr("diarize flush"));
     if (!l.persistent) { broadcastStatus(l); return toSummary(l); }
-    // Nothing was said: no study bundle, the lecture just ends.
     const hasText = l.finals.length > 0;
-    await db.update(schema.lectures).set({ status: hasText ? "processing" : "ended", endedAt: new Date(l.endedAt) }).where(eq(schema.lectures.id, l.id));
-    const enqueued = hasText && await enqueueBundle(l.id);
+    const inInbox = l.classId === await inboxClassId().catch(() => "");
+    // A device that was switched on and off with nothing said leaves nothing behind.
+    if (inInbox && !hasText) {
+      await db.delete(schema.lectures).where(eq(schema.lectures.id, l.id)).catch(logErr("delete empty recording"));
+      log(`dropped empty recording ${l.id}`);
+      broadcastStatus(l);
+      return toSummary(l);
+    }
+    // Last diarization chunk runs in the background; it refreshes the outline's questionsAsked when done.
+    void flushLecture(l.id, () => settled(l)).catch(logErr("diarize flush"));
+    // Nothing was said, or the recording is not in a course yet: no study bundle, the lecture just ends.
+    // A recording in the inbox gets its bundle when it is put into a course (assignLecture).
+    const bundle = hasText && !inInbox;
+    await db.update(schema.lectures).set({ status: bundle ? "processing" : "ended", endedAt: new Date(l.endedAt) }).where(eq(schema.lectures.id, l.id));
+    const enqueued = bundle && await enqueueBundle(l.id);
     l.status = enqueued ? "processing" : "ended";
-    if (hasText && !enqueued) await db.update(schema.lectures).set({ status: "ended" }).where(eq(schema.lectures.id, l.id)).catch(logErr("lecture status"));
+    if (bundle && !enqueued) await db.update(schema.lectures).set({ status: "ended" }).where(eq(schema.lectures.id, l.id)).catch(logErr("lecture status"));
     const { interim, final } = l.latency;
     log(`stopped lecture ${l.id}: ${l.finals.length} finals, interim latency median ${median(interim) ?? "-"} ms (n=${interim.length}), final ${median(final) ?? "-"} ms`);
     broadcastStatus(l);

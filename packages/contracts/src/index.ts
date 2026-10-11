@@ -18,13 +18,22 @@ export type OledFrame = Uint8Array;   // length OLED_FRAME_BYTES
 
 export type DeviceButton = "boot" | "slap";
 
+/** Caption languages the device can show: the English transcript, or its Vietnamese or Japanese translation.
+ *  Tilting the device left or right steps through them in this order. */
+export const DEVICE_LANGS = ["en", "vi", "ja"] as const;
+export type DeviceLang = (typeof DEVICE_LANGS)[number];
+
+// A device that is on records: the server starts a session as soon as it has the hello, and a `button`
+// (REC held for 2 s on the device) ends it. There is nothing to pick on the device first.
 export type DeviceToServer =
-  | { type: "hello"; deviceId: string; fw: string; mac?: string }
+  | { type: "hello"; deviceId: string; fw: string; mac?: string; lang?: DeviceLang }
   | { type: "button"; button: DeviceButton }
+  | { type: "lang"; lang: DeviceLang }             // caption language for the device's own screen
   | { type: "level"; rms: number }                 // optional mic level 0..1, ~2 Hz
   | { type: "pong"; t: number };
 
-/** A connected device is usable at once (there is no pairing): idle until it records. */
+/** A connected device records at once (there is no pairing and no course to pick); it is idle only between a
+ *  stop and going to sleep. */
 export type DeviceState = "idle" | "recording" | "error";
 
 export type ServerToDevice =
@@ -61,6 +70,11 @@ export interface ClassSummary {
 /** An exam, quiz or assignment date entered by hand; counts next to the dates read from a syllabus. */
 export type AssessmentKind = "exam" | "quiz" | "assignment";
 export interface Assessment { id: string; classId: string; kind: AssessmentKind; name: string; date: string; topics: string[] }
+/** Code of the hidden class that holds device recordings nobody has put into a course yet. */
+export const INBOX_CODE = "INBOX";
+/** A device recording that is not in a course yet (`GET /api/inbox`). */
+export interface InboxLecture { id: string; title: string; date: string; startedAt: string; status: "live" | "ended"; durationS: number; preview: string; deviceName: string | null }
+
 export interface LectureSummary { id: string; classId: string; title: string; date: string; status: "live" | "ended" | "processing" | "ready"; durationS?: number }
 
 export interface Segment { id: number; idx: number; start: number; end: number; text: string; words?: CaptionWord[]; speaker?: number | null }

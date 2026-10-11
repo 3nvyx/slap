@@ -1,8 +1,9 @@
 // Class, lecture, concept and device routes from docs/api.md (the Study section lives in study.ts).
 // Nothing is access-checked (there is no sign-in); per-student state is keyed by the caller's id from user.ts.
 // Paths are relative to /api (mounted by routes/index.ts).
-import type { ClassSummary, Concept, ConceptLink, ConceptMention, LectureSummary, OutlineSection, Segment, CaptionWord, Card } from "@slap/contracts";
-import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
+import type { ClassSummary, Concept, ConceptLink, ConceptMention, InboxLecture, LectureSummary, OutlineSection, Segment, CaptionWord, Card } from "@slap/contracts";
+import { INBOX_CODE } from "@slap/contracts";
+import { and, asc, count, desc, eq, inArray, lt, ne, or, sql } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -15,7 +16,7 @@ import { zipStore } from "../pipeline/zip.ts";
 import { classOr404, type UserEnv } from "../user.ts";
 import {
   captionMode, connectedDeviceForClass, DeviceBusyError, deviceForWebStart, findLiveLecture, getLecture, importLecture, isUuid,
-  listDevices, liveLectureInMemory, ReplayError, setActiveClass, setCaptionMode, startReplay, startSession, stopSession, toSummary, viewerLanguages,
+  listDevices, liveLectureInMemory, ReplayError, assignLecture, inboxClassId, setActiveClass, setCaptionMode, startReplay, startSession, stopSession, toSummary, viewerLanguages,
 } from "../sessions.ts";
 
 const { classes, lectures, segments, translations, concepts, conceptLinks, conceptMentions, outlines, documents, cards, cardState, questions, assessments } = schema;
@@ -102,7 +103,7 @@ async function nextExams(classIds: string[]): Promise<Map<string, { name: string
 /** Every class (or the given ones), by name. */
 async function classSummaries(classIds?: string[]): Promise<ClassSummary[]> {
   const rows = await db.select({ id: classes.id, name: classes.name, code: classes.code, description: classes.description, instructor: classes.instructor, term: classes.term }).from(classes)
-    .where(classIds ? inArray(classes.id, classIds) : undefined).orderBy(asc(classes.name));
+    .where(classIds ? inArray(classes.id, classIds) : ne(classes.code, INBOX_CODE)).orderBy(asc(classes.name));   // the inbox is not a course
   if (!rows.length) return [];
   const ids = rows.map(r => r.id);
   const counts = await db.select({ classId: lectures.classId, n: count() }).from(lectures).where(inArray(lectures.classId, ids)).groupBy(lectures.classId);
@@ -183,6 +184,49 @@ coreRoutes.post("/devices/:id/active-class", async (c) => {
   });
 });
 
+// ---------- inbox: device recordings that are not in a course yet ----------
+
+coreRoutes.get("/inbox", async (c) => {
+  const inbox = await inboxClassId();
+  const rows = await db.select({ l: lectures, deviceName: schema.devices.name }).from(lectures)
+    .leftJoin(schema.devices, eq(schema.devices.id, lectures.deviceId))
+    .where(eq(lectures.classId, inbox)).orderBy(desc(lectures.startedAt)).limit(50);
+  if (!rows.length) return c.json([]);
+  const ids = rows.map(r => r.l.id);
+  const [ends, firsts] = await Promise.all([
+    db.select({ lectureId: segments.lectureId, end: sql<number>`max(${segments.endS})` }).from(segments).where(inArray(segments.lectureId, ids)).groupBy(segments.lectureId),
+    db.select({ lectureId: segments.lectureId, text: segments.text }).from(segments).where(and(inArray(segments.lectureId, ids), lt(segments.idx, 3))).orderBy(asc(segments.idx)),
+  ]);
+  const end = new Map(ends.map(r => [r.lectureId, r.end]));
+  const out: InboxLecture[] = rows.map(({ l, deviceName }) => ({
+    id: l.id, title: l.title, date: l.date, startedAt: l.startedAt.toISOString(), status: l.status === "live" ? "live" : "ended",
+    durationS: Math.round(end.get(l.id) ?? ((l.endedAt ?? new Date()).getTime() - l.startedAt.getTime()) / 1000),
+    preview: firsts.filter(f => f.lectureId === l.id).map(f => f.text).join(" ").slice(0, 200),
+    deviceName,
+  }));
+  return c.json(out);
+});
+
+// Puts a recording from the inbox into a course; a finished one then gets its study bundle.
+coreRoutes.post("/lectures/:id/assign", async (c) => {
+  const id = uuidParam(c, "id");
+  const b = await body(c, z.object({ classId: z.uuid(), title: z.string().trim().max(200).optional() }));
+  await classOr404(b.classId);
+  return busy409(c, async () => {
+    const s = await assignLecture(id, b.classId, b.title);
+    return s ? c.json(s) : c.json({ error: "lecture not found" }, 404);
+  });
+});
+
+// Throws a finished recording away; only while it is still in the inbox.
+coreRoutes.delete("/inbox/:id", async (c) => {
+  const row = await lectureOr404(uuidParam(c, "id"));
+  if (row.classId !== await inboxClassId()) return c.json({ error: "the recording is already in a course" }, 409);
+  if (row.status === "live") return c.json({ error: "the recording is still running; stop it first" }, 409);
+  await db.delete(lectures).where(eq(lectures.id, row.id));
+  return c.json({ ok: true });
+});
+
 // ---------- caption mode ----------
 
 coreRoutes.get("/captions/mode", (c) => c.json(captionMode()));
@@ -232,7 +276,7 @@ coreRoutes.get("/classes/:classId", async (c) => {
   ]);
   if (!cls) return c.json({ error: "class not found" }, 404);
   const nextExam = earliestExam(docRows.filter(d => d.kind === "syllabus").map(d => d.parsed), entered);
-  // "The device" of a class: an online one whose active class is this class.
+  // "The device" of a class: an online one whose recording is in this class.
   const dev = connectedDeviceForClass(classId);
   const summary: ClassSummary = { id: classId, ...cls, lectureCount: lectureRows.length, nextExam: nextExam?.date ?? null };
   // Who is watching right now (in-memory only; absent when nothing is live in this process).
@@ -290,7 +334,8 @@ coreRoutes.get("/classes/:classId/announcements", async (c) => {
   return c.json(out);
 });
 
-// Records with an online device: one pointed at this class, else a device is switched here first.
+// Records with an online device: one recording into this class already, else what a device is recording into
+// the inbox is put into this class. With no device the browser microphone records.
 coreRoutes.post("/classes/:classId/sessions/start", async (c) => {
   const classId = uuidParam(c, "classId");
   await classOr404(classId);

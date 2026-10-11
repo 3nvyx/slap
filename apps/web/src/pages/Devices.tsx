@@ -1,11 +1,14 @@
-// Device UI: there is no pairing. A device that is online is listed for everyone (there is no sign-in) and
-// records into its active class. Shared by the class list ("Devices" card) and the class home device panel.
-import type { ClassSummary } from '@slap/contracts'
-import { useState, type FormEvent } from 'react'
+// Device UI. A device that is on records, with no pairing and no course to pick first: its recording is a "new
+// recording" until someone puts it into a course, while it runs (the Devices card) or afterwards (the New
+// recordings card). Shared by the class list and the class home device panel.
+import type { ClassSummary, InboxLecture } from '@slap/contracts'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, ErrorBox, inputCls, Label, Panel, Pill } from '../components/ui'
 import { api } from '../lib/api'
 import { deviceLabel, useAction, useOnlineDevices } from '../lib/devices'
+import { fmtDate, fmtTime } from '../lib/format'
+import { useApi } from '../lib/useApi'
 import type { DeviceSummary } from '../lib/types'
 
 /** Shown when no device is connected to the server. */
@@ -16,12 +19,12 @@ export function NoDeviceOnline() {
         <Pill status="offline" />
         <span>No device online</span>
       </div>
-      <p className="mt-2 text-xs text-muted">Switch a Slap on. It shows up here by itself once it connects.</p>
+      <p className="mt-2 text-xs text-muted">Shake a Slap to switch it on. It starts recording by itself and shows up here.</p>
     </>
   )
 }
 
-/** `/classes`: every device that is online, each with the course it records into (pick or create one). */
+/** `/classes`: every device that is online, each with the course its recording goes into (optional: pick or create one). */
 export function OnlineDevicesCard({ classes, onClassesChanged }: { classes: ClassSummary[]; onClassesChanged: () => Promise<void> }) {
   const devices = useOnlineDevices()
   const list = devices.data ?? []
@@ -80,14 +83,10 @@ function DeviceRow({ device: d, classes, onChange }: { device: DeviceSummary; cl
         id={`active-${d.id}`}
         className={inputCls + ' mt-2 cursor-pointer'}
         value={creating ? NEW : (active?.id ?? '')}
-        disabled={a.busy || recording}
+        disabled={a.busy || !recording || !!active}
         onChange={(e) => choose(e.target.value)}
       >
-        {!active && (
-          <option value="" disabled>
-            Pick a course…
-          </option>
-        )}
+        {!active && <option value="">New recordings · choose a course later</option>}
         {active && !classes.some((c) => c.id === active.id) && (
           <option value={active.id}>
             {active.code} · {active.name}
@@ -100,8 +99,9 @@ function DeviceRow({ device: d, classes, onChange }: { device: DeviceSummary; cl
         ))}
         <option value={NEW}>Create a new course…</option>
       </select>
-      {recording && <p className="mt-2 text-xs text-muted">Recording now. Stop the lecture to switch courses.</p>}
-      {!active && !creating && <p className="mt-2 text-xs text-muted">The device ignores a slap until you pick a course.</p>}
+      {recording && active && <p className="mt-2 text-xs text-muted">Recording now. Hold REC on the device for 2 seconds to end and save.</p>}
+      {recording && !active && !creating && <p className="mt-2 text-xs text-muted">Recording now. Pick a course here, or leave it and file the transcript afterwards.</p>}
+      {!recording && <p className="mt-2 text-xs text-muted">Saved. The device is going to sleep; shake it to record again.</p>}
       {creating && (
         <CreateCourse
           onCancel={() => setCreating(false)}
@@ -126,7 +126,98 @@ function DeviceRow({ device: d, classes, onChange }: { device: DeviceSummary; cl
   )
 }
 
-/** Creates a course and makes it the device's active class. */
+/** One device recording waiting for a course. */
+function InboxRow({ rec, classes, onChange }: { rec: InboxLecture; classes: ClassSummary[]; onChange: () => Promise<void> }) {
+  const a = useAction()
+  const [classId, setClassId] = useState('')
+  const live = rec.status === 'live'
+  return (
+    <div>
+      <div className="flex items-center gap-2 text-sm">
+        {live && <Pill status="recording" />}
+        <span className="min-w-0 flex-1 truncate font-medium">{rec.title}</span>
+        <span className="shrink-0 font-mono text-xs text-muted">{fmtTime(rec.durationS)}</span>
+      </div>
+      <p className="mt-1 text-xs text-muted">
+        {fmtDate(rec.date)}
+        {rec.deviceName ? ` · ${rec.deviceName}` : ''}
+      </p>
+      {rec.preview && <p className="mt-2 line-clamp-2 text-sm text-ink-2">{rec.preview}</p>}
+      <div className="mt-3 flex gap-2">
+        <select className={inputCls + ' min-w-0 flex-1 cursor-pointer'} value={classId} disabled={a.busy} onChange={(e) => setClassId(e.target.value)} aria-label={`Course for ${rec.title}`}>
+          <option value="" disabled>
+            Add to a course…
+          </option>
+          {classes.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.code} · {c.name}
+            </option>
+          ))}
+        </select>
+        <Button
+          variant="ink"
+          size="sm"
+          disabled={a.busy || !classId}
+          onClick={() => void a.run(async () => {
+            await api.assignLecture(rec.id, classId)
+            await onChange()
+          })}
+        >
+          {a.busy ? 'Adding…' : 'Add'}
+        </Button>
+      </div>
+      {!live && (
+        <button
+          type="button"
+          className="mt-2 cursor-pointer text-xs text-muted underline"
+          disabled={a.busy}
+          onClick={() => {
+            if (window.confirm(`Discard "${rec.title}"? Its transcript is deleted.`)) void a.run(async () => { await api.discardRecording(rec.id); await onChange() })
+          }}
+        >
+          Discard
+        </button>
+      )}
+      {a.error != null && (
+        <div className="mt-3">
+          <ErrorBox error={a.error} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** `/classes`: transcripts the device made that are not in a course yet, each with a course picker. */
+export function NewRecordingsCard({ classes, onChange }: { classes: ClassSummary[]; onChange: () => Promise<void> }) {
+  const inbox = useApi(() => api.inbox(), [])
+  const reloadInbox = inbox.reload
+  useEffect(() => {
+    const t = setInterval(() => void reloadInbox(), 5000)
+    return () => clearInterval(t)
+  }, [reloadInbox])
+  const list = inbox.data ?? []
+  const reload = async () => {
+    await inbox.reload()
+    await onChange()
+  }
+  return (
+    <Panel title="New recordings">
+      {inbox.data === undefined ? (
+        inbox.error ? <ErrorBox error={inbox.error} onRetry={() => void inbox.reload()} /> : <p className="text-sm text-muted">Loading…</p>
+      ) : list.length === 0 ? (
+        <p className="text-sm text-muted">Nothing waiting. A transcript shows up here when a Slap finishes recording.</p>
+      ) : (
+        <div className="space-y-6">
+          {list.map((r) => (
+            <InboxRow key={r.id} rec={r} classes={classes} onChange={reload} />
+          ))}
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+/** Creates a course and puts the device's recording into it. */
 function CreateCourse({ onCreated, onCancel }: { onCreated: (classId: string) => Promise<void>; onCancel: () => void }) {
   const [name, setName] = useState('')
   const [code, setCode] = useState('')

@@ -9,7 +9,7 @@
 #include "config.example.h"
 #endif
 
-#define FW_VERSION "0.2.0"
+#define FW_VERSION "0.3.0"
 
 // ---------- Network ----------
 #ifndef SERVER_TLS
@@ -146,6 +146,58 @@
 #endif
 #ifndef IMU_QUIET_MS
 #define IMU_QUIET_MS 60
+#endif
+
+// ---- Shake to switch on ----
+// A wake by the IMU only counts as "on" if it is a real shake: within SHAKE_CONFIRM_MS of the wake the
+// acceleration must differ from 1 g by more than SHAKE_MIN_G for SHAKE_MIN_MS in total. A knock, a bump on the
+// desk or steps while the device is carried do not add up to that, and the device goes back to sleep unlit.
+#ifndef SHAKE_CONFIRM_MS
+#define SHAKE_CONFIRM_MS 1200
+#endif
+#ifndef SHAKE_MIN_G
+#define SHAKE_MIN_G 0.35f
+#endif
+#ifndef SHAKE_MIN_MS
+#define SHAKE_MIN_MS 250
+#endif
+
+// ---- Tilt left / right: caption language ----
+// IMU_TILT_AXIS is the accelerometer axis that runs left-right across the device as it stands in use
+// (0 = X, 1 = Y, 2 = Z); IMU_TILT_SIGN is +1 if it reads positive with the right side tipped down, else -1.
+// Check both on the bench with IMU_PLOT 1 (it prints ax ay az). A tilt is TILT_ON_G along that axis
+// (0.34 g is about 20 degrees) held for TILT_HOLD_MS; the next one counts after the device came back
+// under TILT_OFF_G for TILT_RETURN_MS.
+#ifndef IMU_TILT_AXIS
+#define IMU_TILT_AXIS 0
+#endif
+#ifndef IMU_TILT_SIGN
+#define IMU_TILT_SIGN 1
+#endif
+#ifndef TILT_SAMPLE_MS
+#define TILT_SAMPLE_MS 40
+#endif
+#ifndef TILT_ON_G
+#define TILT_ON_G 0.34f
+#endif
+#ifndef TILT_OFF_G
+#define TILT_OFF_G 0.18f
+#endif
+#ifndef TILT_HOLD_MS
+#define TILT_HOLD_MS 80
+#endif
+#ifndef TILT_RETURN_MS
+#define TILT_RETURN_MS 250
+#endif
+#ifndef TILT_SETTLE_MS
+#define TILT_SETTLE_MS 1500
+#endif
+#ifndef TILT_REBASE_MS
+#define TILT_REBASE_MS 4000
+#endif
+// How long the server's "Saved" screen stays up before the device sleeps, when the session was ended from the app.
+#ifndef SAVED_SHOW_MS
+#define SAVED_SHOW_MS 2500
 #endif
 
 // ---------- Display / power / debug ----------

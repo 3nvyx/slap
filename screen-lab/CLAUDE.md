@@ -30,11 +30,10 @@ A broken file shows a red bar at the top of the page with the error text. Check 
 
 - 128 × 64 pixels, each on or off. `lab.js` draws a screen on a black canvas with white ink, then lights every pixel whose brightness is at least 50%. Greys, gradients, opacity and anti-aliased edges all collapse to on or off.
 - Physical size is 55 × 27 mm, read from across a desk. Judge legibility on the real-size copy under the main view.
-- Latin text reads down to about 10 px. CJK, Devanagari and Arabic need about 12 px or more. At 11 px Helvetica a full-width line holds about 26 Latin characters.
+- Latin text reads down to about 10 px; Japanese needs 12 px. At 15 px Noto Sans a full-width line holds about 18 Latin characters.
 - Thin strokes (1 px, or anti-aliased curves) can vanish. Use `lineWidth = 2` for outlines and whole-number coordinates for rectangles.
-- The device's font is Noto Sans (first in the font menu). Chinese, Japanese, Korean, Hindi and Arabic are drawn with the device's own fonts for those scripts whatever the menu says; `font(px, bold, text)` builds the list from the text. The Chinese, Japanese and Korean font is a pixel font, sharp at exactly 12 px and blurred at any other size.
-- The scripts differ in height around the same baseline. At 15 px Latin reaches 14 rows above it (accented capitals) and 4 below; Hindi 14 and 5; Arabic 19 and 7. `captionStyle` in `screens.js` holds the sizes that keep three lines clear of the strip under the caption.
-- Arabic is right-to-left: draw it with `paragraph`, which sets the direction and the right edge.
+- The device shows three languages: English, Vietnamese and Japanese (`LANGUAGES` in `data.js`). Its font is Noto Sans (first in the font menu). Japanese is drawn with the device's own pixel font whatever the menu says (`font(px, bold, text)` builds the list from the text); that font is sharp at exactly 12 px and whole multiples (24 px), and blurred at any other size.
+- At 15 px Noto Sans reaches 14 rows above the baseline (accented capitals; 16 for stacked Vietnamese accents) and 4 below. `captionStyle` in `screens.js` holds the sizes that keep the caption lines clear of the strip under them.
 
 ## Add or change a screen
 
@@ -51,7 +50,7 @@ screen({
 });
 ```
 
-Leave the six `TODAY` screens as they are: they mirror `apps/api/src/oled.ts`, and the designer compares new ideas against them. To propose a change to one, copy it into `IDEAS` under a new name.
+Leave the five `TODAY` screens as they are (Listening, Captions, Language, Saved, Error): they mirror `apps/api/src/oled.ts`, and the designer compares new ideas against them. To propose a change to one, copy it into `IDEAS` under a new name. The device has no home screen: it is either asleep or recording. The firmware draws "Joining Wi-Fi", "Connecting" and "Asleep" itself (`firmware/esp32/src/display.cpp`); they are not in the lab.
 
 `ctx` is a Canvas 2D context, already set to white fill and stroke with `textBaseline = "top"`. `d` is the mock data:
 
@@ -65,14 +64,13 @@ Helpers (globals from `lab.js`):
 | `centered(ctx, text, y, x0 = 0, width = 128)` | Draws text centred in a horizontal span. |
 | `fitFont(ctx, text, width, max, bold = true)` | Largest px size at which the text fits; also sets `ctx.font`. |
 | `wrapText(ctx, text, maxWidth)` | Array of lines. Use `.slice(-n)` to keep the latest n. |
-| `paragraph(ctx, text, lines, baseline, pitch, inset = 1)` | Draws wrapped lines from the left edge, or from the right for Arabic. `baseline` is the y of the first line's baseline. Use it for captions and messages. |
 | `drawQr(ctx, text, x, y, box)` | QR code inside a square box; returns false if it cannot fit. |
 | `mmss(seconds)` | `12:34`. |
 | `drawSprite(ctx, name, x, y, scale = 1)` | Draws an avatar from `sprites.js`. |
 | `spriteFit(name, boxW, boxH)` | `{ w, h, scale }` at the largest whole scale that fits. |
 | `W`, `H` | 128, 64. |
 
-Leave `ctx.textBaseline` as `"top"` and give `fillText` the y of the text's top edge. The lab moves `"top"` text to where the server's canvas library puts it (`matchServerText` in `lab.js`). The server takes that offset from the font of the text's first character, so a "top" line starting with a digit sits 5 px higher than an Arabic line beside it. Text that can be in any language goes through `paragraph`, which uses the baseline and is the same in the lab and on the server.
+In `IDEAS` screens leave `ctx.textBaseline` as `"top"` and give `fillText` the y of the text's top edge; the lab moves `"top"` text to where the server's canvas library puts it (`matchServerText` in `lab.js`). The `TODAY` screens set `ctx.textBaseline = "alphabetic"` and give the baseline instead, as the server does: with "top" the server takes the offset from the font of the text's first character, so a Japanese line starting with a digit would sit at a different height from its neighbours. Use the baseline for any text that can be Japanese.
 
 Keep `draw` portable: synchronous, Canvas 2D calls and these helpers only. No DOM, no images loaded by URL, no reading the clock (use `d.t` and `d.seconds`). The same function later runs on the server under `@napi-rs/canvas`.
 

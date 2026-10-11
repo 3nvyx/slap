@@ -24,7 +24,6 @@ bool g_showingServer = false;
 uint32_t g_frameAt = 0;
 uint32_t g_lastDraw = 0;
 
-const uint8_t* FONT_SMALL = u8g2_font_6x10_tf;    // 21 chars per line
 const uint8_t* FONT_TEXT = u8g2_font_helvR10_tf;    // hint and detail lines, about 22 chars per line
 const uint8_t* FONT_TITLE = u8g2_font_helvB12_tr;
 const uint8_t* FONT_BIG = u8g2_font_helvB18_tr;
@@ -153,21 +152,10 @@ void drawLocal(uint32_t nowMs, const DisplayModel& m) {
       break;
 
     case AppState::IDLE:
-      if (m.classCode && m.classCode[0]) {
-        // Active course chosen in the web app (state.classCode).
-        u8g2.setFont(FONT_BIG);
-        if (u8g2.getStrWidth(m.classCode) > 126) u8g2.setFont(FONT_TITLE);   // a long code, smaller
-        fitted(buf, sizeof buf, m.classCode, 126);
-        centered(buf, 36);
-        u8g2.setFont(FONT_TEXT);
-        centered("Slap to start", 56);
-      } else {
-        // No active course (state.classCode null/absent): recording has nowhere to go.
-        u8g2.setFont(FONT_TITLE);
-        centered("Pick a course", 32);
-        u8g2.setFont(FONT_TEXT);
-        centered("in the app", 50);
-      }
+      // The second or so between the hello and the server's first recording frame.
+      u8g2.setFont(FONT_TITLE);
+      centered("Starting", 32);
+      progressDots(nowMs, 44);
       break;
 
     case AppState::RECORDING: {
@@ -178,7 +166,7 @@ void drawLocal(uint32_t nowMs, const DisplayModel& m) {
       u8g2.setFont(s >= 3600 ? FONT_BIG : FONT_TIME);   // past an hour the digits would run under the icons
       centered(buf, 34);
       u8g2.setFont(FONT_TEXT);
-      centered("Slap to stop", 49);
+      centered("Hold REC to save", 49);
       // Level meter: sqrt-ish scale so speech (-30..-10 dBFS) spans the bar.
       float l = m.level * 4.0f;
       if (l > 1.0f) l = 1.0f;

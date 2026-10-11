@@ -22,10 +22,10 @@ then open http://localhost:4173.
 
 ## What is on the page
 
-- **Left:** the list of screens. "On the device today" are the six the real device shows. "Ideas to play with" are examples to change or replace.
+- **Left:** the list of screens. "On the device today" are the five the real device shows once it is on: listening, captions, the language name after a tilt, saved, and an error. (Before that it shows "Joining Wi-Fi" and "Connecting", which the device draws itself.) "Ideas to play with" are examples to change or replace.
 - **Middle:** the screen, enlarged, and below it a copy at about the real size (55 × 27 mm).
 - **Right:** the made-up data (language, caption, class code, sound level…), the font, the avatar, and the display colour.
-- **Top:** "All screens" shows every screen at once. "All languages" shows the current screen in all twelve languages. "Real size" shows the device as large as the real one. "Play" runs the clock, the sound level and the caption.
+- **Top:** "All screens" shows every screen at once. "All languages" shows the current screen in the device's three languages: English, Vietnamese and Japanese. "Real size" shows the device as large as the real one. "Play" runs the clock, the sound level and the caption.
 
 ## Try it with real sound
 
@@ -50,8 +50,8 @@ Where the lit area sits inside the glass is not measured yet; the lab centres it
 
 - 128 pixels wide, 64 tall. That is all the room there is.
 - Each pixel is either on or off. No grey, no colours, no see-through. Soft edges and thin lines turn blocky or vanish; the lab shows exactly that.
-- Text smaller than about 10 px is hard to read. Chinese, Japanese, Korean, Hindi and Arabic need to be larger than English to stay readable.
-- Chinese, Japanese and Korean are drawn with the device's own pixel font, which is sharp at exactly 12 px and blurred at any other size. Keep text in those languages at 12 px.
+- Text smaller than about 10 px is hard to read. Japanese needs 12 px.
+- Japanese is drawn with the device's own pixel font, which is sharp at exactly 12 px (and at 24 px) and blurred at any other size. Keep Japanese text at 12 px.
 - The glass is the size of a matchbox and people read it from across a desk. Check the real-size copy, not only the enlarged one.
 
 ## Change things
@@ -109,7 +109,7 @@ The character is the team's own drawing. Pictures by other artists can inspire i
 
 ### Fonts
 
-- Noto Sans, first in the menu, is the device's own font: the very files its server draws with (the `fonts/device` folder is a link to them). Chinese, Japanese, Korean, Hindi and Arabic always use the device's fonts for those scripts, whatever the menu says.
+- Noto Sans, first in the menu, is the device's own font: the very files its server draws with (the `fonts/device` folder is a link to them). Japanese always uses the device's pixel font, whatever the menu says.
 - "Try a font file" loads a font until you refresh.
 - To keep a font, put the file in `fonts/` and add a line to the `FONTS` list in `data.js`: `{ name: "My Font", file: "fonts/my-font.ttf" }`.
 - A font from Google Fonts: `{ name: "Silkscreen", google: true }` (needs internet).
@@ -120,14 +120,13 @@ Only fonts kept as files in `fonts/` can later be put on the real device. Fonts 
 
 ## For whoever moves a screen to the real device
 
-Each `draw(ctx, d)` uses plain Canvas 2D calls plus helpers with the same names and behaviour as `apps/api/src/oled.ts` (`font`, `wrapText`, `paragraph`, `centered`, `fitFont`, `drawQr`, `mmss`), on the same black canvas with white ink and `textBaseline = "top"`, thresholded by the same `packXbm`. A draw function can be pasted into a `render(ctx => { … })` there with `d.…` swapped for real values. `drawSprite` and `spriteFit` exist only in the lab (`lab.js`) and would need to move too.
+Each `draw(ctx, d)` uses plain Canvas 2D calls plus helpers with the same names and behaviour as `apps/api/src/oled.ts` (`font`, `wrapText`, `centered`, `fitFont`, `mmss`), on the same black canvas with white ink and `textBaseline = "top"`, thresholded by the same `packXbm`. A draw function can be pasted into a `render(ctx => { … })` there with `d.…` swapped for real values. `drawSprite` and `spriteFit` exist only in the lab (`lab.js`) and would need to move too.
 
 How close the lab is to the server (checked on 10 October against `@napi-rs/canvas` 0.1.100 on a Mac, with the device's fonts):
 
-- **Text position and line breaks match.** The lab loads the server's own font files and builds the same font list (`families` in `lab.js`). The six current screens were rendered both ways and compared pixel by pixel: line breaks are the same, and 20 to 180 of the 8,192 pixels differ per screen, all single pixels on letter edges. Hindi differs more (about 440), still in the same place: the browser draws the strokes slightly heavier.
-- **`textBaseline = "top"` is copied, with one limit.** `@napi-rs/canvas` puts "top" text at an offset taken from the font of the text's first character; `matchServerText` in `lab.js` copies that for the font chosen on the page. Lines that can hold more than one script (captions, messages) go through `paragraph`, which places them by baseline, where the lab and the server agree without any correction.
+- **Text position and line breaks match.** The lab loads the server's own font files and builds the same font list (`families` in `lab.js`). The five current screens were rendered both ways in the three languages and compared pixel by pixel: line breaks are the same, and 30 to 190 of the 8,192 pixels differ per screen, all single pixels on letter edges.
+- **`textBaseline = "top"` is copied, with one limit.** `@napi-rs/canvas` puts "top" text at an offset taken from the font of the text's first character; `matchServerText` in `lab.js` copies that for the font chosen on the page. The five current screens place text by its baseline instead, as the server does, where the lab and the server agree without any correction.
 - **Other fonts are close, not exact.** For a Google or file font the lab estimates the offset; expect text to sit up to 2 px off until the font is registered on the server and measured.
-- **QR pattern.** The lab uses `vendor/qrcode.js` (qrcode-generator, MIT); the server uses the `qrcode` package. Both are valid codes for the same link, but the dot pattern and sometimes the size can differ.
 
 ## The data a screen receives
 

@@ -25,6 +25,7 @@ import type {
   StudyBundleStatus,
   StudyPlan,
   StudyPlanDay,
+  InboxLecture,
 } from '@slap/contracts'
 import sample from '../fixtures/lecture_sample.txt?raw'
 import { ApiError } from './api'
@@ -114,9 +115,13 @@ const lectures: LectureSummary[] = [
 ]
 
 const documents: ClassDocument[] = [{ id: 'doc_syl', kind: 'syllabus', title: 'CS229 syllabus, autumn' }]
-// The demo device: online, recording into its active class.
+// The demo device: online, its recording already put into a course.
 const devices: DeviceSummary[] = [
-  { id: 'dev_slap01', name: 'Slap on the desk', activeClass: { id: CLASS_ID, name: 'CS229 Machine Learning', code: 'CS229' }, state: 'recording' },
+  { id: 'dev_slap01', name: 'Slap on the desk', activeClass: { id: CLASS_ID, name: 'CS229 Machine Learning', code: 'CS229' }, state: 'recording', lectureId: 'lec_live' },
+]
+// A finished device recording that nobody has put into a course yet.
+const inbox: InboxLecture[] = [
+  { id: 'rec_new1', title: 'Recording 9 Oct 14:02', date: iso(daysFromNow(-1)), startedAt: daysFromNow(-1).toISOString(), status: 'ended', durationS: 2534, preview: 'So what does a Gaussian look like? It is a bell curve centred on the mean. With enough data, this is a pretty good model.', deviceName: 'Slap on the desk' },
 ]
 const activeOf = (c: ClassSummary) => ({ id: c.id, name: c.name, code: c.code })
 const deviceIn = (classId: string) => devices.find((d) => d.activeClass?.id === classId)
@@ -553,6 +558,23 @@ const routes: Array<[string, RegExp, Handler]> = [
     if (!d) throw new ApiError(404, 'device is not online')
     pointAt(d, String((body as { classId?: string }).classId ?? ''))
     return d
+  }],
+  ['GET', /^\/api\/inbox$/, () => inbox],
+  ['POST', /^\/api\/lectures\/([^/]+)\/assign$/, (m, body): LectureSummary => {
+    const i = inbox.findIndex((x) => x.id === m[1])
+    const classId = String((body as { classId?: string }).classId ?? '')
+    if (i < 0 || !classes.some((c) => c.id === classId)) throw new ApiError(404, 'not found')
+    const [rec] = inbox.splice(i, 1)
+    const lec: LectureSummary = { id: rec.id, classId, title: `Lecture ${lectures.filter((l) => l.classId === classId).length + 1}`, date: rec.date, status: 'processing', durationS: rec.durationS }
+    lectures.unshift(lec)
+    bundlePolls[lec.id] = 0
+    return lec
+  }],
+  ['DELETE', /^\/api\/inbox\/([^/]+)$/, (m) => {
+    const i = inbox.findIndex((x) => x.id === m[1])
+    if (i < 0) throw new ApiError(404, 'not found')
+    inbox.splice(i, 1)
+    return { ok: true }
   }],
   ['POST', /^\/api\/classes\/([^/]+)\/sessions\/start$/, (m, body): LectureSummary => {
     if (lectures.some((l) => l.classId === m[1] && l.status === 'live')) throw new ApiError(400, 'a session is already live')

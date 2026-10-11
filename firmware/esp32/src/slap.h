@@ -25,5 +25,8 @@ bool slap_poll(uint32_t nowMs);
 // read) so ext1 can wake on it, and clear any pending interrupt. True if INT is idle (high).
 bool slap_prepareSleep();
 
+// Acceleration in g on the IMU's X, Y, Z axes. False if the IMU is absent or did not answer.
+bool slap_readAccel(float g[3]);
+
 // IMU_PLOT bench helper: prints accelerometer magnitude at 20 Hz.
 void slap_imuPlot(uint32_t nowMs);

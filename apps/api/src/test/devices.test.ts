@@ -1,6 +1,6 @@
-// Online devices and their active class, end to end against the real database: REST routes (no sign-in and no
-// pairing; an online device is listed for every caller), the /ws/device protocol from a fake device, and session
-// start/stop with the mock STT.
+// Devices end to end against the real database: a device that connects records at once into the inbox (no
+// pairing, no course to pick), its captions follow the language it asks for, a press ends and saves the
+// recording, and the app puts it into a course. REST routes, the /ws/device protocol from a fake device, mock STT.
 // Seeds throwaway classes and device rows and deletes them afterwards; skipped without DATABASE_URL.
 // The database is shared, so other devices and classes exist: assertions look only at this run's rows.
 import assert from "node:assert/strict";
@@ -54,6 +54,7 @@ after(async () => {
   if (!hasDb || !m) return;
   const { db, schema } = m.db;
   const { inArray } = m.dz;
+  if (recordings.length) await db.delete(schema.lectures).where(inArray(schema.lectures.id, recordings));   // the ones left in the shared inbox
   await db.delete(schema.devices).where(inArray(schema.devices.deviceKey, [KEY1, KEY2]));
   const ids = Object.values(cls).map(c => c.id).filter(Boolean);
   if (ids.length) await db.delete(schema.classes).where(inArray(schema.classes.id, ids));
@@ -96,125 +97,131 @@ function fakeDevice(key: string, id = `devtest-${key.slice(-6)}`) {
   return {
     states, last, until, get frame() { return frame; },
     hello: async () => { await opened; ws.send(JSON.stringify({ type: "hello", deviceId: id, fw: "test" })); },
-    press: () => ws.send(JSON.stringify({ type: "button", button: "slap" })),
+    press: () => ws.send(JSON.stringify({ type: "button", button: "boot" })),
+    lang: (lang: string) => ws.send(JSON.stringify({ type: "lang", lang })),
+    /** Loud audio, sent at once: the mock STT replays one sentence of its fixture per 4 s of it. */
+    audio: (seconds: number) => {
+      const pcm = Buffer.alloc(3200);
+      for (let i = 0; i < 1600; i++) pcm.writeInt16LE(i % 40 < 20 ? 9000 : -9000, i * 2);
+      for (let i = 0; i < seconds * 10; i++) ws.send(pcm);
+    },
     close: () => ws.close(),
   };
 }
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const same = (a: Uint8Array | null, b: Uint8Array) => !!a && Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
+const recordings: string[] = [];   // every lecture a fake device started, for cleanup
 let deviceId = "";
 const listed = async (user: string, id: string) => (await call(user, "GET", "/api/devices")).data.find((d: { id: string }) => d.id === id);
+const inInbox = async (id: string) => (await call(userA, "GET", "/api/inbox")).data.find((l: { id: string }) => l.id === id);
 let device: ReturnType<typeof fakeDevice>;
+let first = "";
 
-test("a device that connects is listed for every caller at once, with no active class", { skip }, async () => {
+test("a device that connects records at once into the inbox and is listed for every caller", { skip }, async () => {
   device = fakeDevice(KEY1);
   await device.hello();
-  const st = await device.until((s, f) => s.state === "idle" && same(f, m.oled.renderPickCourse()), "idle 'pick a course' screen");
-  assert.equal(st.classCode, undefined);
-  assert.equal(st.message, m.oled.PICK_COURSE);
-
-  const name = `devtest-${KEY1.slice(-6)}`;
-  const all = (await call(userA, "GET", "/api/devices")).data as { id: string; name: string }[];
-  const mine = all.find(d => d.name === name);
-  assert.ok(mine, "the device is listed without any pairing step");
+  const rec = await device.until(s => s.state === "recording" && !!s.sessionId, "recording straight after hello");
+  first = rec.sessionId!;
+  recordings.push(first);
+  assert.equal(rec.classCode, undefined, "no course is involved");
+  const mine = ((await call(userA, "GET", "/api/devices")).data as { id: string; name: string }[]).find(d => d.name === `devtest-${KEY1.slice(-6)}`)!;
   deviceId = mine.id;
-  assert.deepEqual(mine, { id: deviceId, name, activeClass: null, state: "idle" });
-  assert.deepEqual(await listed(userB, deviceId), mine, "devices are shared: another caller sees the same device");
+  const theirs = await listed(userB, deviceId);
+  assert.deepEqual({ state: theirs.state, activeClass: theirs.activeClass, lectureId: theirs.lectureId }, { state: "recording", activeClass: null, lectureId: first });
+  const [row] = await m.db.db.select().from(m.db.schema.lectures).where(m.dz.eq(m.db.schema.lectures.id, first));
+  assert.equal(row!.deviceId, deviceId);
+  assert.equal(row!.source, "device");
+  assert.equal((await inInbox(first)).status, "live");
+  const classes = (await call(userA, "GET", "/api/classes")).data as { code: string }[];
+  assert.ok(!classes.some(c => c.code === "INBOX"), "the inbox is not listed as a course");
   assert.equal((await call(userA, "POST", "/api/devices/pair", { pairCode: "ABC123" })).status, 404, "the pair route is gone");
 });
 
-test("a device start with no active class is ignored", { skip }, async () => {
-  const before = device.states.length;
-  device.press();
-  await sleep(1500);
-  assert.ok(device.states.slice(before).every(s => s.state === "idle"), JSON.stringify(device.states.slice(before)));
-  for (const c of [cls.c1, cls.c2]) {
-    const d = await call(userA, "GET", `/api/classes/${c.id}`);
-    assert.ok(!d.data.lectures.some((l: { status: string }) => l.status === "live"), "no lecture was started");
-    assert.equal(d.data.device, null, "no device points at this class yet");
-  }
+test("a language message shows the language name, then captions carry on in it", { skip }, async () => {
+  device.lang("vi");
+  await device.until((_, f) => same(f, m.oled.renderLanguage("vi")), "the Vietnamese banner");
+  await device.until((s, f) => s.state === "recording" && !same(f, m.oled.renderLanguage("vi")), "captions again", 4000);
+  device.lang("xx");   // unknown: ignored
+  device.audio(9);
+  for (let i = 0; i < 60 && !(await inInbox(first))?.preview; i++) await sleep(150);
+  assert.ok((await inInbox(first)).preview.length > 10, "the mock transcript reached the recording");
 });
 
-test("switching the active class: any caller, existing class only; the device re-renders its idle screen at once", { skip }, async () => {
-  assert.equal((await call(userA, "POST", `/api/devices/${deviceId}/active-class`, { classId: crypto.randomUUID() })).status, 404, "no such class");
-  assert.equal((await call(userA, "POST", `/api/devices/${crypto.randomUUID()}/active-class`, { classId: cls.c1.id })).status, 404, "no such device");
-
-  const r = await call(userB, "POST", `/api/devices/${deviceId}/active-class`, { classId: cls.c1.id });
-  assert.equal(r.status, 200, JSON.stringify(r.data));
-  assert.deepEqual(r.data.activeClass, { id: cls.c1.id, name: "Device test c1 (throwaway)", code: cls.c1.code });
-  const idle = m.oled.renderIdle(cls.c1.code, m.dev.joinUrl(cls.c1.code), true);
-  await device.until((s, f) => s.state === "idle" && s.classCode === cls.c1.code && same(f, idle), "idle with c1's code");
-
-  const d = await call(userA, "GET", `/api/classes/${cls.c1.id}`);
-  assert.deepEqual(d.data.device, { id: deviceId, name: `devtest-${KEY1.slice(-6)}`, state: "idle" });
-});
-
-test("a device start records into the active class; switching while recording is refused", { skip }, async () => {
+test("a press ends the recording: the device shows Saved and the transcript waits in the inbox", { skip }, async () => {
   await sleep(1100);   // button debounce
   device.press();
-  const rec = await device.until(s => s.state === "recording" && !!s.sessionId, "recording");
-  const d = await call(userA, "GET", `/api/classes/${cls.c1.id}`);
-  const live = d.data.lectures.find((l: { status: string }) => l.status === "live");
-  assert.equal(live?.id, rec.sessionId);
-  assert.equal(d.data.device.state, "recording");
-  const [row] = await m.db.db.select().from(m.db.schema.lectures).where(m.dz.eq(m.db.schema.lectures.id, rec.sessionId!));
-  assert.equal(row!.deviceId, deviceId);
-  assert.equal(row!.source, "device");
+  await device.until((s, f) => s.state === "idle" && !!f, "idle after the stop");
+  for (let i = 0; i < 40 && (await inInbox(first))?.status !== "ended"; i++) await sleep(100);   // the database follows the device
+  const saved = await inInbox(first);
+  assert.equal(saved.status, "ended");
+  assert.ok(saved.durationS > 0 && saved.preview.length > 10);
+  const [row] = await m.db.db.select().from(m.db.schema.lectures).where(m.dz.eq(m.db.schema.lectures.id, first));
+  assert.equal(row!.status, "ended", "no study bundle until it is in a course");
+  assert.equal((await listed(userA, deviceId)).state, "idle");
+});
 
-  assert.equal((await call(userA, "POST", `/api/devices/${deviceId}/active-class`, { classId: cls.c2.id })).status, 409);
+test("the app puts a saved recording into a course, once", { skip }, async () => {
+  const r = await call(userB, "POST", `/api/lectures/${first}/assign`, { classId: cls.c1.id });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.classId, cls.c1.id);
+  assert.equal(r.data.title, "Lecture 1");
+  assert.ok(["processing", "ready", "ended"].includes(r.data.status));
+  assert.equal(await inInbox(first), undefined);
+  const c1 = await call(userA, "GET", `/api/classes/${cls.c1.id}`);
+  assert.ok(c1.data.lectures.some((l: { id: string }) => l.id === first));
+  assert.equal((await call(userA, "POST", `/api/lectures/${first}/assign`, { classId: cls.c2.id })).status, 409, "already in a course");
+  assert.equal((await call(userA, "POST", `/api/lectures/${first}/assign`, { classId: crypto.randomUUID() })).status, 404);
+});
+
+test("a recording can be put into a course while it runs; the device then belongs to that course", { skip }, async () => {
+  await sleep(1100);
+  device.press();   // start again without reconnecting
+  const rec = await device.until(s => s.state === "recording" && !!s.sessionId && s.sessionId !== first, "a second recording");
+  recordings.push(rec.sessionId!);
+  assert.equal((await call(userA, "POST", `/api/devices/${deviceId}/active-class`, { classId: cls.c2.id })).status, 200);
+  await device.until(s => s.state === "recording" && s.classCode === cls.c2.code, "recording into c2");
+  assert.equal((await listed(userB, deviceId)).activeClass.id, cls.c2.id);
+  const d = await call(userA, "GET", `/api/classes/${cls.c2.id}`);
+  assert.equal(d.data.lectures.find((l: { status: string }) => l.status === "live")?.id, rec.sessionId);
+  assert.equal(d.data.device.state, "recording");
+  assert.equal((await call(userA, "POST", `/api/devices/${deviceId}/active-class`, { classId: cls.c3.id })).status, 409, "it is recording another course");
+  assert.equal((await call(userA, "POST", `/api/classes/${cls.c3.id}/sessions/start`, {})).status, 409, "the only online device is busy");
+  assert.equal((await call(userA, "POST", `/api/lectures/${rec.sessionId}/stop`)).status, 200);
+  const idle = await device.until(s => s.state === "idle", "idle after the stop");
+  assert.equal(idle.classCode, undefined);
+});
+
+test("a web start takes over what a device is recording into the inbox; nothing said and no course leaves nothing behind", { skip }, async () => {
+  const d2 = fakeDevice(KEY2);
+  await d2.hello();
+  const rec = await d2.until(s => s.state === "recording" && !!s.sessionId, "recording");
+  recordings.push(rec.sessionId!);
+  const r = await call(userA, "POST", `/api/classes/${cls.c3.id}/sessions/start`, {});
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.id, rec.sessionId, "the device's recording became the course's lecture");
+  await d2.until(s => s.classCode === cls.c3.code, "recording into c3");
+  assert.equal((await call(userA, "POST", `/api/lectures/${rec.sessionId}/stop`)).status, 200);
+  await d2.until(s => s.state === "idle", "idle");
 
   await sleep(1100);
-  device.press();
-  await device.until(s => s.state === "idle" && s.classCode === cls.c1.code, "idle after stop");
+  d2.press();
+  const empty = await d2.until(s => s.state === "recording" && !!s.sessionId && s.sessionId !== rec.sessionId, "an inbox recording");
+  await sleep(1100);
+  d2.press();
+  await d2.until(s => s.state === "idle", "idle");
+  for (let i = 0; i < 40 && (await m.db.db.select().from(m.db.schema.lectures).where(m.dz.eq(m.db.schema.lectures.id, empty.sessionId!))).length; i++) await sleep(100);
+  assert.equal(await inInbox(empty.sessionId!), undefined, "an empty recording is dropped");
+  d2.close();
 });
 
-test("a web start for another class switches the connected idle device there and records", { skip }, async () => {
-  const r = await call(userA, "POST", `/api/classes/${cls.c2.id}/sessions/start`, { title: "Web start" });
-  assert.equal(r.status, 200, JSON.stringify(r.data));
-  assert.equal(r.data.classId, cls.c2.id);
-  const st = await device.until(s => s.state === "recording" && s.sessionId === r.data.id, "recording the web-started lecture");
-  assert.equal(st.classCode, cls.c2.code);
-  const mine = await listed(userA, deviceId);
-  assert.equal(mine.activeClass.id, cls.c2.id);
-  assert.equal(mine.state, "recording");
-
-  const stop = await call(userA, "POST", `/api/lectures/${r.data.id}/stop`);
-  assert.equal(stop.status, 200);
-  await device.until(s => s.state === "idle" && s.classCode === cls.c2.code, "idle in c2");
-});
-
-test("a device that goes offline is no longer listed; it comes back with its active class", { skip }, async () => {
+test("a device that goes offline is no longer listed; with none online a web start records from the browser", { skip }, async () => {
   device.close();
   for (let i = 0; i < 40 && await listed(userA, deviceId); i++) await sleep(100);
   assert.equal(await listed(userA, deviceId), undefined, "an offline device is not listed");
-  assert.equal((await call(userA, "GET", `/api/classes/${cls.c2.id}`)).data.device, null);
-  assert.equal((await call(userA, "POST", `/api/devices/${deviceId}/active-class`, { classId: cls.c1.id })).status, 404, "nor switchable");
-
-  device = fakeDevice(KEY1, `devtest-other-${run}`);
-  await device.hello();
-  await device.until(s => s.state === "idle" && s.classCode === cls.c2.code, "idle in c2 again");
-  const back = await listed(userB, deviceId);
-  assert.equal(back.activeClass.id, cls.c2.id);
-  assert.equal(back.name, `devtest-other-${run}`, "listed under the id it announced this time");
-  device.close();
-});
-
-test("a web start with every online device recording elsewhere is refused; with none online it starts for the browser", { skip }, async () => {
-  const d2 = fakeDevice(KEY2);
-  await d2.hello();
-  await d2.until(s => s.state === "idle", "idle");
-  const id2 = ((await call(userA, "GET", "/api/devices")).data as { id: string; name: string }[]).find(d => d.name === `devtest-${KEY2.slice(-6)}`)!.id;
-  assert.equal((await call(userB, "POST", `/api/devices/${id2}/active-class`, { classId: cls.c3.id })).status, 200);
-  await d2.until(s => s.state === "idle" && s.classCode === cls.c3.code, "idle with c3");
-  d2.press();
-  const rec = await d2.until(s => s.state === "recording" && !!s.sessionId, "recording c3");
-  assert.equal((await call(userA, "POST", `/api/classes/${cls.c1.id}/sessions/start`, {})).status, 409, "the only online device is busy");
-  assert.equal((await call(userA, "POST", `/api/lectures/${rec.sessionId}/stop`)).status, 200);
-  await d2.until(s => s.state === "idle", "idle after stop");
-  d2.close();
-  for (let i = 0; i < 40 && await listed(userA, id2); i++) await sleep(100);
-
+  assert.equal((await call(userA, "POST", `/api/devices/${deviceId}/active-class`, { classId: cls.c1.id })).status, 404);
+  const ids = ((await call(userA, "GET", "/api/devices")).data as { name: string }[]).filter(d => d.name?.startsWith("devtest-"));
+  for (let i = 0; i < 40 && ids.length && (await call(userA, "GET", "/api/devices")).data.some((d: { name: string }) => d.name?.startsWith("devtest-")); i++) await sleep(100);
   const r = await call(userA, "POST", `/api/classes/${cls.c1.id}/sessions/start`, { title: "No device" });
   assert.equal(r.status, 200, JSON.stringify(r.data));
   const [row] = await m.db.db.select().from(m.db.schema.lectures).where(m.dz.eq(m.db.schema.lectures.id, r.data.id));

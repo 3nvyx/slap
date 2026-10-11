@@ -1,20 +1,22 @@
-// /ws/device?key=...: the desk device. Text frames are JSON (DeviceToServer / ServerToDevice),
+// /ws/device?key=...: the desk device. A device that is on records: its hello starts a session, a `button`
+// ends it, and `lang` picks the caption language on its own screen. Text frames are JSON (DeviceToServer / ServerToDevice),
 // binary up is 16 kHz s16le PCM (3,200 bytes = 100 ms), binary down is a 1,024-byte OLED frame.
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { AUDIO_FRAME_BYTES, type DeviceToServer, type ServerToDevice } from "@slap/contracts";
+import { AUDIO_FRAME_BYTES, DEVICE_LANGS, type DeviceLang, type DeviceToServer, type ServerToDevice } from "@slap/contracts";
 import { eq } from "drizzle-orm";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { db, schema } from "../db/index.ts";
-import { PICK_COURSE, renderIdle, renderPickCourse, renderRecording, renderText } from "../oled.ts";
+import { renderLanguage, renderNotice, renderRecording, renderSaved, renderText } from "../oled.ts";
 import { pcmRms } from "../pipeline/stt.ts";
-import { attachDevice, detachDevice, getLecture, pushAudio, startSession, stopSession, type DeviceLink } from "../sessions.ts";
+import { attachDevice, detachDevice, getLecture, pushAudio, setDeviceLang, startDeviceSession, stopSession, type DeviceLink } from "../sessions.ts";
 import { settings } from "../settings.ts";
 
 const PING_MS = 10_000;
 const DEAD_MS = 30_000;
 const SEEN_WRITE_MS = 60_000;
 const MAX_BUFFERED = 256 * 1024;                            // skip OLED frames if the device is not draining
+const LANG_BANNER_MS = 1500;     // how long the language name covers the caption after a tilt
 const FRAME_REFRESH_MS = 3000;   // firmware shows a server frame for 5 s (OLED_SERVER_FRAME_TTL_MS), so resend before that
 
 type DeviceRow = typeof schema.devices.$inferSelect;
@@ -32,10 +34,6 @@ export async function triggerUsbSlap(firmwareDeviceId: string): Promise<boolean>
 }
 
 const log = (...a: unknown[]) => console.log("[device]", ...a);
-
-export function joinUrl(classCode: string): string {
-  return `${settings.publicUrl.replace(/\/+$/, "")}/j/${encodeURIComponent(classCode)}`;
-}
 
 /** Known key: a devices row, or one of settings.deviceKeys (row created on first hello). The key is all a
  *  device needs: once it says hello it is online, listed in the app and ready to record. */
@@ -66,13 +64,17 @@ function meter(rms: number): number {
   return Math.min(1, Math.max(0, (20 * Math.log10(rms) + 50) / 44));
 }
 
-function screen(d: DeviceLink, message?: string): Uint8Array {
+const isLang = (v: unknown): v is DeviceLang => (DEVICE_LANGS as readonly unknown[]).includes(v);
+
+function screen(d: DeviceLink, banner: boolean, message?: string): Uint8Array {
   switch (d.state) {
-    case "idle": return d.classCode ? renderIdle(d.classCode, joinUrl(d.classCode), true) : renderPickCourse();
+    // Idle is the moment between a stop and the device going to sleep (or a start that has not happened yet).
+    case "idle": return d.savedSeconds === null ? renderNotice("Slap", "Starting...") : renderSaved(d.savedSeconds);
     case "recording": {
+      if (banner) return renderLanguage(d.lang);
       const l = d.lectureId ? getLecture(d.lectureId) : undefined;
       const secs = l ? (Date.now() - l.startedAt) / 1000 : 0;
-      return renderRecording(secs, d.level, d.lastCaption);
+      return renderRecording(secs, d.level, d.lastCaption, d.lang);
     }
     case "error": return renderText(["Error", message ?? "something went wrong"]);
   }
@@ -91,6 +93,7 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
   let deviceLevelAt = 0;        // device-reported levels win for 3 s
   let errorMessage: string | undefined;
   let errorTimer: NodeJS.Timeout | undefined;
+  let bannerUntil = 0;          // the language name is on screen until then
 
   const send = (m: ServerToDevice) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m)); };
 
@@ -129,7 +132,7 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
     }, 3000);
   }
 
-  function makeLink(row: DeviceRow, cls: { code: string; name: string } | null): DeviceLink {
+  function makeLink(row: DeviceRow, lang: DeviceLang): DeviceLink {
     let lastState = "";
     let lastFrame: Uint8Array | null = null;
     let lastFrameAt = 0;
@@ -137,25 +140,26 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
       id: row.id,
       name: row.name,
       state: "idle",
-      classId: cls ? row.classId : null,
-      classCode: cls?.code ?? null,
-      className: cls?.name ?? null,
+      classId: null,
+      classCode: null,
+      className: null,
       lectureId: null,
       level: 0,
+      lang,
       lastCaption: "",
+      savedSeconds: null,
       refresh() {
         if (ws.readyState !== WebSocket.OPEN) return;
         const msg: ServerToDevice = {
           type: "state", state: d.state,
           ...(d.lectureId ? { sessionId: d.lectureId } : {}),
           ...(d.classCode ? { classCode: d.classCode } : {}),
-          ...(d.state === "idle" && !d.classCode ? { message: PICK_COURSE } : {}),
           ...(d.state === "error" && errorMessage ? { message: errorMessage } : {}),
         };
         const s = JSON.stringify(msg);
         if (s !== lastState) { ws.send(s); lastState = s; }
         if (ws.bufferedAmount > MAX_BUFFERED) return;
-        const frame = screen(d, errorMessage);
+        const frame = screen(d, Date.now() < bannerUntil, errorMessage);
         if (!lastFrame || Buffer.compare(frame, lastFrame) !== 0 || Date.now() - lastFrameAt >= FRAME_REFRESH_MS) {
           ws.send(frame, { binary: true });
           lastFrame = frame;
@@ -182,13 +186,12 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
       await db.update(schema.devices).set({ name }).where(eq(schema.devices.id, row.id));
       row = { ...row, name };
     }
-    const [cls] = row.classId ? await db.select({ code: schema.classes.code, name: schema.classes.name }).from(schema.classes).where(eq(schema.classes.id, row.classId)).limit(1) : [];
     const old = sockets.get(row.id);
     if (old && old !== ws) old.close(4000, "replaced by a newer connection");
     sockets.set(row.id, ws);
     if (ws.readyState !== WebSocket.OPEN) return;
-    link = makeLink(row, cls ?? null);
-    log(`hello ${m.deviceId} fw=${m.fw} -> ${row.id} online, ${cls ? `class ${cls.code}` : "no active class"}`);
+    link = makeLink(row, isLang(m.lang) ? m.lang : "en");
+    log(`hello ${m.deviceId} fw=${m.fw} -> ${row.id} online, captions in ${link.lang}`);
     await attachDevice(link);
     firmwareDeviceId = m.deviceId;
     usbTargets.set(m.deviceId, { socket: ws, press: onButton });
@@ -202,15 +205,10 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
     if (Date.now() - lastPress < 1000) return;   // debounce double reports
     lastPress = Date.now();
     const d = link;
-    if (!d.lectureId && !d.classId) {
-      log(`${d.id} start ignored: no active class (pick a course in the app)`);
-      d.refresh();
-      return;
-    }
     buttonBusy = true;
     try {
       if (d.lectureId) await stopSession(d.lectureId);
-      else await startSession(d.classId!, { source: "device", deviceId: d.id });
+      else await startDeviceSession(d);
     } catch (e) {
       console.error("[device] button action failed:", (e as Error).message);
       showError(d.lectureId ? "could not stop" : "could not start");
@@ -232,6 +230,13 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
         });
         break;
       case "button": void onButton(); break;
+      case "lang":
+        if (!link || !isLang(m.lang) || m.lang === link.lang) break;
+        setDeviceLang(link, m.lang);
+        bannerUntil = Date.now() + LANG_BANNER_MS;
+        link.refresh();
+        setTimeout(() => link?.refresh(), LANG_BANNER_MS + 20).unref();
+        break;
       case "level": if (link && Number.isFinite(m.rms)) { link.level = meter(m.rms); deviceLevelAt = Date.now(); } break;
       case "pong": break;
     }

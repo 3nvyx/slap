@@ -6,16 +6,17 @@
 //                             button, LED, OLED (all I2C traffic happens here)
 //   Wi-Fi/lwIP (core 0)       ESP-IDF
 //
-// Gestures (REC = the housing button over BOOT, GPIO 0):
-//   asleep     any IMU motion (shake or one slap) or REC wakes and connects; a wake alone is
-//              never a slap, but wake + one more hit within SLAP_WAKE_WINDOW_MS = double slap
-//   idle       double slap or REC press -> `button` (server starts); hold REC 2 s -> sleep
-//   recording  double slap (IMU only) or REC press -> `button` (server stops);
-//              hold REC 2 s -> stop, then sleep
+// The device is either asleep or recording (REC = the housing button over BOOT, GPIO 0):
+//   asleep     a real shake (SHAKE_* in settings.h) or a REC press switches it on; a knock or
+//              being carried wakes the chip for a second and it goes back to sleep unlit
+//   on         joins Wi-Fi, connects, and the server starts a session at once (no course to pick)
+//   recording  tilt left / right, or a short REC press: next caption language (en, vi, ja);
+//              hold REC 2 s: the session is ended and saved, then the device sleeps
+// A session ended from the app also puts the device to sleep, after the "Saved" screen.
 //
-// States: BOOTING -> WIFI -> CONNECTING -> (server says) IDLE | RECORDING | ERROR.
-// The server owns the session: BOOT presses and double slaps are sent as `button` events and
-// the server answers with a `state`. A link or Wi-Fi drop falls back to CONNECTING / WIFI.
+// States: BOOTING -> WIFI -> CONNECTING -> (server says) RECORDING | IDLE | ERROR.
+// The server owns the session and answers every change with a `state`. A link or Wi-Fi drop
+// falls back to CONNECTING / WIFI and the session carries on when the link is back.
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -32,8 +33,17 @@
 #include "link.h"
 #include "settings.h"
 #include "slap.h"
+#include "tilt.h"
 
 namespace {
+
+// Caption language on this device's screen; kept across deep sleep (not across power loss).
+const char* const kLangs[] = {"en", "vi", "ja"};
+constexpr int kLangCount = sizeof kLangs / sizeof kLangs[0];
+RTC_DATA_ATTR uint8_t g_lang = 0;
+TiltDetector g_tilt(IMU_TILT_AXIS, IMU_TILT_SIGN);
+uint32_t g_lastTilt = 0;
+uint32_t g_savedAt = 0;        // when the server ended the session (0 = it has not)
 
 AppState g_state = AppState::BOOTING;
 AppState g_lastServerState = AppState::IDLE;
@@ -93,17 +103,32 @@ void startWifi() {
   g_wifiBeganAt = millis();
 }
 
-void enterDeepSleep(const char* why) {
-  Serial.printf("[sleep] %s: deep sleep, wake on REC%s\n", why, slap_imuOk() ? " or IMU motion (shake/slap)" : "");
-  display_notice("Asleep", slap_imuOk() ? "Shake or tap REC" : "Press REC to wake");
-  audio_setStreaming(false);
-  link_stop();
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
-  delay(1200);
-  display_off();
-  led_off();
+// Steps the caption language (dir = -1 left, +1 right; it wraps) and tells the server.
+void changeLang(int dir) {
+  g_lang = (uint8_t)((g_lang + kLangCount + dir) % kLangCount);
+  Serial.printf("[lang] %s\n", kLangs[g_lang]);
+  link_setLang(kLangs[g_lang]);
+  g_lastActivity = millis();
+}
 
+// After a wake by the IMU: true if the motion is a real shake (SHAKE_* in settings.h).
+bool confirmShake() {
+  if (!slap_imuOk()) return true;   // cannot tell: stay on rather than play dead
+  uint32_t t0 = millis(), last = t0, active = 0;
+  float g[3];
+  while (millis() - t0 < SHAKE_CONFIRM_MS) {
+    uint32_t now = millis();
+    if (slap_readAccel(g) && fabsf(sqrtf(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]) - 1.0f) > SHAKE_MIN_G) active += now - last;
+    last = now;
+    if (active >= SHAKE_MIN_MS) return true;
+    delay(5);
+  }
+  Serial.printf("[boot] motion was not a shake (%lu of %d ms): back to sleep\n", (unsigned long)active, SHAKE_MIN_MS);
+  return false;
+}
+
+// Arms the wake sources (REC, and IMU motion when there is an IMU) and enters deep sleep. Does not return.
+void sleepNow() {
   // BOOT held now would wake us at once (ext1 is level-triggered): wait for release.
   for (int i = 0; i < 100 && button_isDown(); i++) delay(50);
 
@@ -127,7 +152,22 @@ void enterDeepSleep(const char* why) {
   esp_deep_sleep_start();
 }
 
-// Hold REC while recording: ask the server to stop (the same toggle as a press), give it up
+// saved: a session was just ended, so the screen says where the transcript went.
+void enterDeepSleep(const char* why, bool saved = false) {
+  Serial.printf("[sleep] %s: deep sleep, wake on REC%s\n", why, slap_imuOk() ? " or a shake" : "");
+  if (saved) display_notice("Saved", "See it in the app");
+  else display_notice("Asleep", slap_imuOk() ? "Shake to record" : "Press REC to record");
+  audio_setStreaming(false);
+  link_stop();
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  delay(saved ? 1800 : 1200);
+  display_off();
+  led_off();
+  sleepNow();
+}
+
+// Hold REC while recording: ask the server to stop, give it up
 // to 3 s to confirm with a non-recording `state` so the lecture is closed cleanly, then sleep.
 void stopRecordingThenSleep() {
   Serial.println("[btn] REC held while recording: stop, then sleep");
@@ -142,7 +182,7 @@ void stopRecordingThenSleep() {
     }
     if (g_state == AppState::RECORDING) Serial.println("[sleep] no stop confirmation from the server");
   }
-  enterDeepSleep("REC held while recording");
+  enterDeepSleep("REC held while recording", true);
 }
 
 void serialCommands(uint32_t now) {
@@ -150,7 +190,7 @@ void serialCommands(uint32_t now) {
     int c = Serial.read();
     switch (c) {
       case 'b': Serial.println("[cmd] BOOT press"); sendOrHold("boot", now); break;
-      case 's': Serial.println("[cmd] slap"); led_flashSlap(now); sendOrHold("slap", now); break;
+      case 'l': Serial.println("[cmd] next language"); changeLang(1); break;
       case 'z': enterDeepSleep("serial command"); break;
       case 'w': {   // scan: shows whether the configured SSID is visible on 2.4 GHz
         Serial.println("[scan] scanning 2.4 GHz...");
@@ -212,6 +252,9 @@ void app_onServerState(AppState s, const char* sessionId, const char* classCode,
     g_recStart = millis();
   snprintf(g_sessionId, sizeof g_sessionId, "%s", sessionId);
   g_lastServerState = s;
+  // The server ended the session (a stop from the app): show its "Saved" screen, then sleep.
+  if (s == AppState::IDLE && g_state == AppState::RECORDING) g_savedAt = millis() ? millis() : 1;
+  if (s == AppState::RECORDING) { g_savedAt = 0; g_tilt.reset(); }
   setState(s);
 }
 
@@ -242,6 +285,8 @@ void setup() {
 
   led_begin();
   button_begin();
+  // On = recording, so a wake by motion has to be a deliberate shake, not a knock or a walk in a bag.
+  if (wokeImu && !confirmShake()) sleepNow();
   makeIdentity();
   Serial.printf("[boot] id %s mac %s\n", g_deviceId, g_mac);
 
@@ -271,9 +316,8 @@ void loop() {
   // ---- BOOT button ----
   switch (button_poll(now)) {
     case ButtonEvent::SHORT_PRESS:
-      Serial.println("[btn] BOOT");
-      g_lastActivity = now;
-      sendOrHold("boot", now);
+      Serial.println("[btn] REC: next language");
+      changeLang(1);
       break;
     case ButtonEvent::LONG_PRESS:
       if (g_state == AppState::RECORDING) stopRecordingThenSleep();
@@ -298,7 +342,7 @@ void loop() {
     Serial.printf("[wifi] up %s gw %s mask %s rssi %d\n", WiFi.localIP().toString().c_str(),
                   WiFi.gatewayIP().toString().c_str(), WiFi.subnetMask().toString().c_str(), (int)WiFi.RSSI());
     if (!g_linkBegun) {
-      link_begin(g_deviceId, g_mac);
+      link_begin(g_deviceId, g_mac, kLangs[g_lang]);
       g_linkBegun = true;
     }
     setState(link_connected() ? (g_waitingState ? AppState::CONNECTING : g_lastServerState) : AppState::CONNECTING);
@@ -313,12 +357,17 @@ void loop() {
     app_onServerState(AppState::IDLE, "", "", "");
   }
 
-  // ---- slap ----
-  if (slap_poll(now)) {
-    led_flashSlap(now);
-    g_lastActivity = now;
-    sendOrHold("slap", now);
+  // ---- motion ----
+  slap_poll(now);   // keeps the detector's queue drained; slaps no longer start or stop anything
+  if (g_state == AppState::RECORDING && now - g_lastTilt >= TILT_SAMPLE_MS) {
+    g_lastTilt = now;
+    float g[3];
+    if (slap_readAccel(g)) {
+      int dir = g_tilt.update(g, now);
+      if (dir) changeLang(dir);
+    }
   }
+  if (g_savedAt && now - g_savedAt > SAVED_SHOW_MS) enterDeepSleep("session ended by the server", true);
   if (g_pendingButton && now - g_pendingAt > SLAP_PENDING_TTL_MS) {
     Serial.printf("[btn] held %s expired\n", g_pendingButton);
     g_pendingButton = nullptr;

@@ -5,7 +5,7 @@ import { Async, Button, Empty, ErrorBox, inputCls, Label, PageTitle, Panel } fro
 import { api } from '../lib/api'
 import { examInfo, fmtDate } from '../lib/format'
 import { useApi } from '../lib/useApi'
-import { OnlineDevicesCard } from './Devices'
+import { NewRecordingsCard, OnlineDevicesCard } from './Devices'
 
 export function ClassesPage() {
   const classes = useApi(() => api.classes(), [])
@@ -47,6 +47,7 @@ export function ClassesPage() {
             }
           </Async>
           <div className="space-y-4">
+            <NewRecordingsCard classes={classes.data ?? []} onChange={classes.reload} />
             <OnlineDevicesCard classes={classes.data ?? []} onClassesChanged={classes.reload} />
             <CreateForm onDone={(id) => navigate(`/c/${id}`)} />
           </div>

@@ -23,21 +23,17 @@ function sprite(name, art) {
   LAB.sprites[name] = { name, rows, w: Math.max(0, ...rows.map(r => r.length)), h: rows.length };
 }
 
-// ---- Drawing helpers. font, wrapText, paragraph, centered, fitFont, drawQr and mmss match
+// ---- Drawing helpers. font, wrapText, centered, fitFont and mmss match
 // apps/api/src/oled.ts, so a draw() that only uses them can move to the server unchanged.
 
-const CJK = /[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/;
-const KANA = /[\u3040-\u30ff]/, HANGUL = /[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/;
-const RTL = /^[^\p{L}]*[\p{Script=Arabic}\p{Script=Hebrew}]/u;
-const ARABIC = /\p{Script=Arabic}/u, DEVANAGARI = /\p{Script=Devanagari}/u;
+const CJK = /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/;
 const NO_LINE_START = /[、。，．！？：；）」』】〉》,.!?:;)]/;
 
-/** Font list for drawing `text`, as on the server: the font chosen on the page first, then the device's fonts
- *  for the other scripts (fonts/device). Text with Chinese, Japanese or Korean in it leads with the device's
- *  12 px pixel font instead: Japanese shapes with kana, Korean with hangul, otherwise Simplified Chinese. */
+/** Font list for drawing `text`, as on the server: the font chosen on the page, with the device's pixel font
+ *  for Japanese (fonts/device). Text with Japanese in it leads with the pixel font instead. */
 function families(text) {
-  const cjk = `"OLED CJK ${KANA.test(text) ? "ja" : HANGUL.test(text) ? "ko" : "zh"}"`, own = `"${LAB.fontFamily}"`;
-  return `${CJK.test(text) ? `${cjk}, ${own}` : `${own}, ${cjk}`}, "OLED Han rare", "OLED Devanagari", "OLED Arabic", sans-serif`;
+  const own = `"${LAB.fontFamily}"`;
+  return `${CJK.test(text) ? `"OLED CJK ja", ${own}` : `${own}, "OLED CJK ja"`}, sans-serif`;
 }
 const font = (px, bold = false, text = "") => `${bold ? "bold " : ""}${px}px ${families(text)}`;
 
@@ -62,22 +58,6 @@ function wrapText(ctx, text, maxWidth) {
   }
   if (line) lines.push(line);
   return lines;
-}
-
-/** Draws full-width lines of one paragraph, `pitch` px apart: `inset` px from the left edge, or from the right
- *  edge when the paragraph starts in a right-to-left script (Arabic). `baseline` is the y of the first line's
- *  baseline, not of its top: with textBaseline "top" the canvas takes the offset from the font of the line's
- *  first character, so a line starting with a Latin word or a digit would sit 3 px lower than its Hindi
- *  neighbours and 5 px higher than its Arabic ones. */
-function paragraph(ctx, text, lines, baseline, pitch, inset = 1) {
-  const rtl = RTL.test(text);
-  ctx.direction = rtl ? "rtl" : "ltr";
-  ctx.textAlign = rtl ? "right" : "left";
-  ctx.textBaseline = "alphabetic";
-  lines.forEach((l, i) => ctx.fillText(l, rtl ? W - inset : inset, baseline + i * pitch));
-  ctx.direction = "ltr";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
 }
 
 function centered(ctx, text, y, x0 = 0, width = W) {
@@ -144,12 +124,12 @@ function spriteFit(name, boxW, boxH) {
 // Measured from @napi-rs/canvas 0.1.100 on macOS, as fractions of the font size. A font that is
 // not listed gets its ascent from the browser and a typical underline value: close, not exact.
 // Since 10 October 2026 the server draws with the files in apps/api/fonts, not Helvetica: Noto Sans
-// (regular and a real bold, so no fakeBold), and Fusion Pixel 12px for Chinese, Japanese and Korean.
+// (regular and a real bold, so no fakeBold), and Fusion Pixel 12px for Japanese.
 // The metrics used are those of the first family in the font list, as on the server.
 const PIXEL_CJK = { ascent: 1.0833, under: 0.1667, fakeBold: true };
 const SERVER_FONTS = {
   "Noto Sans": { ascent: 1.069, under: 0.15 },
-  "OLED CJK zh": PIXEL_CJK, "OLED CJK ja": PIXEL_CJK, "OLED CJK ko": PIXEL_CJK,
+  "OLED CJK ja": PIXEL_CJK,
   "Helvetica": { ascent: 0.77, under: 0.125, fakeBold: true },
   "Arial": { ascent: 0.9053, under: 0.1792 },
   "Verdana": { ascent: 1.0054, under: 0.1465 },
@@ -544,12 +524,7 @@ function useFont(name) {
 // The fonts the server draws the other scripts with (apps/api/src/oled.ts), under the same family names.
 // fonts/device is a link to apps/api/fonts, so these are the very files the device's frames are made from.
 const DEVICE_FONTS = {
-  "OLED CJK zh": "fusion-pixel/fusion-pixel-12px-proportional-zh_hans.otf.woff2",
   "OLED CJK ja": "fusion-pixel/fusion-pixel-12px-proportional-ja.otf.woff2",
-  "OLED CJK ko": "fusion-pixel/fusion-pixel-12px-proportional-ko.otf.woff2",
-  "OLED Han rare": "noto-sans-sc-rare/NotoSansSC-Regular.rare.woff2",
-  "OLED Devanagari": "noto-sans-devanagari/NotoSansDevanagari-Regular.ttf",
-  "OLED Arabic": "noto-sans-arabic/NotoSansArabic-Regular.ttf",
 };
 
 function loadDeviceFonts() {
@@ -559,7 +534,7 @@ function loadDeviceFonts() {
     face.load().then(() => { document.fonts.add(face); render(); }).catch(() => {
       if (failed) return;
       failed = true;
-      LAB.loadErrors.push("The device's fonts (fonts/device) did not load: Chinese, Japanese, Korean, Hindi and Arabic are drawn with this computer's fonts, not the device's.");
+      LAB.loadErrors.push("The device's Japanese font (fonts/device) did not load: Japanese is drawn with this computer's font, not the device's.");
       showErrors();
     });
   }

@@ -5,76 +5,48 @@
 // ctx is a normal Canvas 2D context. d is the mock data (see README.md for every field):
 //   d.classCode  d.joinUrl  d.caption  d.lang  d.seconds  d.level  d.wifiOk  d.message  d.avatar  d.mascot  d.t
 // Helpers: font(px, bold, text)  centered(ctx, text, y, x0, width)  fitFont(ctx, text, width, max)
-//          wrapText(ctx, text, maxWidth)  paragraph(ctx, text, lines, y, pitch)  drawQr(ctx, text, x, y, box)  mmss(seconds)
+//          wrapText(ctx, text, maxWidth)  drawQr(ctx, text, x, y, box)  mmss(seconds)
 //          drawSprite(ctx, name, x, y, scale)  spriteFit(name, boxW, boxH)
 //          drawMascot(ctx, d, x, y, w, h, asleep, face)   the mascot from sprites.js, fitted into an area (defined further down)
 
 const TODAY = "On the device today";
 const IDEAS = "Ideas to play with";
 
-// ---- The five screens the server draws now, copied from apps/api/src/oled.ts.
-// Captions come first: while recording, the caption fills the screen and the timer and sound level are a thin
-// strip under it.
+// ---- The screens the server draws now, copied from apps/api/src/oled.ts. The device is either asleep or
+// recording, so there is no home screen: captions, the language banner after a tilt, "Saved", and an error.
+// (The firmware draws "Joining Wi-Fi" and "Connecting" itself, before the server is reached.)
+// Like the server, these place text by its baseline (ctx.textBaseline = "alphabetic"), not by its top edge.
 
-screen({
-  name: "Pick a course",
-  group: TODAY,
-  note: "Online, but no class chosen in the web app yet.",
-  draw(ctx) {
-    ctx.font = font(17, true);
-    centered(ctx, "Pick a course", 8);
-    ctx.font = font(13);
-    centered(ctx, "in the app", 34);
-  },
-});
-
-screen({
-  name: "Ready (join QR)",
-  group: TODAY,
-  note: "Waiting to start. Students scan the QR to open the captions page.",
-  draw(ctx, d) {
-    if (!drawQr(ctx, d.joinUrl, 0, 0, 64)) { ctx.font = font(11); ctx.fillText("Link too", 2, 16); ctx.fillText("long", 2, 29); }
-    const x0 = 66, w = W - x0;
-    ctx.font = font(fitFont(ctx, d.classCode, w - 2, 20), true);
-    centered(ctx, d.classCode, 0, x0, w);
-    ctx.font = font(13);
-    centered(ctx, "Slap to", 24, x0, w);
-    centered(ctx, "start", 38, x0, w);
-    if (!d.wifiOk) { ctx.font = font(9); centered(ctx, "no Wi-Fi", 53, x0, w); }
-  },
-});
-
-// Caption type on the recording screen, by script, sized so the lines' ink stays within rows 0-53. Chinese,
-// Japanese and Korean stay at the pixel font's 12 px (four lines); the others get three lines. `base` is the
-// first line's baseline: Arabic is drawn a size smaller and Hindi a row higher because both reach further
-// below the baseline than Latin does.
+// Caption type on the recording screen, sized so the lines' ink stays within rows 0-53: Japanese at the pixel
+// font's 12 px (four lines), English and Vietnamese at 15 px (three lines). `base` is the first line's baseline.
 function captionStyle(text) {
-  if (CJK.test(text)) return { px: 12, pitch: 14, lines: 4, base: 11 };
-  if (ARABIC.test(text)) return { px: 14, pitch: 18, lines: 3, base: 13 };
-  if (DEVANAGARI.test(text)) return { px: 15, pitch: 18, lines: 3, base: 13 };
-  return { px: 15, pitch: 18, lines: 3, base: 14 };
+  return CJK.test(text) ? { px: 12, pitch: 14, lines: 4, base: 11 } : { px: 15, pitch: 18, lines: 3, base: 14 };
 }
 
 const clamp01 = v => Math.min(1, Math.max(0, v));
+const DEVICE_LANGS = ["en", "vi", "ja"];
+const LANG_NAMES = { en: "English", vi: "Tiếng Việt", ja: "日本語" };
+const deviceLang = d => DEVICE_LANGS.includes(d.lang.code) ? d.lang.code : "en";
 
-// Bottom strip of the recording screen (rows 55-62): sound level growing from the left, elapsed time on the
-// right; mirrored under a right-to-left caption, whose short last line ends on the left.
-function recordingFooter(ctx, seconds, level, rtl) {
+// Bottom strip of the recording screen (rows 55-62): sound level growing from the left, then the caption
+// language and the elapsed time.
+function recordingFooter(ctx, seconds, level, lang) {
   ctx.font = font(10, true);
-  const t = mmss(seconds), tw = Math.ceil(ctx.measureText(t).width);
-  ctx.fillText(t, rtl ? 0 : W - tw, 53);
-  const w = W - tw - 5, fill = Math.round(clamp01(level) * w), x0 = rtl ? W - w : 0;
-  ctx.fillRect(x0, 61, w, 1);
-  ctx.fillRect(rtl ? W - fill : 0, 58, fill, 4);
+  const t = `${lang.toUpperCase()} ${mmss(seconds)}`, tw = Math.ceil(ctx.measureText(t).width);
+  ctx.fillText(t, W - tw, 63);
+  const w = W - tw - 5;
+  ctx.fillRect(0, 61, w, 1);
+  ctx.fillRect(0, 58, Math.round(clamp01(level) * w), 4);
 }
 
 // The server's renderRecording: with no caption yet the timer is large; after that the caption fills the screen.
-function drawRecording(ctx, seconds, level, caption) {
+function drawRecording(ctx, seconds, level, caption, lang) {
+  ctx.textBaseline = "alphabetic";
   if (!caption.trim()) {
     ctx.font = font(26, true);
-    centered(ctx, mmss(seconds), -3);
+    centered(ctx, mmss(seconds), 21);
     ctx.font = font(13);
-    centered(ctx, "Listening...", 27);
+    centered(ctx, "Listening...", 39);
     ctx.fillRect(0, 53, W, 1);
     ctx.fillRect(0, 62, W, 1);
     ctx.fillRect(0, 53, 1, 10);
@@ -84,27 +56,73 @@ function drawRecording(ctx, seconds, level, caption) {
   }
   const style = captionStyle(caption);
   ctx.font = font(style.px, false, caption);
-  paragraph(ctx, caption, wrapText(ctx, caption, W - 2).slice(-style.lines), style.base, style.pitch);
-  recordingFooter(ctx, seconds, level, RTL.test(caption));
+  wrapText(ctx, caption, W - 2).slice(-style.lines).forEach((l, i) => ctx.fillText(l, 1, style.base + i * style.pitch));
+  recordingFooter(ctx, seconds, level, lang);
+}
+
+// One large line with a hint under it (the server's renderNotice).
+function drawNotice(ctx, big, small) {
+  ctx.textBaseline = "alphabetic";
+  ctx.font = font(24, true);
+  centered(ctx, big, 30);
+  ctx.font = font(12, false, small);
+  centered(ctx, small, 52);
 }
 
 screen({
   name: "Listening",
   group: TODAY,
-  note: "Recording has started and nothing has been said yet: the timer is large, the sound level under it.",
+  note: "The session has started (it starts by itself once the device is switched on) and nothing has been said yet.",
   led: true,
   draw(ctx, d) {
-    drawRecording(ctx, d.seconds, d.level, "");
+    drawRecording(ctx, d.seconds, d.level, "", deviceLang(d));
   },
 });
 
 screen({
-  name: "Recording",
+  name: "Captions",
   group: TODAY,
-  note: "During a lecture: the latest three lines of caption (four in Chinese, Japanese and Korean), with the sound level and timer in a thin strip under them.",
+  note: "During a lecture: the latest three lines of caption (four in Japanese), with the sound level, the caption language and the timer in a thin strip under them. Choose the language on the right.",
   led: true,
   draw(ctx, d) {
-    drawRecording(ctx, d.seconds, d.level, d.caption);
+    drawRecording(ctx, d.seconds, d.level, d.caption, deviceLang(d));
+  },
+});
+
+screen({
+  name: "Language (after a tilt)",
+  group: TODAY,
+  note: "Shown for a second and a half after the device is tipped left or right: the new caption language, and where it sits among the three.",
+  led: true,
+  draw(ctx, d) {
+    ctx.textBaseline = "alphabetic";
+    const lang = deviceLang(d), name = LANG_NAMES[lang];
+    ctx.font = CJK.test(name) ? font(24, false, name) : font(20, true);
+    centered(ctx, name, 30);
+    const cell = 30, x0 = (W - cell * DEVICE_LANGS.length) / 2;
+    DEVICE_LANGS.forEach((l, i) => {
+      const x = x0 + i * cell;
+      ctx.font = font(11, true);
+      if (l === lang) {
+        ctx.fillRect(x + 2, 46, cell - 4, 16);
+        ctx.fillStyle = "#000";
+      }
+      centered(ctx, l.toUpperCase(), 58, x, cell);
+      ctx.fillStyle = "#fff";
+    });
+    // Arrowheads at the edges: there is something to the left or right.
+    const arrow = (x, dir) => { for (let i = 0; i < 5; i++) ctx.fillRect(x + dir * i, 54 - i, 1, 1 + 2 * i); };
+    if (lang !== DEVICE_LANGS[0]) arrow(4, 1);
+    if (lang !== DEVICE_LANGS.at(-1)) arrow(W - 5, -1);
+  },
+});
+
+screen({
+  name: "Saved",
+  group: TODAY,
+  note: "After REC was held for two seconds (or the session was stopped in the app): the transcript is saved, then the screen goes dark.",
+  draw(ctx, d) {
+    drawNotice(ctx, "Saved", `${mmss(d.seconds)} · see the app`);
   },
 });
 
@@ -113,21 +131,20 @@ screen({
   group: TODAY,
   note: "Something went wrong on the server.",
   draw(ctx, d) {
+    ctx.textBaseline = "alphabetic";
     const title = "Error";
     ctx.fillRect(0, 0, W, 17);
     ctx.fillStyle = "#000";
     ctx.font = font(13, true, title);
-    paragraph(ctx, title, [title], 13, 0, 3);
+    ctx.fillText(title, 3, 13);
     // Dark text on a lit bar loses its half-covered edge pixels to the threshold; a hairline outline restores the weight.
     ctx.strokeStyle = "#000";
     ctx.lineWidth = 0.8;
-    ctx.textBaseline = "alphabetic";
     ctx.strokeText(title, 3, 13);
-    ctx.textBaseline = "top";
     ctx.strokeStyle = "#fff";
     ctx.fillStyle = "#fff";
     ctx.font = font(12, false, d.message);
-    paragraph(ctx, d.message, wrapText(ctx, d.message, W - 2).slice(0, 3), 29, 15);
+    wrapText(ctx, d.message, W - 2).slice(0, 3).forEach((l, i) => ctx.fillText(l, 1, 29 + i * 15));
   },
 });
 

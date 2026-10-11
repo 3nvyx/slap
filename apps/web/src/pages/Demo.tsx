@@ -79,7 +79,7 @@ function LiveCourse({ course, devices, onChange }: { course: ClassSummary; devic
   const a = useAction()
   const joinUrl = `${window.location.origin}/j/${course.code}`
   const here = devices.find((d) => d.activeClass?.id === course.id)
-  const free = devices.find((d) => d.activeClass?.id !== course.id && d.state !== 'recording')
+  const free = devices.find((d) => !d.activeClass && d.state === 'recording')   // recording, not in a course yet
   const recording = here?.state === 'recording'
 
   return (
@@ -95,14 +95,14 @@ function LiveCourse({ course, devices, onChange }: { course: ClassSummary; devic
               <>
                 <Pill status={here.state} />
                 <span className="font-medium">{deviceLabel(here)}</span>
-                <span className="text-muted">{recording ? 'is recording this course.' : 'is ready. Slap it to start.'}</span>
+                <span className="text-muted">{recording ? 'is recording this course.' : 'has stopped. Shake it to record again.'}</span>
               </>
             ) : devices.length ? (
               <>
                 <span className="shrink-0">
                   <Pill status="offline">elsewhere</Pill>
                 </span>
-                <span className="text-muted">{free ? `${deviceLabel(free)} is online but set to another course.` : 'Every online device is recording another course.'}</span>
+                <span className="text-muted">{free ? `${deviceLabel(free)} is recording, not in a course yet.` : 'Every online device is recording another course.'}</span>
               </>
             ) : (
               <>

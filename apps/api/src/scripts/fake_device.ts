@@ -77,7 +77,7 @@ ws.on("open", async () => {
   console.log(`${ts()} connected to ${opt.url} as ${opt.id}; ${seconds.toFixed(0)} s of audio at ${speed}x`);
   send({ type: "hello", deviceId: opt.id!, fw: "fake-0.2" });
   await waitFor("idle", "recording");
-  if (opt["no-start"]) { console.log("--no-start: idling (Ctrl-C to quit)"); return; }
+  if (opt["no-start"]) { console.log("--no-start: connected, sending no audio (Ctrl-C to quit)"); return; }
   if (state === "recording") console.log(`${ts()} server resumed a live lecture; streaming without pressing start`);
   else { send({ type: "button", button: "boot" }); await waitFor("recording"); }
   const total = Math.floor((seconds * 32000) / AUDIO_FRAME_BYTES) * AUDIO_FRAME_BYTES;

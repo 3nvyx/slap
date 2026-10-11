@@ -16,6 +16,12 @@ WebSocketsClient ws;
 
 char g_path[192];     // SERVER_PATH?key=DEVICE_KEY
 char g_hello[224];    // prebuilt hello JSON
+char g_helloId[24], g_helloMac[18];
+
+void buildHello(const char* lang) {
+  snprintf(g_hello, sizeof g_hello, "{\"type\":\"hello\",\"deviceId\":\"%s\",\"fw\":\"%s\",\"mac\":\"%s\",\"lang\":\"%s\"}",
+           g_helloId, FW_VERSION, g_helloMac, lang);
+}
 bool g_connected = false;
 bool g_begun = false;
 
@@ -109,10 +115,11 @@ void onEvent(WStype_t type, uint8_t* payload, size_t len) {
 
 }  // namespace
 
-void link_begin(const char* deviceId, const char* mac) {
+void link_begin(const char* deviceId, const char* mac, const char* lang) {
   snprintf(g_path, sizeof g_path, "%s?key=%s", SERVER_PATH, DEVICE_KEY);
-  snprintf(g_hello, sizeof g_hello, "{\"type\":\"hello\",\"deviceId\":\"%s\",\"fw\":\"%s\",\"mac\":\"%s\"}",
-           deviceId, FW_VERSION, mac);
+  snprintf(g_helloId, sizeof g_helloId, "%s", deviceId);
+  snprintf(g_helloMac, sizeof g_helloMac, "%s", mac);
+  buildHello(lang);
 
   ws.onEvent(onEvent);
   // Empty subprotocol: no Sec-WebSocket-Protocol header (the server does not negotiate one).
@@ -182,6 +189,15 @@ bool link_sendButton(const char* button) {
   int n = snprintf(buf, sizeof buf, "{\"type\":\"button\",\"button\":\"%s\"}", button);
   Serial.printf("[ws] -> %s\n", buf);
   return ws.sendTXT(buf, (size_t)n);
+}
+
+void link_setLang(const char* lang) {
+  buildHello(lang);
+  if (!g_connected) return;
+  char buf[40];
+  int n = snprintf(buf, sizeof buf, "{\"type\":\"lang\",\"lang\":\"%s\"}", lang);
+  Serial.printf("[ws] -> %s\n", buf);
+  ws.sendTXT(buf, (size_t)n);
 }
 
 uint32_t link_framesSent() { return g_framesSent; }
