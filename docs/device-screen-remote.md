@@ -27,7 +27,7 @@ Use this for any server-side screen change before involving the board.
 Start the API (`pnpm dev` from the repo root), then from `apps/api`:
 
 ```sh
-node --env-file-if-exists=../../.env.local src/scripts/fake_device.ts --pair-code SLAP01 --show-oled
+node --env-file-if-exists=../../.env.local src/scripts/fake_device.ts --show-oled
 ```
 
 `--show-oled` prints every frame the server sends as ASCII. `--no-start` stays on the idle screen instead of recording.
@@ -65,7 +65,7 @@ For layout, font and language work use `screen-lab/` (see `screen-lab/README.md`
 - Serial log on the `3nvyx` Mac (`~/.local/bin/pio device monitor`): `[wifi] up <ip>` then `[ws] connected <host>:<port>/ws/device`.
 - API log: lines prefixed `[device]`.
 - Glass showing LINK or WI-FI means no server connection.
-- `GET /api/devices` lists paired devices only. A connected but unpaired device is absent from it; do not read its absence as offline.
+- `GET /api/devices` lists exactly the devices that are connected now (there is no pairing). A device that is absent from it is not connected to this API.
 
 ## State on 2026-10-10
 

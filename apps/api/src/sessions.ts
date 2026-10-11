@@ -1,14 +1,15 @@
 // In-memory registry of connected devices and live lectures (single process, no cluster).
 // Lectures own the STT stream, the caption sequence counter, a ring of recent finals for
 // reconnect snapshots, the viewers and their languages, and the translation cache.
-import type { CaptionEvent, CaptionWord, DeviceState, LectureSummary } from "@slap/contracts";
+import type { CaptionEvent, CaptionMode, CaptionModeInfo, CaptionWord, DeviceState, LectureSummary } from "@slap/contracts";
 import { AUDIO_SAMPLE_RATE } from "@slap/contracts";
-import { and, asc, count, desc, eq, gt, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { db, schema } from "./db/index.ts";
 import { enqueueStudyBundle } from "./pipeline/bundle.ts";
-import { createStt, type SttResult, type SttSession } from "./pipeline/stt.ts";
+import { createStt, type SttBackend, type SttResult, type SttSession } from "./pipeline/stt.ts";
 import { feedPcm, flushLecture } from "./pipeline/diarize.ts";
 import { isSourceLang, translate, translateMany } from "./pipeline/translate.ts";
+import { settings } from "./settings.ts";
 
 const RING = 200;                         // finals kept in memory per lecture for snapshots
 const RESUME_WINDOW_MS = 6 * 3600_000;    // a "live" lecture older than this is not resumed
@@ -39,26 +40,22 @@ export interface Viewer {
   send(ev: CaptionEvent): void;
 }
 
-/** A connected device as seen by sessions; ws/device.ts owns the socket and implements refresh() and unpaired().
- *  A device is paired when `ownerUserId` is set (the id of the caller that paired it, see user.ts; null = unpaired)
- *  and records into its active class (`classId`). Paired devices are shared: every caller sees and controls them. */
+/** A connected device as seen by sessions; ws/device.ts owns the socket and implements refresh().
+ *  There is no pairing: a device that connects with a known key is usable at once and records into its
+ *  active class (`classId`). Devices are shared: every caller sees and controls the ones that are online. */
 export interface DeviceLink {
   readonly id: string;
   name: string | null;
   state: DeviceState;
-  ownerUserId: string | null;
-  /** Active class: where a start records. Null = paired but no course picked. */
+  /** Active class: where a start records. Null = no course picked. */
   classId: string | null;
   classCode: string | null;
   className: string | null;
-  pairCode: string | null;
   lectureId: string | null;
   level: number;            // 0..1 for the OLED meter
   lastCaption: string;
   /** Re-sends state JSON and the OLED frame if either changed. */
   refresh(): void;
-  /** Called after the device was unpaired from the app: allocates and shows a pair code. */
-  unpaired(): Promise<void>;
 }
 
 /** Translation of the sentence being spoken, for one language: one request at a time, the newest text wins. */
@@ -111,7 +108,7 @@ export interface LiveLecture {
   latency: { interim: number[]; final: number[] };
   /** False for ephemeral lectures (tests, no database): nothing is written and segment ids are negative. */
   persistent: boolean;
-  sttBackend?: "deepgram" | "mock";
+  sttBackend?: SttBackend;
   /** Lecture-relative time of the current STT stream's first byte, and bytes sent since (audio clock for diarization). */
   audioClock: { offsetS: number; bytes: number } | null;
   /** Set while this (ephemeral) lecture replays a saved one. */
@@ -158,7 +155,7 @@ function newLecture(row: LectureRow): LiveLecture {
 }
 
 /** An in-memory-only live lecture (no database rows); used by tests and offline runs. */
-export function createEphemeralLecture(opts: { classId?: string; title?: string; sttBackend?: "deepgram" | "mock" } = {}): LiveLecture {
+export function createEphemeralLecture(opts: { classId?: string; title?: string; sttBackend?: SttBackend } = {}): LiveLecture {
   const now = new Date();
   const l = newLecture({
     id: crypto.randomUUID(), classId: opts.classId ?? crypto.randomUUID(), title: opts.title ?? "Ephemeral lecture", date: today(now),
@@ -461,19 +458,41 @@ export function pushAudio(lectureId: string, pcm: Buffer) {
 /** Resolves once the finals received so far are handled and written. */
 function settled(l: LiveLecture): Promise<void> { return l.queue.then(() => l.persist); }
 
+// ---------- caption mode ----------
+
+const MODE_BACKEND: Record<CaptionMode, SttBackend> = { standard: "deepgram", fast: "flux", accurate: "soniox" };
+
+/** The mode new speech-to-text streams use, and the modes whose API key is set. */
+export function captionMode(): CaptionModeInfo {
+  const dg = !!settings.stt.deepgramKey;
+  const available: CaptionMode[] = [...(dg ? ["standard", "fast"] as const : []), ...(settings.stt.sonioxKey ? ["accurate"] as const : [])];
+  const mode = (Object.keys(MODE_BACKEND) as CaptionMode[]).find(m => MODE_BACKEND[m] === settings.stt.backend);
+  return { mode: mode && available.includes(mode) ? mode : "mock", available };
+}
+
+/**
+ * Switches the caption mode for the whole server until it restarts (STT_BACKEND sets the mode at
+ * start). A lecture that is recording moves over at once: its stream is closed, which flushes
+ * its last finals, and the next audio frame opens one on the new service with timestamps continuing.
+ */
+export function setCaptionMode(mode: CaptionMode): CaptionModeInfo {
+  const backend = MODE_BACKEND[mode];
+  if (settings.stt.backend !== backend) {
+    settings.stt.backend = backend;
+    log(`caption mode -> ${mode} (${backend})`);
+    for (const l of lectures.values()) if (l.stt && !l.sttBackend) void closeStt(l).catch(logErr("caption mode switch"));
+  }
+  return captionMode();
+}
+
 // ---------- devices ----------
 
 export function getDevice(id: string): DeviceLink | undefined { return devices.get(id); }
 
-/** A connected device whose active class is `classId` (the caller's first when `userId` is given). */
-export function connectedDeviceForClass(classId: string, userId?: string): DeviceLink | undefined {
-  let any: DeviceLink | undefined;
-  for (const d of devices.values()) {
-    if (d.classId !== classId) continue;
-    if (!userId || d.ownerUserId === userId) return d;
-    any ??= d;
-  }
-  return any;
+/** A connected device whose active class is `classId`. */
+export function connectedDeviceForClass(classId: string): DeviceLink | undefined {
+  for (const d of devices.values()) if (d.classId === classId) return d;
+  return undefined;
 }
 
 function bindDevice(l: LiveLecture, d: DeviceLink) {
@@ -499,7 +518,7 @@ function canBind(l: LiveLecture, d: DeviceLink): boolean {
 /** Registers a connected device; if its active class has a live lecture it resumes recording into it. */
 export async function attachDevice(d: DeviceLink): Promise<void> {
   devices.set(d.id, d);
-  if (d.classId && d.ownerUserId) {
+  if (d.classId) {
     const l = await findLiveLecture(d.classId).catch(() => null);
     if (l && devices.get(d.id) === d && !d.lectureId && canBind(l, d)) bindDevice(l, d);
   }
@@ -521,122 +540,61 @@ export function detachDevice(d: DeviceLink) {
 export class DeviceBusyError extends Error {}
 
 export interface ActiveClass { id: string; name: string; code: string }
+/** A connected device, as the app lists it. */
 export interface DeviceView {
   id: string;
   name: string | null;
-  pairCode: string | null;
   activeClass: ActiveClass | null;
-  connected: boolean;
-  state: DeviceState | "offline";
-  lastSeenAt: string | null;
+  state: DeviceState;
 }
 
-type DeviceRow = typeof schema.devices.$inferSelect;
-
-/** Owner of a device row: `ownerUserId`, or for rows paired before devices had owners, the active class's owner. */
-export function effectiveOwner(row: Pick<DeviceRow, "ownerUserId">, classOwner: string | null | undefined): string | null {
-  return row.ownerUserId ?? classOwner ?? null;
-}
-
-async function classInfo(classId: string | null): Promise<(ActiveClass & { ownerUserId: string }) | null> {
-  if (!classId) return null;
-  const [c] = await db.select({ id: schema.classes.id, name: schema.classes.name, code: schema.classes.code, ownerUserId: schema.classes.ownerUserId })
-    .from(schema.classes).where(eq(schema.classes.id, classId)).limit(1);
-  return c ?? null;
-}
-
-function deviceView(row: DeviceRow, cls: ActiveClass | null): DeviceView {
-  const d = devices.get(row.id);
+function deviceView(d: DeviceLink): DeviceView {
   return {
-    id: row.id, name: row.name, pairCode: row.pairCode,
-    activeClass: cls ? { id: cls.id, name: cls.name, code: cls.code } : null,
-    connected: !!d, state: d?.state ?? "offline", lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
+    id: d.id, name: d.name, state: d.state,
+    activeClass: d.classId && d.classCode ? { id: d.classId, name: d.className ?? d.classCode, code: d.classCode } : null,
   };
 }
 
-/** Every paired device (including legacy rows that have an active class but no owner), by name. */
-export async function listDevices(): Promise<DeviceView[]> {
-  const { devices: dv, classes: cl } = schema;
-  const rows = await db.select({ d: dv, c: { id: cl.id, name: cl.name, code: cl.code, ownerUserId: cl.ownerUserId } })
-    .from(dv).leftJoin(cl, eq(cl.id, dv.classId))
-    .where(or(isNotNull(dv.ownerUserId), isNotNull(dv.classId)))
-    .orderBy(asc(dv.name), asc(dv.id));
-  return rows.map(r => deviceView(r.d, r.c));
+/** Every device that is online now, by name. Devices that are switched off are not listed. */
+export function listDevices(): DeviceView[] {
+  return [...devices.values()].map(deviceView)
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "") || a.id.localeCompare(b.id));
 }
 
-/** A device row with its effective owner (null = unpaired), or null if unknown. */
-export async function getDeviceRow(id: string): Promise<{ row: DeviceRow; owner: string | null } | null> {
-  const [r] = await db.select({ d: schema.devices, classOwner: schema.classes.ownerUserId }).from(schema.devices)
-    .leftJoin(schema.classes, eq(schema.classes.id, schema.devices.classId)).where(eq(schema.devices.id, id)).limit(1);
-  return r ? { row: r.d, owner: effectiveOwner(r.d, r.classOwner) } : null;
-}
-
-/** Points the live link at a class (or none) and re-sends its state and idle frame. */
-function retarget(d: DeviceLink, ownerUserId: string, cls: ActiveClass | null) {
-  Object.assign(d, { ownerUserId, classId: cls?.id ?? null, classCode: cls?.code ?? null, className: cls?.name ?? null, pairCode: null });
-  if (!d.lectureId && d.state !== "error") d.state = "idle";
-  d.refresh();
-}
-
-/** Pairs the device showing `pairCode` to `userId`, with `classId` (or none) as its active class. Null if no device shows that code. */
-export async function pairDevice(pairCode: string, userId: string, classId: string | null): Promise<{ deviceId: string; ownerUserId: string; activeClassId: string | null; connected: boolean; state: DeviceState | "offline" } | null> {
-  const code = pairCode.trim().toUpperCase();
-  const [row] = await db.update(schema.devices).set({ ownerUserId: userId, classId, pairCode: null }).where(eq(schema.devices.pairCode, code)).returning();
-  if (!row) return null;
-  const cls = await classInfo(classId);
-  const d = devices.get(row.id);
-  if (d) {
-    retarget(d, userId, cls);
-    await attachDevice(d);
-  }
-  log(`paired device ${row.id} to user ${userId}${cls ? ` (active class ${cls.code})` : " (no active class)"}`);
-  return { deviceId: row.id, ownerUserId: userId, activeClassId: cls?.id ?? null, connected: !!d, state: d?.state ?? "offline" };
-}
-
-/** Sets a paired device's active class; the caller checked that the class exists. `userId` is recorded as the owner.
+/** Sets a connected device's active class (the caller checked that the class exists). Null if the device is not online.
  *  Throws DeviceBusyError while the device records into another class. */
-export async function setActiveClass(deviceId: string, userId: string, classId: string): Promise<DeviceView> {
+export async function setActiveClass(deviceId: string, classId: string): Promise<DeviceView | null> {
   const d = devices.get(deviceId);
-  if (d?.lectureId) {
+  if (!d) return null;
+  if (d.lectureId) {
     const l = lectures.get(d.lectureId);
     if (l && l.classId !== classId && l.status === "live") throw new DeviceBusyError("the device is recording another course; stop that lecture first");
   }
-  const [row] = await db.update(schema.devices).set({ classId, ownerUserId: userId }).where(eq(schema.devices.id, deviceId)).returning();
-  if (!row) throw new Error("device not found");
-  const cls = await classInfo(classId);
-  if (d) retarget(d, userId, cls);
-  log(`device ${deviceId} now records into ${cls?.code ?? classId}`);
-  return deviceView(row, cls);
+  const [cls] = await db.select({ id: schema.classes.id, name: schema.classes.name, code: schema.classes.code })
+    .from(schema.classes).where(eq(schema.classes.id, classId)).limit(1);
+  if (!cls) throw new Error("class not found");
+  await db.update(schema.devices).set({ classId }).where(eq(schema.devices.id, deviceId));
+  // Points the live link at the class and re-sends its state and idle frame.
+  Object.assign(d, { classId: cls.id, classCode: cls.code, className: cls.name });
+  if (!d.lectureId && d.state !== "error") d.state = "idle";
+  d.refresh();
+  log(`device ${deviceId} now records into ${cls.code}`);
+  return deviceView(d);
 }
 
-/** Unpairs a device (no owner, no active class). Throws DeviceBusyError while it records. */
-export async function unpairDevice(deviceId: string): Promise<void> {
-  const d = devices.get(deviceId);
-  if (d?.lectureId && lectures.get(d.lectureId)?.status === "live") throw new DeviceBusyError("the device is recording; stop the lecture first");
-  await db.update(schema.devices).set({ ownerUserId: null, classId: null }).where(eq(schema.devices.id, deviceId));
-  if (d) {
-    Object.assign(d, { ownerUserId: null, classId: null, classCode: null, className: null, lectureId: null, state: "unpaired" as DeviceState });
-    await d.unpaired();
-  }
-  log(`unpaired device ${deviceId}`);
-}
-
-/** For a web start of `classId` by `userId`: the device that should record it. One already pointed at the class
- *  is used as it is; otherwise a connected, non-recording device is switched to the class. Offline devices are
- *  never switched. Null if there is no such device (the browser microphone records instead).
- *  Throws DeviceBusyError if every connected device is recording another class. */
-export async function deviceForWebStart(userId: string, classId: string): Promise<string | null> {
-  const all = await listDevices();
-  const here = all.find(x => x.activeClass?.id === classId && x.connected) ?? all.find(x => x.activeClass?.id === classId);
+/** For a web start of `classId`: the device that should record it. One already pointed at the class is used as
+ *  it is; otherwise an online device that is not recording is switched to the class. Null if no device is online
+ *  (the browser microphone records instead). Throws DeviceBusyError if every online device is recording another class. */
+export async function deviceForWebStart(classId: string): Promise<string | null> {
+  const all = listDevices();
+  const here = all.find(x => x.activeClass?.id === classId);
   if (here) return here.id;
-  const idle = all.find(x => x.connected && x.state !== "recording");
+  const idle = all.find(x => x.state !== "recording");
   if (!idle) {
-    const busy = all.find(x => x.connected);
-    if (busy) throw new DeviceBusyError(`the device is recording ${busy.activeClass?.code ?? "another course"}; stop that lecture first`);
+    if (all[0]) throw new DeviceBusyError(`the device is recording ${all[0].activeClass?.code ?? "another course"}; stop that lecture first`);
     return null;
   }
-  await setActiveClass(idle.id, userId, classId);
-  return idle.id;
+  return (await setActiveClass(idle.id, classId)) ? idle.id : null;
 }
 
 // ---------- session lifecycle ----------
@@ -682,7 +640,7 @@ export function startSession(classId: string, opts: StartOpts): Promise<LectureS
 
 async function doStart(classId: string, opts: StartOpts): Promise<LectureSummary> {
   const picked = opts.deviceId !== undefined ? (opts.deviceId ? devices.get(opts.deviceId) : undefined) : connectedDeviceForClass(classId);
-  const device = picked && picked.classId === classId && picked.ownerUserId && !picked.lectureId ? picked : undefined;
+  const device = picked && picked.classId === classId && !picked.lectureId ? picked : undefined;
   const existing = await findLiveLecture(classId);
   if (existing) {
     if (device && canBind(existing, device)) bindDevice(existing, device);

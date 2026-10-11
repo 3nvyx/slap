@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { OLED_FRAME_BYTES } from "@slap/contracts";
-import { packXbm, render, renderIdle, renderPickCourse, renderRecording, renderText, renderUnpaired } from "../oled.ts";
+import { packXbm, render, renderIdle, renderPickCourse, renderRecording, renderText } from "../oled.ts";
 
 test("every screen is exactly one 1,024-byte frame", () => {
   for (const f of [
-    renderUnpaired("A7K2QX"),
     renderIdle("CS229", "https://slap.study/j/CS229"),
     renderRecording(125, 0.5, "a fairly long caption that has to wrap onto more than three lines of the small screen"),
     renderRecording(3, 0.5, ""),

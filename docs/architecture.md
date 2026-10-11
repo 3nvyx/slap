@@ -6,12 +6,12 @@ Companion to `PLAN.md`. Documentation only: nothing here is built before Saturda
 
 The same Node/TypeScript app runs on the laptop and in a container. Behaviour is set by environment variables (12-factor config), never by code branches or separate builds.
 
-Runtime: Node 22 LTS (the Mac has Node 26; the Docker image uses `node:22-alpine`), pnpm, and TypeScript run directly by Node (type stripping) in dev. One process, Hono (or Fastify) plus `ws`, serves the API, the two WebSocket paths (`/ws/device` and `/ws/live`) and the built Vite app from one origin. The device protocol and caption event types live in `packages/contracts`, shared by `apps/api` and `apps/web`.
+Runtime: Node 22 LTS (the Mac has Node 26; the Docker image uses `node:22-alpine`), pnpm, and TypeScript run directly by Node (type stripping) in dev. One process, Hono (or Fastify) plus `ws`, serves the API, the two WebSocket paths (`/ws/device` and `/ws/live`), the landing page (`website/`, plain files, at `/`) and the built Vite app from one origin. The device protocol and caption event types live in `packages/contracts`, shared by `apps/api` and `apps/web`.
 
 | Variable | Values | Meaning |
 |---|---|---|
 | `MODE` | `demo`, `local`, `cloud` | Which way the app is being run; the variables below still choose the backends |
-| `STT_BACKEND` | `deepgram` (default), `whisperlivekit` | Which speech-to-text implementation sits behind the `stt.ts` interface; `whisperlivekit` is WhisperLiveKit with the MLX Whisper backend, native on the Mac |
+| `STT_BACKEND` | `deepgram` (default), `fast`, `accurate`, `mock`; planned: `whisperlivekit` | Which speech-to-text implementation sits behind the `stt.ts` interface. `fast` is Deepgram Flux and `accurate` is Soniox (`SONIOX_API_KEY`); both can also be chosen at runtime with `PUT /api/captions/mode`. `whisperlivekit` (WhisperLiveKit with the MLX Whisper backend, native on the Mac) is not built |
 | `LLM_BACKEND` | `claude` (default), `openai`, `gemini`, `mock` | Post-lecture jobs, grading and the study plan; `openai` is the Responses API (`OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_REASONING`); `gemini` is the hosted fallback (Gemini Flash free tier); `mock` runs with no key. Ollama (`local`) is a post-event idea, not built |
 | `TRANSLATE_BACKEND` | `google` (default), `azure`, `deepl` | Live caption translation |
 | `DATABASE_URL` | the Neon project's value (`neon env pull` writes it to `.env.local`) | Postgres; server-side only. There is no sign-in: the app has no accounts, and Neon Auth is not used (`neon env pull` still writes `NEON_AUTH_*`; nothing reads them) |
@@ -48,7 +48,7 @@ Four stages in `Dockerfile`, all on `node:22-alpine` (22.18 or later, so type st
 2. `web`: `pnpm install --frozen-lockfile --filter "@slap/web..."`, then the source and `pnpm --filter @slap/web build`, output `apps/web/dist`.
 3. `prod-deps`: `pnpm install --frozen-lockfile --prod --filter "@slap/api..."`. Only `node_modules` leaves this stage; pnpm and its store do not reach the runtime image.
 4. Runtime, in the same layout as the repo under `/app`:
-   - `node_modules` from `prod-deps`, then the `apps/api` and `packages/contracts` source (TypeScript, run directly by Node), which includes the OLED fonts in `apps/api/fonts`, and `apps/web/dist` from the web stage. The server finds the web app through the default `WEB_DIST` (`../web/dist`).
+   - `node_modules` from `prod-deps`, then the `apps/api` and `packages/contracts` source (TypeScript, run directly by Node), which includes the OLED fonts in `apps/api/fonts`, `apps/web/dist` from the web stage, and `website/`. The server finds the web app through the default `WEB_DIST` (`../web/dist`) and the landing page through the default `SITE_DIR` (`../../website`).
    - The workspace layout is required. Node does not strip types from files under `node_modules`, so `@slap/contracts` has to resolve through its workspace symlink to `/app/packages/contracts`. `pnpm deploy` copies it into `node_modules` as TypeScript and the server then fails at import with `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`.
    - `NODE_ENV=production`, `MODE=cloud`, non-root `node` user. The image is read-only to that user except `apps/api/.uploads` (uploaded PDFs until they are parsed).
    - `HEALTHCHECK` calls `/api/health` with `wget`.

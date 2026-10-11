@@ -3,7 +3,7 @@
 // text positioned by its top edge. Anything at least half bright becomes a lit pixel; the rest is off.
 //
 // ctx is a normal Canvas 2D context. d is the mock data (see README.md for every field):
-//   d.classCode  d.pairCode  d.joinUrl  d.caption  d.lang  d.seconds  d.level  d.wifiOk  d.message  d.avatar  d.mascot  d.t
+//   d.classCode  d.joinUrl  d.caption  d.lang  d.seconds  d.level  d.wifiOk  d.message  d.avatar  d.mascot  d.t
 // Helpers: font(px, bold, text)  centered(ctx, text, y, x0, width)  fitFont(ctx, text, width, max)
 //          wrapText(ctx, text, maxWidth)  paragraph(ctx, text, lines, y, pitch)  drawQr(ctx, text, x, y, box)  mmss(seconds)
 //          drawSprite(ctx, name, x, y, scale)  spriteFit(name, boxW, boxH)
@@ -12,28 +12,14 @@
 const TODAY = "On the device today";
 const IDEAS = "Ideas to play with";
 
-// ---- The six screens the server draws now, copied from apps/api/src/oled.ts.
+// ---- The five screens the server draws now, copied from apps/api/src/oled.ts.
 // Captions come first: while recording, the caption fills the screen and the timer and sound level are a thin
 // strip under it.
 
 screen({
-  name: "Pair code",
-  group: TODAY,
-  note: "A new device, before someone types its code into the web app.",
-  draw(ctx, d) {
-    ctx.font = font(12);
-    centered(ctx, "Pair this Slap", -2);
-    ctx.font = font(fitFont(ctx, d.pairCode, 124, 30), true);
-    centered(ctx, d.pairCode, 11);
-    ctx.font = font(12);
-    centered(ctx, "Enter it in the app", 48);
-  },
-});
-
-screen({
   name: "Pick a course",
   group: TODAY,
-  note: "Paired, but no class chosen in the web app yet.",
+  note: "Online, but no class chosen in the web app yet.",
   draw(ctx) {
     ctx.font = font(17, true);
     centered(ctx, "Pick a course", 8);

@@ -152,15 +152,6 @@ void drawLocal(uint32_t nowMs, const DisplayModel& m) {
       }
       break;
 
-    case AppState::UNPAIRED:
-      u8g2.setFont(FONT_SMALL);
-      centered("pair this device", 23);
-      u8g2.setFont(FONT_BIG);
-      centered(m.pairCode, 46);
-      u8g2.setFont(FONT_SMALL);
-      centered("enter code in web app", 62);
-      break;
-
     case AppState::IDLE:
       if (m.classCode && m.classCode[0]) {
         // Active course chosen in the web app (state.classCode).

@@ -32,7 +32,7 @@ To build without Arduino IDE, use the `arduino-cli` bundled in it with the board
 `arduino:renesas_uno:unor4wifi`. Stop the API first: it holds the serial port.
 
 The API routes `SHAKE` (and `SLAP` from the earlier double-slap sketch) to the connected ESP32 named by `ARDUINO_DEVICE_ID` using
-its existing button handler. Pair that ESP32 and pick a course first. Events
+its existing button handler. Pick a course for that ESP32 in the web app first. Events
 while the ESP32 is offline are discarded. The listener reconnects every three
 seconds after unplugging the Arduino. Shakes do not wake a sleeping ESP32.
 

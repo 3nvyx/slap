@@ -19,12 +19,13 @@ export type OledFrame = Uint8Array;   // length OLED_FRAME_BYTES
 export type DeviceButton = "boot" | "slap";
 
 export type DeviceToServer =
-  | { type: "hello"; deviceId: string; fw: string; pairCode?: string; mac?: string }
+  | { type: "hello"; deviceId: string; fw: string; mac?: string }
   | { type: "button"; button: DeviceButton }
   | { type: "level"; rms: number }                 // optional mic level 0..1, ~2 Hz
   | { type: "pong"; t: number };
 
-export type DeviceState = "unpaired" | "idle" | "recording" | "error";
+/** A connected device is usable at once (there is no pairing): idle until it records. */
+export type DeviceState = "idle" | "recording" | "error";
 
 export type ServerToDevice =
   | { type: "state"; state: DeviceState; sessionId?: string; classCode?: string; message?: string }
@@ -53,7 +54,13 @@ export type LiveClientMessage =
   | { type: "ping" };
 
 // ---------- API DTOs ----------
-export interface ClassSummary { id: string; name: string; code: string; lectureCount: number; nextExam?: string | null }
+export interface ClassSummary {
+  id: string; name: string; code: string; lectureCount: number; nextExam?: string | null;
+  description?: string | null; instructor?: string | null; term?: string | null;
+}
+/** An exam, quiz or assignment date entered by hand; counts next to the dates read from a syllabus. */
+export type AssessmentKind = "exam" | "quiz" | "assignment";
+export interface Assessment { id: string; classId: string; kind: AssessmentKind; name: string; date: string; topics: string[] }
 export interface LectureSummary { id: string; classId: string; title: string; date: string; status: "live" | "ended" | "processing" | "ready"; durationS?: number }
 
 export interface Segment { id: number; idx: number; start: number; end: number; text: string; words?: CaptionWord[]; speaker?: number | null }
@@ -97,7 +104,7 @@ export interface Pretest {
 export interface PretestAttempt { questionId: string; answer: string; correct: boolean; feedback: string }
 
 // Study plan written by the model from the syllabus dates, lecture notes, concept notes and the class's pace
-// (generated per student per class per day, kept in memory). `concepts[].id` is null when a name did not match a note.
+// (generated per student per class per day, kept in the `study_plans` table). `concepts[].id` is null when a name did not match a note.
 export interface StudyPlanKeyDate { date: string; daysLeft: number; name: string; kind: "exam" | "deadline" | "lecture" | "other"; note: string }
 export interface StudyPlanDayDetail {
   date: string; focus: string; concepts: Array<{ id: string | null; name: string }>; tasks: string[]; minutes: number; cardsDue: number; reason: string;
@@ -123,6 +130,12 @@ export interface StudyBundleStatus { lectureId: string; status: JobStatus; steps
 
 // ---------- Health ----------
 export interface Health { ok: boolean; mode: "demo" | "local" | "cloud"; backends: Record<string, "live" | "mock" | "down"> }
+
+// ---------- Caption mode (which speech-to-text service turns audio into captions) ----------
+// standard = Deepgram Nova-3; fast = Deepgram Flux (words about 0.2 s after speech, some rewritten);
+// accurate = Soniox (about 0.6 s, fewest errors). `mock` is reported when no key is set.
+export type CaptionMode = "standard" | "fast" | "accurate";
+export interface CaptionModeInfo { mode: CaptionMode | "mock"; available: CaptionMode[] }
 
 // ---------- Learning partner (spoken practice) ----------
 export interface PartnerVoice { id: string; name: string; style: string; default?: boolean }

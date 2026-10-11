@@ -5,10 +5,11 @@
  * mastery, and the class's pace (`computePace`, pure: lectures a week, the syllabus week the
  * class is in, per-week topic coverage); `generateStudyPlan` asks the model for key dates and a
  * day-by-day plan back-scheduled from the next exam and matched to that pace; `getStudyPlan`
- * caches one plan per student, class and day in memory (regenerated on `fresh`, when a lecture
- * lands or the syllabus changes). Concept names in the reply are mapped back to concept ids.
+ * keeps one plan per student, class and day, in memory and in the `study_plans` table so a
+ * restart does not throw it away (regenerated on `fresh`, when a lecture lands or the dates
+ * change). Concept names in the reply are mapped back to concept ids.
  */
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import type { StudyPlan, StudyPlanDayDetail, StudyPlanKeyDate, StudyPlanPace } from "@slap/contracts";
 import { completeJson } from "./llm.ts";
 import { StudyPlanOut } from "./schemas.ts";
@@ -106,7 +107,7 @@ export async function gatherStudyPlanInput(userId: string, classId: string, now 
     pace: computePace(lectures.map(l => l.date), syllabus, conceptRows.map(c => c.name), now),
     cardsDueByDay: dueByDay,
   };
-  const fingerprint = [today, lectures.length, conceptRows.length, exams.map(e => e.date).join(","), (syllabus?.deadlines ?? []).length].join("|");
+  const fingerprint = [today, lectures.length, conceptRows.length, exams.map(e => `${e.date} ${e.name}`).join(","), (syllabus?.deadlines ?? []).map(d => `${d.date} ${d.name}`).join(",")].join("|");
   return { payload, conceptIds, nextExam, fingerprint };
 }
 
@@ -176,7 +177,23 @@ export async function getStudyPlan(userId: string, classId: string, opts: { fres
   if (hit && hit.fingerprint === input.fingerprint && !opts.fresh) return hit.plan;
   const running = inflight.get(key);
   if (running && !opts.fresh) return running;
-  const p = generateStudyPlan(input, now).then(plan => { cache.set(key, { fingerprint: input.fingerprint, plan }); return plan; }).finally(() => inflight.delete(key));
+  const { db, schema } = await getDb();
+  const t = schema.studyPlans;
+  if (!hit && !opts.fresh) {
+    const [saved] = await db.select({ plan: t.plan, fingerprint: t.fingerprint }).from(t).where(and(eq(t.userId, userId), eq(t.classId, classId))).limit(1);
+    if (saved?.fingerprint === input.fingerprint) {
+      const plan = saved.plan as StudyPlan;
+      cache.set(key, { fingerprint: input.fingerprint, plan });
+      return plan;
+    }
+  }
+  const p = generateStudyPlan(input, now).then(async plan => {
+    cache.set(key, { fingerprint: input.fingerprint, plan });
+    const row = { plan, fingerprint: input.fingerprint, generatedAt: now };
+    await db.insert(t).values({ userId, classId, ...row }).onConflictDoUpdate({ target: [t.userId, t.classId], set: row })
+      .catch(e => console.error("[studyplan] save:", (e as Error).message));   // the plan is still returned
+    return plan;
+  }).finally(() => inflight.delete(key));
   inflight.set(key, p);
   return p;
 }

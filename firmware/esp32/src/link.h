@@ -5,7 +5,7 @@
 #pragma once
 #include <stdint.h>
 
-void link_begin(const char* deviceId, const char* pairCode, const char* mac);
+void link_begin(const char* deviceId, const char* mac);
 // Call every loop(): socket I/O, reconnect backoff, audio drain, level messages.
 // streaming = the device is RECORDING (audio frames are sent only then).
 void link_loop(uint32_t nowMs, bool streaming);

@@ -1044,7 +1044,8 @@ module fit_oled_pins() {
     }
 }
 
-// UNO hole pattern: a frame with the four standoffs and pegs (v axis mirrored, as in the tray)
+// UNO hole pattern: a frame with the four standoffs and pegs (v axis mirrored, as in the tray).
+// Every hole is within 3.5 mm of the hole pattern's bounding box, so all four standoffs stand on the 7 mm bars.
 module fit_uno() {
     t0 = 1.2;  bar = 7;
     us = [for (h = uno_holes) h[0]];  vs = [for (h = uno_holes) h[1]];
@@ -1057,8 +1058,6 @@ module fit_uno() {
         // short standoff: the solder tails only need 3 mm here
         cylinder(d = uno_pad_d, h = t0 + 3);
         translate([0, 0, t0 + 3 - 0.01]) pcb_peg(uno_peg_d, uno_peg_h);
-        // tie each standoff to the frame
-        hull() { cylinder(d = uno_pad_d, h = t0); translate([max(-u1 + bar/2, min(-u0 - bar/2, 0)) + h[0], 0, 0]) cylinder(d = 0.01, h = t0); }
     }
 }
 

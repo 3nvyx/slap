@@ -134,7 +134,6 @@ How close the lab is to the server (checked on 10 October against `@napi-rs/canv
 | Field | Meaning |
 | --- | --- |
 | `d.classCode` | Class code, e.g. `CS229` |
-| `d.pairCode` | Six-character pairing code |
 | `d.joinUrl` | The link the QR code points to |
 | `d.caption` | The caption so far, in the chosen language (grows word by word while playing; your own words when "Write what I say" is on) |
 | `d.fullCaption` | The whole caption |

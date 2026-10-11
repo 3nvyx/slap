@@ -77,7 +77,7 @@ const PILL: Record<string, string> = {
   done: 'bg-ink text-bg',
   idle: 'bg-panel-2 text-ink',
   ended: 'bg-panel-2 text-muted',
-  unpaired: 'border border-line text-muted',
+  offline: 'border border-line text-muted',
   error: 'bg-bad text-white',
   failed: 'bg-bad text-white',
 }

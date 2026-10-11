@@ -14,11 +14,11 @@ import { buildVault, noteName } from "../pipeline/vault.ts";
 import { zipStore } from "../pipeline/zip.ts";
 import { classOr404, type UserEnv } from "../user.ts";
 import {
-  DeviceBusyError, deviceForWebStart, findLiveLecture, getDevice, getDeviceRow, getLecture, importLecture, isUuid,
-  listDevices, liveLectureInMemory, pairDevice, ReplayError, setActiveClass, startReplay, startSession, stopSession, toSummary, unpairDevice, viewerLanguages,
+  captionMode, connectedDeviceForClass, DeviceBusyError, deviceForWebStart, findLiveLecture, getLecture, importLecture, isUuid,
+  listDevices, liveLectureInMemory, ReplayError, setActiveClass, setCaptionMode, startReplay, startSession, stopSession, toSummary, viewerLanguages,
 } from "../sessions.ts";
 
-const { classes, lectures, segments, translations, concepts, conceptLinks, conceptMentions, outlines, documents, cards, cardState, questions, devices } = schema;
+const { classes, lectures, segments, translations, concepts, conceptLinks, conceptMentions, outlines, documents, cards, cardState, questions, assessments } = schema;
 
 // `user` is set by withUser in routes/index.ts.
 export const coreRoutes = new Hono<UserEnv>();
@@ -64,28 +64,36 @@ async function lectureOr404(id: string): Promise<LectureRow> {
   return row;
 }
 
-/** Earliest exam on or after today from parsed syllabus documents (`parsed.exams[{name,date}]`). */
-function earliestExam(parsedDocs: unknown[]): { name: string; date: string } | null {
+/** Earliest exam on or after today from parsed syllabus documents (`parsed.exams[{name,date}]`) and the
+ *  exams and quizzes entered by hand (`entered`). */
+function earliestExam(parsedDocs: unknown[], entered: Array<{ name: string; date: string }> = []): { name: string; date: string } | null {
   const now = new Date().toISOString().slice(0, 10);
   let best: { name: string; date: string } | null = null;
-  for (const p of parsedDocs) {
-    const exams = (p as { exams?: Array<{ name?: string; date?: string }> } | null)?.exams ?? [];
-    for (const e of exams) {
-      if (!e.date || !/^\d{4}-\d{2}-\d{2}$/.test(e.date) || e.date < now) continue;
-      if (!best || e.date < best.date) best = { name: e.name ?? "Exam", date: e.date };
-    }
+  const all = [...entered, ...parsedDocs.flatMap(p => (p as { exams?: Array<{ name?: string; date?: string }> } | null)?.exams ?? [])];
+  for (const e of all) {
+    if (!e.date || !/^\d{4}-\d{2}-\d{2}$/.test(e.date) || e.date < now) continue;
+    if (!best || e.date < best.date) best = { name: e.name ?? "Exam", date: e.date };
   }
   return best;
+}
+
+/** Hand-entered exams and quizzes of these classes (assignments are deadlines, not exams). */
+function enteredExams(classIds: string[]) {
+  return db.select({ classId: assessments.classId, name: assessments.name, date: assessments.date }).from(assessments)
+    .where(and(inArray(assessments.classId, classIds), inArray(assessments.kind, ["exam", "quiz"])));
 }
 
 /** Next exam per class. */
 async function nextExams(classIds: string[]): Promise<Map<string, { name: string; date: string }>> {
   const out = new Map<string, { name: string; date: string }>();
   if (!classIds.length) return out;
-  const rows = await db.select({ classId: documents.classId, parsed: documents.parsed }).from(documents)
-    .where(and(inArray(documents.classId, classIds), eq(documents.kind, "syllabus")));
+  const [rows, entered] = await Promise.all([
+    db.select({ classId: documents.classId, parsed: documents.parsed }).from(documents)
+      .where(and(inArray(documents.classId, classIds), eq(documents.kind, "syllabus"))),
+    enteredExams(classIds),
+  ]);
   for (const id of classIds) {
-    const e = earliestExam(rows.filter(r => r.classId === id).map(r => r.parsed));
+    const e = earliestExam(rows.filter(r => r.classId === id).map(r => r.parsed), entered.filter(r => r.classId === id));
     if (e) out.set(id, e);
   }
   return out;
@@ -93,14 +101,14 @@ async function nextExams(classIds: string[]): Promise<Map<string, { name: string
 
 /** Every class (or the given ones), by name. */
 async function classSummaries(classIds?: string[]): Promise<ClassSummary[]> {
-  const rows = await db.select({ id: classes.id, name: classes.name, code: classes.code }).from(classes)
+  const rows = await db.select({ id: classes.id, name: classes.name, code: classes.code, description: classes.description, instructor: classes.instructor, term: classes.term }).from(classes)
     .where(classIds ? inArray(classes.id, classIds) : undefined).orderBy(asc(classes.name));
   if (!rows.length) return [];
   const ids = rows.map(r => r.id);
   const counts = await db.select({ classId: lectures.classId, n: count() }).from(lectures).where(inArray(lectures.classId, ids)).groupBy(lectures.classId);
   const n = new Map(counts.map(r => [r.classId, r.n]));
   const exams = await nextExams(ids);
-  return rows.map(r => ({ id: r.id, name: r.name, code: r.code, lectureCount: n.get(r.id) ?? 0, nextExam: exams.get(r.id)?.date ?? null }));
+  return rows.map(r => ({ ...r, lectureCount: n.get(r.id) ?? 0, nextExam: exams.get(r.id)?.date ?? null }));
 }
 
 async function oneSummary(classId: string): Promise<ClassSummary> {
@@ -153,7 +161,7 @@ coreRoutes.get("/lectures/:id/public", async (c) => {
 });
 
 // ---------- device ----------
-// Paired devices are shared by everyone; each records into its active class (devices.classId).
+// No pairing: a device that is online is listed for everyone and records into its active class (devices.classId).
 
 /** 409 for a change that would cut a recording short. */
 async function busy409(c: Context, fn: () => Promise<Response>): Promise<Response> {
@@ -163,39 +171,26 @@ async function busy409(c: Context, fn: () => Promise<Response>): Promise<Respons
   }
 }
 
-/** A paired device (404 for an unknown or unpaired one). */
-async function pairedDevice(c: Context) {
-  const id = uuidParam(c, "id");
-  const r = await getDeviceRow(id);
-  if (!r?.owner) throw new HTTPException(404, { message: "device not found" });
-  return r.row;
-}
-
-coreRoutes.post("/devices/pair", async (c) => {
-  const b = await body(c, z.object({ pairCode: z.string().trim().min(4).max(12), classId: z.uuid().optional() }));
-  let classId = b.classId ?? null;
-  if (classId) await classOr404(classId);
-  else {
-    const all = await classSummaries();
-    if (all.length === 1) classId = all[0]!.id;
-  }
-  const r = await pairDevice(b.pairCode, c.var.user.id, classId);
-  if (!r) return c.json({ error: "no device is showing that code" }, 404);
-  return c.json(r);
-});
-
-coreRoutes.get("/devices", async (c) => c.json(await listDevices()));
+coreRoutes.get("/devices", (c) => c.json(listDevices()));
 
 coreRoutes.post("/devices/:id/active-class", async (c) => {
-  const row = await pairedDevice(c);
+  const id = uuidParam(c, "id");
   const b = await body(c, z.object({ classId: z.uuid() }));
   await classOr404(b.classId);
-  return busy409(c, async () => c.json(await setActiveClass(row.id, c.var.user.id, b.classId)));
+  return busy409(c, async () => {
+    const d = await setActiveClass(id, b.classId);
+    return d ? c.json(d) : c.json({ error: "device is not online" }, 404);
+  });
 });
 
-coreRoutes.delete("/devices/:id", async (c) => {
-  const row = await pairedDevice(c);
-  return busy409(c, async () => { await unpairDevice(row.id); return c.json({ ok: true }); });
+// ---------- caption mode ----------
+
+coreRoutes.get("/captions/mode", (c) => c.json(captionMode()));
+
+coreRoutes.put("/captions/mode", async (c) => {
+  const b = await body(c, z.object({ mode: z.enum(["standard", "fast", "accurate"]) }));
+  if (!captionMode().available.includes(b.mode)) return c.json({ error: `${b.mode} mode needs its API key in the server's environment` }, 409);
+  return c.json(setCaptionMode(b.mode));
 });
 
 // ---------- classes ----------
@@ -203,38 +198,49 @@ coreRoutes.delete("/devices/:id", async (c) => {
 coreRoutes.get("/classes", async (c) => c.json(await classSummaries()));
 
 const CODE = z.string().trim().min(2).max(16).regex(/^[A-Za-z0-9-]+$/, "letters, digits and dashes only").transform(s => s.toUpperCase());
+/** Optional course details; an empty string clears one. */
+const detail = (max: number) => z.string().trim().max(max).transform(s => s || null).nullish();
+const courseDetails = { description: detail(600), instructor: detail(120), term: detail(60) };
 
 coreRoutes.post("/classes", async (c) => {
-  const b = await body(c, z.object({ name: z.string().trim().min(1).max(120), code: CODE }));
+  const b = await body(c, z.object({ name: z.string().trim().min(1).max(120), code: CODE, ...courseDetails }));
   const [dup] = await db.select({ id: classes.id }).from(classes).where(sql`upper(${classes.code}) = ${b.code}`).limit(1);
   if (dup) return c.json({ error: "that class code is taken" }, 409);
   const id = crypto.randomUUID();
-  await db.insert(classes).values({ id, name: b.name, code: b.code, ownerUserId: c.var.user.id });
+  await db.insert(classes).values({ id, name: b.name, code: b.code, ownerUserId: c.var.user.id, description: b.description, instructor: b.instructor, term: b.term });
   return c.json(await oneSummary(id), 201);
 });
 
-// Polled by the web app every ~8 s for the device chip: keep it to four parallel queries.
+coreRoutes.patch("/classes/:classId", async (c) => {
+  const classId = uuidParam(c, "classId");
+  await classOr404(classId);
+  const b = await body(c, z.object({ name: z.string().trim().min(1).max(120).optional(), ...courseDetails }));
+  const set = Object.fromEntries(Object.entries(b).filter(([, v]) => v !== undefined));
+  if (Object.keys(set).length) await db.update(classes).set(set).where(eq(classes.id, classId));
+  return c.json(await oneSummary(classId));
+});
+
+// Polled by the web app every ~8 s for the device chip: keep it to a few parallel queries.
 coreRoutes.get("/classes/:classId", async (c) => {
   const classId = uuidParam(c, "classId");
-  const [[cls], lectureRows, deviceRows, docRows] = await Promise.all([
-    db.select({ name: classes.name, code: classes.code }).from(classes).where(eq(classes.id, classId)).limit(1),
+  const [[cls], lectureRows, docRows, entered] = await Promise.all([
+    db.select({ name: classes.name, code: classes.code, description: classes.description, instructor: classes.instructor, term: classes.term }).from(classes).where(eq(classes.id, classId)).limit(1),
     db.select().from(lectures).where(eq(lectures.classId, classId)).orderBy(desc(lectures.date), desc(lectures.startedAt)),
-    db.select({ id: devices.id, name: devices.name }).from(devices).where(eq(devices.classId, classId)).orderBy(asc(devices.name), asc(devices.id)),
     db.select({ id: documents.id, kind: documents.kind, title: documents.title, parsed: documents.parsed }).from(documents)
       .where(eq(documents.classId, classId)).orderBy(desc(documents.createdAt)),
+    enteredExams([classId]),
   ]);
   if (!cls) return c.json({ error: "class not found" }, 404);
-  const nextExam = earliestExam(docRows.filter(d => d.kind === "syllabus").map(d => d.parsed));
-  // "The device" of a class: one whose active class is this class, a connected one first.
-  const dev = deviceRows.find(d => getDevice(d.id)) ?? deviceRows[0];
-  const link = dev ? getDevice(dev.id) : undefined;
-  const summary: ClassSummary = { id: classId, name: cls.name, code: cls.code, lectureCount: lectureRows.length, nextExam: nextExam?.date ?? null };
+  const nextExam = earliestExam(docRows.filter(d => d.kind === "syllabus").map(d => d.parsed), entered);
+  // "The device" of a class: an online one whose active class is this class.
+  const dev = connectedDeviceForClass(classId);
+  const summary: ClassSummary = { id: classId, ...cls, lectureCount: lectureRows.length, nextExam: nextExam?.date ?? null };
   // Who is watching right now (in-memory only; absent when nothing is live in this process).
   const liveMem = liveLectureInMemory(classId);
   return c.json({
     class: summary,
     lectures: lectureRows.map(r => lectureSummary(r)),
-    device: { paired: !!dev, state: link ? link.state : "offline", name: dev?.name ?? null },
+    device: dev ? { id: dev.id, name: dev.name, state: dev.state } : null,
     live: liveMem ? { lectureId: liveMem.id, title: liveMem.title, replay: !!liveMem.replay, viewers: liveMem.viewers.size, languages: viewerLanguages(liveMem) } : null,
     nextExam,
     documents: docRows.map(d => ({ id: d.id, kind: d.kind, title: d.title })),
@@ -284,14 +290,14 @@ coreRoutes.get("/classes/:classId/announcements", async (c) => {
   return c.json(out);
 });
 
-// Records with a paired device: one pointed at this class, else a device is switched here first.
+// Records with an online device: one pointed at this class, else a device is switched here first.
 coreRoutes.post("/classes/:classId/sessions/start", async (c) => {
   const classId = uuidParam(c, "classId");
   await classOr404(classId);
   let title: string | undefined;
   if (c.req.header("content-type")?.includes("json")) title = (await body(c, z.object({ title: z.string().trim().max(200).optional() }))).title;
   return busy409(c, async () => {
-    const deviceId = await deviceForWebStart(c.var.user.id, classId);
+    const deviceId = await deviceForWebStart(classId);
     return c.json(await startSession(classId, { title, source: "browser", deviceId }));
   });
 });

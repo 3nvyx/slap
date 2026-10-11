@@ -256,10 +256,10 @@ function paint(canvas, frame, scale, grid, color) {
 // ---- State
 
 const STORE = "slap.screen-lab";
-const DATA_KEYS = ["classCode", "pairCode", "joinBase", "caption", "message", "level", "seconds", "wifiOk"];
+const DATA_KEYS = ["classCode", "joinBase", "caption", "message", "level", "seconds", "wifiOk"];
 const DEFAULTS = {
   screen: "", view: "one", lang: "en", font: "Noto Sans", fontEpoch: 0, avatar: "", mascot: "", color: "#f2f6ff", zoom: 5, grid: true,
-  classCode: "CS229", pairCode: "A7K2QX", joinBase: "https://slap.example/j/", caption: "",
+  classCode: "CS229", joinBase: "https://slap.example/j/", caption: "",
   message: "Lost connection to the server", level: 0.55, seconds: 754, wifiOk: true,
   // Screen pixels per real millimetre, for the real-size views. A browser's own "mm" is rarely a true one:
   // it is 3.78 px, while Mac laptop screens are close to 5. Set exactly with the card outline on the page.
@@ -321,7 +321,6 @@ function mockData(lang = currentLang()) {
   const full = state.caption.trim() || lang.sample.join(" ");
   return {
     classCode: state.classCode,
-    pairCode: state.pairCode,
     joinUrl: state.joinBase + encodeURIComponent(state.classCode),
     lang,
     caption: mic.on && mic.speaking ? spokenCaption() : captionAt(full, t),

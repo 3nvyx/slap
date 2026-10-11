@@ -48,12 +48,8 @@ export interface ClassDocument {
   title: string
 }
 
-/** `GET /api/classes/:id` device: one whose active class is this class (a connected one first). `paired: false` if none. */
-export interface ClassDevice {
-  paired: boolean
-  state: DeviceState | 'offline' | null
-  name?: string | null
-}
+/** `GET /api/classes/:id` device: an online device whose active class is this class; null if none. */
+export type ClassDevice = { id: string; name: string | null; state: DeviceState } | null
 
 /** Who is watching the live lecture (or replay) right now; null when nothing is live. */
 export interface ClassLive {
@@ -152,21 +148,11 @@ export interface DocumentDetail {
   parsed: unknown
 }
 
-/** A device belongs to a user and records into its active class (`GET /api/devices`). */
+/** A device that is online now (`GET /api/devices`). There is no pairing: it is listed as soon as it connects
+ *  and records into its active class. */
 export interface DeviceSummary {
   id: string
   name: string | null
-  pairCode: string | null
   activeClass: { id: string; name: string; code: string } | null
-  connected: boolean
-  state: DeviceState | 'offline'
-  lastSeenAt: string | null
-}
-
-export interface PairResult {
-  deviceId: string
-  ownerUserId: string
-  activeClassId: string | null
-  connected: boolean
-  state: DeviceState | 'offline'
+  state: DeviceState
 }

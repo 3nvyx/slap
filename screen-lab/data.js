@@ -4,7 +4,6 @@
 // Starting values for the controls on the right of the page.
 const MOCK = {
   classCode: "CS229",
-  pairCode: "A7K2QX",
   joinBase: "https://slap.example/j/",   // the join link is this + the class code; a longer link makes a denser QR
   message: "Lost connection to the server",
   level: 0.55,      // sound level, 0 to 1

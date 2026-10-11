@@ -101,3 +101,40 @@ The first 60 s of `lecture_sample_16k.wav`, streamed to Deepgram Nova-3 in real 
 - The 73 ms "interim latency" in the 6 October results is the time from the last packet sent to the interim arriving. It is not the delay of a word.
 - `INTERIM_TR_GAP_MS` (700 ms) in `sessions.ts` rarely limits anything, because interims arrive about 1,000 ms apart.
 
+### Soniox `stt-rt-v5` on the same clip (`sn_stream.mjs`, 10 October 2026)
+
+The same 60 s, 100 ms packets, `language_hints: ["en"]`. "Token delay" is measured like the word delay above (Soniox tokens are parts of words).
+
+| | Deepgram Nova-3 | Soniox stt-rt-v5 |
+|---|---|---|
+| Word / token delay, median | 599–659 ms | 595–620 ms |
+| Word / token delay, p90 | 1,462–1,617 ms | 695–727 ms |
+| Gap between updates, median | about 1,000 ms | 104–109 ms |
+| Text final after its audio, median | 493–682 ms (per utterance) | 5.3–5.6 s without translation; 1.4 s with translation on |
+| Differences from Whisper large-v3-turbo over the first 226 words | 14 (6.2%) | 3 (1.3%) |
+
+- The typical delay is the same; Soniox is steadier because it sends text every 0.1 s where Deepgram sends it once a second.
+- The accuracy row is agreement with a third model, not a score against a human transcript, and it covers 60 s. Most of Deepgram's differences are style ("wanna", "kinda", "alright"); three are real ("why i" for "Yi", two dropped words).
+- Soniox has no per-utterance finals like Deepgram's. Tokens become final in clause-sized groups, so the server would have to build sentences from tokens.
+- **Built-in translation** (`translation: { type: "one_way", target_language }`, one target language per session): each clause-sized group of English tokens becomes final and its translation follows about 50 ms later, also final. A translated word is on screen 1.4 s after its audio at the median and 2.3–2.5 s at p90. Translated text is only ever appended, never rewritten. Translating clause by clause leaves Japanese in English clause order.
+- For Vietnamese, the translated sentence was complete about 0.7 s after the audio of the sentence's last word (16 translated sentences against 15 source sentences, paired in order). The same pairing does not work for Japanese, which came out as 25 sentences.
+
+Files: `soniox_en.txt`, `soniox_ja_endpoint.txt`, `soniox_vi_endpoint.txt`.
+
+### Deepgram Flux `flux-general-en` on the same clip (`flux_stream.mjs`, 10 October 2026)
+
+The same 60 s on `/v2/listen` with 80 ms packets (Deepgram's recommendation for Flux), existing `DEEPGRAM_API_KEY`.
+
+| | Nova-3 | Soniox stt-rt-v5 | Flux |
+|---|---|---|---|
+| Word first on screen, median / p90 | 599–659 / 1,462–1,617 ms | 595–620 / 695–727 ms | **95 / 302 ms** |
+| Word stops changing, median / p90 | not measured | not measured | **184 / 453 ms** |
+| Gap between updates, median | about 1,000 ms | 104–109 ms | 240 ms |
+| Differences from Whisper large-v3-turbo | 14 of 226 words | 3 of 226 | 18 of 220 |
+
+- Flux is about three times faster than the other two. A quarter of its words are rewritten after they first appear (for example "gal" → "Gauss" → "Gaussian"), which is why the "stops changing" row is the fair one.
+- Its differences from Whisper are mostly style ("wanna", "kinda", "gonna", "alright"), plus "the" for "then" and "as" for "it's".
+- Flux is built for voice agents. Each `Update` carries the whole current turn, and text is only final at `EndOfTurn`: 3 in these 60 s, so a "final" arrives every 15–20 s of lecture. The server would need its own sentence splitting to translate and store text sooner.
+
+File: `flux_en.txt`.
+
