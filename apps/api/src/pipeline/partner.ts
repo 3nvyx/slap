@@ -5,7 +5,8 @@
  * feedback, a one-sentence explanation from the concept note and a lecture excerpt, then
  * asks the next question in the same breath so the loop keeps moving.
  * Intent: cheap rules first (`classifyIntent`): skip/next/another -> new question;
- * explain/what is/tell me about X -> explanation of concept X; else an answer. When the
+ * explain/what is/tell me about X -> explanation of concept X; a bare greeting ("hi, how are
+ * you?") -> a short hello and the open question again, ungraded; else an answer. When the
  * rules are unsure and the LLM backend is live, `llm.complete` breaks the tie.
  * Each reply is two clips rendered in parallel with streaming Fish TTS: a short lead
  * (acknowledgement or grade + one line of explanation, `feedbackAudioUrl`) and the main part
@@ -283,13 +284,25 @@ export function resolveMcqAnswer(answer: string, options: string[]): string {
 
 // ---------- intent ----------
 
-export type TurnIntent = "answer" | "explain" | "skip";
+export type TurnIntent = "answer" | "explain" | "skip" | "greet";
 export interface IntentResult { intent: TurnIntent; conceptId: string | null; topic?: string; ambiguous: boolean }
 
 const SKIP_WORD = /\b(skip|next|another)\b/;
 const SKIP_PHRASE = /\b(skip (it|this|that)|next (one|question)|another (one|question)|give me another|different question|pass)\b/;
 const EXPLAIN = /^(?:(?:okay|ok|so|um|uh|hmm|please|hey|wait)\s+)*(?:(?:can|could|would|will) you\s+)?(?:please\s+)?(explain|what is|what's|whats|what are|tell me about|tell me more about|remind me what)\b\s*(.*)$/;
 const DEICTIC = /^(that|this|it|that one|this one|that again|this concept|that concept)?$/;
+const GREETING = /\b(hi|hello|hey|hiya|howdy|yo|greetings|good (?:morning|afternoon|evening)|what's up|whats up|how are you(?: doing)?(?: today)?|how's it going|hows it going|how do you do|nice to meet you|good to (?:see|meet) you)\b/g;
+const HOW_ARE_YOU = /\b(how are you|how's it going|hows it going|what's up|whats up|how do you do)\b/;
+// Words that can follow "hey" in a real answer or question ("hey, B", "hi, true", "what's up with X"): never a name.
+const ANSWERISH = /^(yes|no|yeah|nope|true|false|one|two|three|four|first|second|third|fourth|option|answer|with|about|is|are|.|\d+)$/;
+
+/** A greeting or small talk and at most two other words (a name): nothing to grade. */
+function isGreeting(t: string): boolean {
+  const rest = t.replace(GREETING, " ").replace(/\s+/g, " ").trim();
+  if (rest === t || wordCount(t) > 10) return false;
+  const words = rest ? rest.split(" ") : [];
+  return words.length <= 2 && !words.some(w => ANSWERISH.test(w));
+}
 
 function normUtterance(s: string): string {
   return s.toLowerCase().replace(/[’`]/g, "'").replace(/[^a-z0-9' ]+/g, " ").replace(/\s+/g, " ").trim();
@@ -325,6 +338,8 @@ export function classifyIntent(text: string, concepts: Array<{ id: string; name:
   const ex = EXPLAIN.exec(t);
   const hasSkip = SKIP_WORD.test(t);
   if (hasSkip && !ex && (n <= 6 || SKIP_PHRASE.test(t))) return { intent: "skip", conceptId: null, ambiguous: false };
+  // "what's up" also reads as "what's X": only a how-are-you phrase beats the explain rule.
+  if (isGreeting(t) && (!ex || HOW_ARE_YOU.test(t))) return { intent: "greet", conceptId: null, ambiguous: false };
   if (ex) {
     const topic = (ex[2] ?? "").replace(/\b(mean|means|again|exactly|please)\b/g, " ").replace(/\s+/g, " ").trim();
     const c = DEICTIC.test(topic) ? null : matchConcept(topic, concepts);
@@ -350,7 +365,7 @@ async function llmTiebreak(text: string, open: Question | undefined, rule: Inten
   try {
     const out = (await complete("partner_intent", prompt, { maxTokens: 5 })).toLowerCase();
     const m = /\b(answer|explain|skip)\b/.exec(out);
-    return (m?.[1] as TurnIntent | undefined) ?? rule.intent;
+    return (m?.[1] as "answer" | "explain" | "skip" | undefined) ?? rule.intent;
   } catch (e) {
     console.warn("[partner] intent tiebreak failed:", (e as Error).message);
     return rule.intent;
@@ -539,7 +554,11 @@ async function doTurn(s: PartnerState, input: TurnInput): Promise<TurnResult> {
       intent = await llmTiebreak(english, open, rule);
       tm.llmMs += performance.now() - l0;
     }
-    if (intent === "skip" || (!open && intent === "answer")) {
+    if (intent === "greet") {
+      draft = { lead: [{ text: HOW_ARE_YOU.test(english.toLowerCase().replace(/[’`]/g, "'")) ? "Hey! I'm doing great, thanks for asking." : "Hey! Good to hear from you." }],
+        main: open ? `Back to the question: ${speakQuestion(open)}` : "Say skip for a new question.",
+        intent: "chat", conceptId: open?.conceptId ?? null, questionId: open?.id ?? null, grade: null };
+    } else if (intent === "skip" || (!open && intent === "answer")) {
       const q = await nextQuestion(s);
       setOpen(s, q);
       const c = conceptOf(s, q?.conceptId);

@@ -165,10 +165,29 @@ void serialCommands(uint32_t now) {
       case 'b': Serial.println("[cmd] BOOT press"); sendOrHold("boot", now); break;
       case 's': Serial.println("[cmd] slap"); led_flashSlap(now); sendOrHold("slap", now); break;
       case 'z': enterDeepSleep("serial command"); break;
+      case 'w': {   // scan: shows whether the configured SSID is visible on 2.4 GHz
+        Serial.println("[scan] scanning 2.4 GHz...");
+        WiFi.disconnect();      // a scan fails (-2) while the station is mid-connect
+        delay(300);
+        int n = WiFi.scanNetworks();
+        bool seen = false;
+        for (int k = 0; k < n; k++) {
+          bool me = WiFi.SSID(k) == WIFI_SSID;
+          seen |= me;
+          Serial.printf("[scan] %s ch %d rssi %d '%s'\n", me ? "*" : " ", (int)WiFi.channel(k), (int)WiFi.RSSI(k), WiFi.SSID(k).c_str());
+        }
+        Serial.printf("[scan] %d networks, '%s' %s\n", n, WIFI_SSID, seen ? "VISIBLE" : "NOT VISIBLE (5 GHz only, hidden, or hotspot asleep)");
+        WiFi.scanDelete();
+        startWifi();
+        break;
+      }
       case 'i':
         Serial.printf("[info] fw %s id %s mac %s pair %s state %s wifi %d rssi %d ws %d mic %d imu %d heap %u\n",
                       FW_VERSION, g_deviceId, g_mac, g_pairCode, appStateName(g_state), WiFi.status() == WL_CONNECTED,
                       (int)WiFi.RSSI(), link_connected(), audio_ok(), slap_imuOk(), (unsigned)ESP.getFreeHeap());
+        Serial.printf("[info] ssid '%s' wl_status %d ip %s gw %s mask %s server %s:%d\n", WIFI_SSID, (int)WiFi.status(),
+                      WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str(),
+                      WiFi.subnetMask().toString().c_str(), SERVER_HOST, SERVER_PORT);
         break;
       default: break;
     }
@@ -290,7 +309,8 @@ void loop() {
       startWifi();
     }
   } else if (g_state == AppState::WIFI) {
-    Serial.printf("[wifi] up %s rssi %d\n", WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
+    Serial.printf("[wifi] up %s gw %s mask %s rssi %d\n", WiFi.localIP().toString().c_str(),
+                  WiFi.gatewayIP().toString().c_str(), WiFi.subnetMask().toString().c_str(), (int)WiFi.RSSI());
     if (!g_linkBegun) {
       link_begin(g_deviceId, g_pairCode, g_mac);
       g_linkBegun = true;

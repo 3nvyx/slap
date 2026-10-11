@@ -1,8 +1,10 @@
 packages:
   - apps/*
   - packages/*
-onlyBuiltDependencies:
-  - esbuild
-  - '@napi-rs/canvas'
-  - '@tailwindcss/oxide'
-  - sharp
+# pnpm 11+ reads build approvals from allowBuilds (onlyBuiltDependencies was removed).
+# Every dependency with an install script needs an entry, or `pnpm install` exits 1.
+allowBuilds:
+  esbuild: true
+  '@napi-rs/canvas': true
+  '@tailwindcss/oxide': true
+  sharp: true

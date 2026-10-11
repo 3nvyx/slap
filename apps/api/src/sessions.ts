@@ -3,16 +3,18 @@
 // reconnect snapshots, the viewers and their languages, and the translation cache.
 import type { CaptionEvent, CaptionWord, DeviceState, LectureSummary } from "@slap/contracts";
 import { AUDIO_SAMPLE_RATE } from "@slap/contracts";
-import { and, asc, count, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { db, schema } from "./db/index.ts";
 import { enqueueStudyBundle } from "./pipeline/bundle.ts";
 import { createStt, type SttResult, type SttSession } from "./pipeline/stt.ts";
 import { feedPcm, flushLecture } from "./pipeline/diarize.ts";
-import { isSourceLang, translateMany } from "./pipeline/translate.ts";
+import { isSourceLang, translate, translateMany } from "./pipeline/translate.ts";
 
 const RING = 200;                         // finals kept in memory per lecture for snapshots
 const RESUME_WINDOW_MS = 6 * 3600_000;    // a "live" lecture older than this is not resumed
 const BACKFILL = 20;                      // finals translated when a new language joins mid-lecture
+const INTERIM_TR_GAP_MS = 700;            // the sentence being spoken is translated at most this often per language
+const DEVICE_CAPTION_CHARS = 160;         // tail of the transcript sent to the device screen (it shows two lines)
 const ID_BATCH = 32;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -38,7 +40,8 @@ export interface Viewer {
 }
 
 /** A connected device as seen by sessions; ws/device.ts owns the socket and implements refresh() and unpaired().
- *  A device belongs to a user (`ownerUserId`, null = unpaired) and records into its active class (`classId`). */
+ *  A device is paired when `ownerUserId` is set (the id of the caller that paired it, see user.ts; null = unpaired)
+ *  and records into its active class (`classId`). Paired devices are shared: every caller sees and controls them. */
 export interface DeviceLink {
   readonly id: string;
   name: string | null;
@@ -58,9 +61,24 @@ export interface DeviceLink {
   unpaired(): Promise<void>;
 }
 
+/** Translation of the sentence being spoken, for one language: one request at a time, the newest text wins. */
+interface InterimTranslation {
+  next: string | null;
+  busy: boolean;
+  lastAt: number;
+  timer: NodeJS.Timeout | null;
+}
+
 export interface BrowserAudioSource {
   /** Ends the browser stream (called when the lecture stops). */
   close(reason: string): void;
+}
+
+/** A saved lecture being played back through the caption path (demo replay): no STT, nothing persisted. */
+export interface ReplayState {
+  sourceId: string;
+  speed: number;
+  timer: ReturnType<typeof setInterval> | null;
 }
 
 export interface LiveLecture {
@@ -88,12 +106,16 @@ export interface LiveLecture {
   refilling: Promise<void> | null;
   stopping: Promise<LectureSummary> | null;
   inflight: Set<string>;      // `${segmentId}|${lang}` translations in progress
+  utterance: number;          // finals received so far; a translation of an unfinished sentence is dropped once it moves
+  interimTr: Map<string, InterimTranslation>;   // by language
   latency: { interim: number[]; final: number[] };
   /** False for ephemeral lectures (tests, no database): nothing is written and segment ids are negative. */
   persistent: boolean;
   sttBackend?: "deepgram" | "mock";
   /** Lecture-relative time of the current STT stream's first byte, and bytes sent since (audio clock for diarization). */
   audioClock: { offsetS: number; bytes: number } | null;
+  /** Set while this (ephemeral) lecture replays a saved one. */
+  replay: ReplayState | null;
 }
 
 const lectures = new Map<string, LiveLecture>();
@@ -131,7 +153,7 @@ function newLecture(row: LectureRow): LiveLecture {
     status: row.status, source: row.source, deviceId: row.deviceId,
     seq: 0, seqFloor: 0, nextIdx: 0, finals: [], viewers: new Set(), stt: null,
     queue: Promise.resolve(), persist: Promise.resolve(), idPool: [], refilling: null, stopping: null,
-    inflight: new Set(), latency: { interim: [], final: [] }, persistent: true, browserAudio: null, audioClock: null,
+    inflight: new Set(), utterance: 0, interimTr: new Map(), latency: { interim: [], final: [] }, persistent: true, browserAudio: null, audioClock: null, replay: null,
   };
 }
 
@@ -204,6 +226,7 @@ export function viewerLanguages(l: LiveLecture): string[] {
 
 export function lectureState(l: LiveLecture): DeviceState | "ended" {
   if (l.status !== "live") return "ended";
+  if (l.replay) return "recording";
   const d = l.deviceId ? devices.get(l.deviceId) : undefined;
   if (d && d.lectureId === l.id) return "recording";
   if (l.browserAudio) return "recording";
@@ -213,7 +236,7 @@ export function lectureState(l: LiveLecture): DeviceState | "ended" {
 
 export function statusEvent(l: LiveLecture): CaptionEvent {
   const latencyMs = median(l.latency.interim.slice(-20));
-  return { type: "status", state: lectureState(l), viewers: l.viewers.size, languages: viewerLanguages(l), ...(latencyMs !== undefined ? { latencyMs } : {}) };
+  return { type: "status", state: lectureState(l), viewers: l.viewers.size, languages: viewerLanguages(l), ...(latencyMs !== undefined ? { latencyMs } : {}), ...(l.replay ? { replay: true } : {}) };
 }
 
 function broadcast(l: LiveLecture, ev: CaptionEvent, lang?: string) {
@@ -282,22 +305,66 @@ async function takeSegmentId(l: LiveLecture): Promise<number> {
 function onInterim(l: LiveLecture, r: SttResult) {
   if (r.latencyMs !== undefined) pushCapped(l.latency.interim, r.latencyMs);
   broadcast(l, { type: "interim", seq: ++l.seq, text: r.text, words: r.words, start: r.start, end: r.end });
+  const dev = l.deviceId ? devices.get(l.deviceId) : undefined;
+  if (dev && dev.lectureId === l.id) {
+    dev.lastCaption = `${l.finals.at(-1)?.text ?? ""} ${r.text}`.trim().slice(-DEVICE_CAPTION_CHARS);
+    dev.refresh();
+  }
+  for (const lang of viewerLanguages(l)) {
+    if (isSourceLang(lang)) continue;
+    let st = l.interimTr.get(lang);
+    if (!st) l.interimTr.set(lang, st = { next: null, busy: false, lastAt: 0, timer: null });
+    st.next = r.text;
+    pumpInterimTranslation(l, lang, st);
+  }
 }
 
-function onFinal(l: LiveLecture, r: SttResult) {
-  l.queue = l.queue.then(() => handleFinal(l, r)).catch(logErr("final"));
+/** Sends the newest unfinished sentence for translation unless a request is in flight or the last one was under
+ *  INTERIM_TR_GAP_MS ago. A result that arrives after its sentence became a final is dropped. */
+function pumpInterimTranslation(l: LiveLecture, lang: string, st: InterimTranslation) {
+  if (l.status !== "live") { st.next = null; return; }
+  if (st.busy || st.timer || st.next === null) return;
+  const wait = st.lastAt + INTERIM_TR_GAP_MS - Date.now();
+  if (wait > 0) {
+    st.timer = setTimeout(() => { st.timer = null; pumpInterimTranslation(l, lang, st); }, wait);
+    st.timer.unref();
+    return;
+  }
+  const text = st.next;
+  const utterance = l.utterance;
+  st.next = null;
+  st.busy = true;
+  st.lastAt = Date.now();
+  translate(text, lang)
+    .then(out => {
+      if (l.utterance === utterance && l.status === "live") broadcast(l, { type: "interimTranslation", seq: ++l.seq, lang, text: out }, lang);
+    })
+    .catch(logErr(`translate interim ${lang}`))
+    .finally(() => { st.busy = false; pumpInterimTranslation(l, lang, st); });
 }
 
-async function handleFinal(l: LiveLecture, r: SttResult) {
+/** `stored`: translations already known for this final (replay), sent instead of translating again. */
+function onFinal(l: LiveLecture, r: SttResult, stored?: Map<string, string>) {
+  l.utterance++;
+  for (const st of l.interimTr.values()) st.next = null;
+  l.queue = l.queue.then(() => handleFinal(l, r, stored)).catch(logErr("final"));
+}
+
+async function handleFinal(l: LiveLecture, r: SttResult, stored?: Map<string, string>) {
   if (r.latencyMs !== undefined) pushCapped(l.latency.final, r.latencyMs);
   const segmentId = await takeSegmentId(l);
   const f: FinalEntry = { seq: ++l.seq, segmentId, idx: l.nextIdx++, text: r.text, start: r.start, end: r.end, words: r.words, tr: new Map() };
   l.finals.push(f);
   if (l.finals.length > RING) l.finals.shift();
   broadcast(l, { type: "final", seq: f.seq, segmentId, text: f.text, words: f.words, start: f.start, end: f.end });
+  if (stored) for (const [lang, text] of stored) {
+    const seq = ++l.seq;
+    f.tr.set(lang, { text, seq });
+    broadcast(l, { type: "translation", seq, segmentId, lang, text }, lang);
+  }
 
   const dev = l.deviceId ? devices.get(l.deviceId) : undefined;
-  if (dev && dev.lectureId === l.id) { dev.lastCaption = f.text; dev.refresh(); }
+  if (dev && dev.lectureId === l.id) { dev.lastCaption = f.text.slice(-DEVICE_CAPTION_CHARS); dev.refresh(); }
 
   if (segmentId > 0) {
     l.persist = l.persist.then(async () => {
@@ -487,17 +554,17 @@ function deviceView(row: DeviceRow, cls: ActiveClass | null): DeviceView {
   };
 }
 
-/** The user's devices (including legacy rows whose active class the user owns), oldest first. */
-export async function listUserDevices(userId: string): Promise<DeviceView[]> {
+/** Every paired device (including legacy rows that have an active class but no owner), by name. */
+export async function listDevices(): Promise<DeviceView[]> {
   const { devices: dv, classes: cl } = schema;
   const rows = await db.select({ d: dv, c: { id: cl.id, name: cl.name, code: cl.code, ownerUserId: cl.ownerUserId } })
     .from(dv).leftJoin(cl, eq(cl.id, dv.classId))
-    .where(or(eq(dv.ownerUserId, userId), and(isNull(dv.ownerUserId), eq(cl.ownerUserId, userId))))
+    .where(or(isNotNull(dv.ownerUserId), isNotNull(dv.classId)))
     .orderBy(asc(dv.name), asc(dv.id));
   return rows.map(r => deviceView(r.d, r.c));
 }
 
-/** A device row with its effective owner, or null if unknown. */
+/** A device row with its effective owner (null = unpaired), or null if unknown. */
 export async function getDeviceRow(id: string): Promise<{ row: DeviceRow; owner: string | null } | null> {
   const [r] = await db.select({ d: schema.devices, classOwner: schema.classes.ownerUserId }).from(schema.devices)
     .leftJoin(schema.classes, eq(schema.classes.id, schema.devices.classId)).where(eq(schema.devices.id, id)).limit(1);
@@ -526,7 +593,7 @@ export async function pairDevice(pairCode: string, userId: string, classId: stri
   return { deviceId: row.id, ownerUserId: userId, activeClassId: cls?.id ?? null, connected: !!d, state: d?.state ?? "offline" };
 }
 
-/** Sets a device's active class. The caller checked that `userId` owns the device and is a member of the class.
+/** Sets a paired device's active class; the caller checked that the class exists. `userId` is recorded as the owner.
  *  Throws DeviceBusyError while the device records into another class. */
 export async function setActiveClass(deviceId: string, userId: string, classId: string): Promise<DeviceView> {
   const d = devices.get(deviceId);
@@ -554,20 +621,22 @@ export async function unpairDevice(deviceId: string): Promise<void> {
   log(`unpaired device ${deviceId}`);
 }
 
-/** For a web start of `classId` by `userId`: the caller's device that should record it, switched to the class if it
- *  was pointed elsewhere (a connected, non-recording device is preferred). Null if the caller has no device.
- *  Throws DeviceBusyError if the caller's only connected device is recording another class. */
+/** For a web start of `classId` by `userId`: the device that should record it. One already pointed at the class
+ *  is used as it is; otherwise a connected, non-recording device is switched to the class. Offline devices are
+ *  never switched. Null if there is no such device (the browser microphone records instead).
+ *  Throws DeviceBusyError if every connected device is recording another class. */
 export async function deviceForWebStart(userId: string, classId: string): Promise<string | null> {
-  const mine = await listUserDevices(userId);
-  if (!mine.length) return null;
-  const here = mine.find(x => x.activeClass?.id === classId && x.connected) ?? mine.find(x => x.activeClass?.id === classId);
+  const all = await listDevices();
+  const here = all.find(x => x.activeClass?.id === classId && x.connected) ?? all.find(x => x.activeClass?.id === classId);
   if (here) return here.id;
-  const idle = mine.find(x => x.connected && x.state !== "recording");
-  const busy = mine.find(x => x.connected && x.state === "recording");
-  if (!idle && busy) throw new DeviceBusyError(`your device is recording ${busy.activeClass?.code ?? "another course"}; stop that lecture first`);
-  const pick = idle ?? mine[0]!;
-  await setActiveClass(pick.id, userId, classId);
-  return pick.id;
+  const idle = all.find(x => x.connected && x.state !== "recording");
+  if (!idle) {
+    const busy = all.find(x => x.connected);
+    if (busy) throw new DeviceBusyError(`the device is recording ${busy.activeClass?.code ?? "another course"}; stop that lecture first`);
+    return null;
+  }
+  await setActiveClass(idle.id, userId, classId);
+  return idle.id;
 }
 
 // ---------- session lifecycle ----------
@@ -596,7 +665,7 @@ async function defaultTitle(classId: string): Promise<string> {
 export interface StartOpts {
   title?: string;
   source: "device" | "browser";
-  /** The device that records (the device that was pressed, or the caller's device from deviceForWebStart). It is
+  /** The device that records (the device that was pressed, or the one deviceForWebStart picked). It is
    *  bound only if it is connected and its active class is `classId`. Omitted: the first connected device pointed at the class. */
   deviceId?: string | null;
 }
@@ -647,6 +716,7 @@ export async function stopSession(lectureId: string): Promise<LectureSummary | n
   l.stopping = (async () => {
     l.status = "ended";
     l.endedAt = Date.now();
+    if (l.replay?.timer) { clearInterval(l.replay.timer); l.replay.timer = null; }
     const d = l.deviceId ? devices.get(l.deviceId) : undefined;
     if (d && d.lectureId === l.id) { d.lectureId = null; d.state = "idle"; d.lastCaption = ""; d.refresh(); }
     l.browserAudio?.close("lecture ended");
@@ -685,6 +755,90 @@ export async function enqueueBundle(lectureId: string): Promise<boolean> {
 setInterval(() => {
   for (const l of lectures.values()) if (l.status === "live" && l.viewers.size) broadcastStatus(l);
 }, 10_000).unref();
+
+// ---------- replay (demo operations: a saved lecture through the live caption path) ----------
+
+export interface ReplaySegment { start: number; end: number; text: string; words: CaptionWord[]; tr: Map<string, string> }
+export interface ReplayOpts {
+  /** Lecture-relative window in seconds (default: the whole transcript). */
+  from?: number;
+  to?: number;
+  /** Playback rate, 0.25–10 (default 1). */
+  speed?: number;
+  title?: string;
+}
+
+/** Replay refused for a reason the caller can fix (no transcript, bad window). */
+export class ReplayError extends Error {}
+
+/** Word-level prefix of a segment at time `now`, from its word timestamps or, without them, spread evenly over the segment. */
+function wordsUntil(s: ReplaySegment, now: number): CaptionWord[] {
+  if (s.words.length) return s.words.filter(w => w.end <= now);
+  const toks = s.text.split(/\s+/).filter(Boolean);
+  const dur = Math.max(0.01, s.end - s.start);
+  const n = Math.min(toks.length, Math.floor(((now - s.start) / dur) * toks.length));
+  return toks.slice(0, n).map((t, k) => ({ word: t, punctuated: t, start: s.start + (k / toks.length) * dur, end: s.start + ((k + 1) / toks.length) * dur }));
+}
+
+/** Plays `segs` through a new ephemeral live lecture of `classId`: interims grow word by word between a segment's
+ *  start and end, the final fires at its end with any stored translations, and the lecture stops itself at the end.
+ *  No STT, no device, nothing persisted; viewers join it exactly like a live lecture (status events say `replay`). */
+export function startReplayFrom(classId: string, sourceId: string, segs: ReplaySegment[], opts: ReplayOpts = {}): LiveLecture {
+  const speed = Math.min(10, Math.max(0.25, opts.speed ?? 1));
+  const from = Math.max(0, opts.from ?? 0);
+  const to = opts.to ?? Infinity;
+  if (to <= from) throw new ReplayError("the replay window is empty");
+  const list = segs.filter(s => s.end > from && s.start < to).sort((a, b) => a.start - b.start);
+  if (!list.length) throw new ReplayError("no transcript in that window");
+  const l = createEphemeralLecture({ classId, title: opts.title ?? "Replay" });
+  const base = Math.max(from, list[0]!.start);
+  const t0 = Date.now();
+  let i = 0;
+  let lastInterim = "";
+  const tick = () => {
+    if (l.status !== "live") return;
+    const now = base + ((Date.now() - t0) / 1000) * speed;
+    while (i < list.length) {
+      const s = list[i]!;
+      if (now >= s.end || now >= to) {
+        onFinal(l, { text: s.text, words: s.words, start: s.start, end: s.end }, s.tr);
+        i++;
+        lastInterim = "";
+        continue;
+      }
+      if (now >= s.start) {
+        const words = wordsUntil(s, now);
+        const key = `${i}:${words.length}`;
+        if (words.length && key !== lastInterim) {
+          lastInterim = key;
+          onInterim(l, { text: words.map(w => w.punctuated ?? w.word).join(" "), words, start: s.start, end: words.at(-1)!.end });
+        }
+      }
+      break;
+    }
+    if (i >= list.length || now >= to) void stopSession(l.id);
+  };
+  l.replay = { sourceId, speed, timer: setInterval(tick, Math.max(50, Math.round(250 / speed))) };
+  log(`replay ${l.id} of ${sourceId}: ${list.length} segments from +${base.toFixed(0)}s at ${speed}x`);
+  broadcastStatus(l);
+  return l;
+}
+
+/** Replays a saved lecture into its class. Null if the lecture is unknown; DeviceBusyError if the class has a live
+ *  lecture (or a replay) already; ReplayError if there is nothing to replay. */
+export async function startReplay(sourceId: string, opts: ReplayOpts = {}): Promise<LectureSummary | null> {
+  const [row] = await db.select().from(schema.lectures).where(eq(schema.lectures.id, sourceId)).limit(1);
+  if (!row) return null;
+  const live = await findLiveLecture(row.classId);
+  if (live) throw new DeviceBusyError(live.replay ? "a replay is already running in this class; stop it first" : `"${live.title}" is live in this class; stop it first`);
+  const segRows = await db.select().from(schema.segments).where(eq(schema.segments.lectureId, sourceId)).orderBy(asc(schema.segments.idx));
+  if (!segRows.length) throw new ReplayError("the lecture has no transcript to replay");
+  const trRows = await db.select().from(schema.translations).where(inArray(schema.translations.segmentId, segRows.map(s => s.id)));
+  const tr = new Map<number, Map<string, string>>();
+  for (const t of trRows) (tr.get(t.segmentId) ?? tr.set(t.segmentId, new Map()).get(t.segmentId)!).set(t.lang, t.text);
+  const segs: ReplaySegment[] = segRows.map(s => ({ start: s.startS, end: s.endS, text: s.text, words: (s.words as CaptionWord[] | null) ?? [], tr: tr.get(s.id) ?? new Map() }));
+  return toSummary(startReplayFrom(row.classId, sourceId, segs, { ...opts, title: opts.title ?? `Replay · ${row.title}` }));
+}
 
 // ---------- transcript import ----------
 

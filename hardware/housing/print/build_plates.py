@@ -15,14 +15,22 @@ def load(name):
     m.merge_vertices()            # OpenSCAD STLs store every triangle's vertices separately
     return m
 
+def plate_area(m):
+    """Area of the downward faces lying on the plate (z = min)."""
+    z0 = m.bounds[0][2]
+    on = (np.abs(m.triangles_center[:, 2] - z0) < 1e-3) & (m.face_normals[:, 2] < -0.9)
+    return float(m.area_faces[on].sum())
+
 def orient(name, m):
-    """Return mesh rotated into print orientation, bottom at z=0."""
-    if name in ("slab_top",):                     # printed face-down: flip 180 deg about X
-        m.apply_transform(trimesh.transformations.rotation_matrix(math.pi, [1, 0, 0]))
-    elif name == "slab_button":                     # stand on its cap (cap faces +z in the model)
-        m.apply_transform(trimesh.transformations.rotation_matrix(math.pi, [1, 0, 0]))
-    # tray, clips and coupons print as modelled
+    """Return the mesh in print orientation, bottom at z=0.
+    OpenSCAD already exports every part in print orientation (print_orient = true: lid face-down,
+    button on its cap), so nothing is rotated here. Flipping again put the lid on its posts."""
     m.apply_translation(-m.bounds[0])            # move min corner to origin (z=0 on the plate)
+    if name in ("slab_top", "slab_button"):      # both must stand on their largest flat face
+        flipped = m.copy()
+        flipped.apply_transform(trimesh.transformations.rotation_matrix(math.pi, [1, 0, 0]))
+        if plate_area(flipped) > plate_area(m):
+            raise SystemExit(f"{name} is not in print orientation: export it with print_orient = true")
     return m
 
 def layout(parts):
@@ -46,7 +54,7 @@ def layout(parts):
 def report(name, m):
     w, d, h = m.extents
     ok = m.is_watertight
-    print(f"  {name:22s} {w:6.1f} x {d:6.1f} x {h:5.1f} mm  watertight={ok}  faces={len(m.faces)}")
+    print(f"  {name:22s} {w:6.1f} x {d:6.1f} x {h:5.1f} mm  watertight={ok}  faces={len(m.faces)}  on plate {plate_area(m):.0f} mm2")
     if not ok: print(f"    WARNING: {name} is not watertight")
     return ok
 
@@ -72,10 +80,10 @@ def export(plate_name, specs):
 export("Slap_fit_tests_black_0.4", [
     ("slab_fit_snap", "fit_snap", 1), ("slab_fit_oled_ring", "fit_oled_ring", 1), ("slab_fit_mic", "fit_mic", 1),
     ("slab_fit_usb", "fit_usb", 1), ("slab_fit_boot", "fit_boot", 1), ("slab_fit_imu", "fit_imu", 1),
+    ("slab_fit_uno", "fit_uno", 1), ("slab_fit_oled_pins", "fit_oled_pins", 1),
 ])
-# v2.3: pegs are off until the OLED holes are measured, so no clips. The three revised
-# coupons (mic pocket, USB slot, OLED ring) ride along on the housing plate.
+# v3.0: tray and lid are 116 x 116.5 mm each, so the housing plate carries only the three parts.
+# Print the coupon plate first: fit_uno and fit_imu check the two hole patterns in minutes.
 export("Slap_housing_black_0.4", [
     ("slab_tray", "tray", 1), ("slab_top", "lid_face_down", 1), ("slab_button", "button_on_cap", 1),
-    ("slab_fit_mic", "fit_mic", 1), ("slab_fit_usb", "fit_usb", 1), ("slab_fit_oled_ring", "fit_oled_ring", 1),
 ])

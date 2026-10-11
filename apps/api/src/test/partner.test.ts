@@ -1,5 +1,5 @@
 // Learning partner pure parts: intent rules, spoken MCQ answers, speech phrasing, reply budget,
-// Fish ASR parsing, voice list, WAV helpers, audio cache, and the public/unauthenticated routes.
+// Fish ASR parsing, voice list, WAV helpers, audio cache, and the routes that need no session.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -44,6 +44,19 @@ test("intent: everything else is an answer; long answers that mention 'next' are
   const b = p.classifyIntent("you update theta and then the next value moves against the gradient by alpha", concepts);
   assert.deepEqual([b.intent, b.ambiguous], ["answer", true]);
   assert.equal(p.classifyIntent("I don't know", concepts).intent, "answer");
+});
+
+test("intent: a bare greeting is not an answer; a greeting followed by an answer or a request still is", () => {
+  for (const t of ["Hi", "Hello there!", "Hi Elon, how are you?", "hey, what's up", "Good morning", "Nice to meet you"]) {
+    const r = p.classifyIntent(t, concepts);
+    assert.deepEqual([r.intent, r.ambiguous], ["greet", false], t);
+  }
+  assert.equal(p.classifyIntent("hey, B", concepts).intent, "answer");
+  assert.equal(p.classifyIntent("Hi, true", concepts).intent, "answer");
+  assert.equal(p.classifyIntent("Hello, it's the sum of squared errors", concepts).intent, "answer");
+  assert.equal(p.classifyIntent("hey explain that", concepts).intent, "explain");
+  assert.equal(p.classifyIntent("Hey, what is least squares?", concepts).intent, "explain");
+  assert.equal(p.classifyIntent("hi, next question please", concepts).intent, "skip");
 });
 
 test("matchConcept: exact, containment, word overlap, or nothing", () => {
@@ -171,7 +184,7 @@ test("streamed clips: id at once, bytes as they arrive, replay whole once done, 
   assert.equal(p.getAudio(bid), undefined);
 });
 
-test("routes: audio is public (404 when unknown), the rest needs sign-in; mime sniffing", async () => {
+test("routes: audio (404 when unknown), voices, unknown session; mime sniffing", async () => {
   const { partnerRoutes, audioMime } = await import("../routes/partner.ts");
   const id = p.storeAudio(f.SILENT_MP3);
   const ok = await partnerRoutes.request(`/partner/audio/${id}`);
@@ -195,8 +208,8 @@ test("routes: audio is public (404 when unknown), the rest needs sign-in; mime s
   assert.equal((await reader.read()).done, true);
   async function* bad(): AsyncGenerator<Uint8Array> { throw new Error("401"); }
   assert.equal((await partnerRoutes.request(`/partner/audio/${p.streamAudio(bad())}`)).status, 502);
-  assert.equal((await partnerRoutes.request("/partner/voices")).status, 401);
-  assert.equal((await partnerRoutes.request(`/partner/${crypto.randomUUID()}/turn`, { method: "POST" })).status, 401);
+  assert.equal((await partnerRoutes.request("/partner/voices")).status, 200);
+  assert.equal((await partnerRoutes.request(`/partner/${crypto.randomUUID()}/turn`, { method: "POST" })).status, 404);
   assert.equal(audioMime("audio/webm;codecs=opus", Buffer.alloc(4)), "audio/webm");
   assert.equal(audioMime("", f.pcmToWav(Buffer.alloc(2))), "audio/wav");
   assert.equal(audioMime(undefined, f.SILENT_MP3), "audio/mpeg");

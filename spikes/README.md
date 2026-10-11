@@ -7,6 +7,7 @@ product code; the folder is deleted before hour 0 on Saturday.
 |---|---|---|
 | `whisper_local/` | How fast is local Whisper (MLX, large-v3-turbo) on this Mac on real lecture audio? Real-time factor, memory. | uv, mlx-whisper, a 5-minute CS229 clip |
 | `deepgram_stream/` | Speech → interim caption latency and word timestamps when streaming 16 kHz PCM, the exact format the device will send. | DEEPGRAM_API_KEY in `../.env` |
+| `translate_local/` | Is a local translation model faster than Google Translate for English → Japanese and Vietnamese captions? Does sending audio in smaller packets make captions arrive sooner? | uv, mlx-lm, ctranslate2; GOOGLE_TRANSLATE_API_KEY and DEEPGRAM_API_KEY in `../.env.local` |
 
 Secrets live in `slap/.env` (git-ignored). Never paste keys in chat.
 
@@ -62,4 +63,41 @@ Conclusion: every layer of the chosen stack works end to end. The remaining unkn
 | Speaker diarization | 2 speakers found, 5 turns: lecturer vs the student asking "Is it because the error is y minus…", with audio-event tags like `[crowd talking noise]` |
 
 Conclusion: good enough for a press-to-talk learning partner (sub-second first audio, batch ASR in a few seconds) and for a post-lecture diarization pass to separate student questions from the lecturer. Not a live-caption engine (no streaming ASR). Cost of this whole test: under 1 cent.
+
+
+## Local translation and audio packet size (10 October 2026, `spikes/translate_local/`, MacBook Pro M5 Pro 24 GB, home Wi-Fi)
+
+### Translation, English → Japanese and Vietnamese (`bench.py`, `batch_both.py`)
+
+Twelve sentences from `apps/api/fixtures/lecture_sample.txt` (14 words on average), one sentence per request, one warm-up call per language. Times are wall time per sentence.
+
+| Backend | ja median | vi median | Both languages, median | Memory |
+|---|---|---|---|---|
+| Google Translate v2, through `pipeline/translate.ts` | 176 ms | 172 ms | **167 ms** (two requests in parallel) | – |
+| TranslateGemma 4B, MLX 4-bit | 257 ms | 276 ms | **305 ms** as one batch; 554 ms one after the other | 2.4 GB |
+| NLLB-200 distilled 600M, CTranslate2 int8 on CPU, beam 4 | 280 ms | 394 ms | 668 ms one after the other | – |
+| Hunyuan-MT 7B, MLX 4-bit | 577 ms | 953 ms | 1,544 ms one after the other | 6.4 GB |
+| TranslateGemma 12B, MLX 4-bit | 701 ms | 824 ms | 1,515 ms one after the other | 6.9 GB |
+
+- No local model is faster than Google. TranslateGemma 4B is the closest: 110 tokens/s, first token after 90 ms, about 20 output tokens per sentence.
+- Quality, read from `translations.md` (Japanese checked by reading; Vietnamese needs a native reader): Google and Hunyuan-MT use the statistics term for "variance" in Japanese (分散); both TranslateGemma sizes use everyday words (変動, ばらつき); NLLB drops parts of sentences and once produced a Chinese word.
+- mlx-lm does not stop TranslateGemma at `<end_of_turn>` by itself: call `tokenizer.add_eos_token("<end_of_turn>")`, or every answer runs to `max_tokens`.
+- Not tested: giving the local model a course glossary, and translating partial sentences as they grow.
+
+Files: `results.json`, `translations.md`.
+
+### Audio packet size (`dg_chunks.mjs`)
+
+The first 60 s of `lecture_sample_16k.wav`, streamed to Deepgram Nova-3 in real time with the server's query string, four packet sizes at once. "Word delay" is the time from sending the audio that ends a word to the first result containing it.
+
+| Packet | Word delay, median | Word delay, p90 | Gap between interims, median | Final after its audio, median |
+|---|---|---|---|---|
+| 20 ms | 644 ms | 1,462 ms | 998 ms | 594 ms |
+| 50 ms | 659 ms | 1,506 ms | 998 ms | 562 ms |
+| 100 ms (the device today) | 599 ms | 1,475 ms | 1,002 ms | 682 ms |
+| 250 ms | 629 ms | 1,617 ms | 1,018 ms | 493 ms |
+
+- Packet size makes no measurable difference. Deepgram sends an interim about once a second whatever the packet size, so a word waits about 0.6 s for the next one.
+- The 73 ms "interim latency" in the 6 October results is the time from the last packet sent to the interim arriving. It is not the delay of a word.
+- `INTERIM_TR_GAP_MS` (700 ms) in `sessions.ts` rarely limits anything, because interims arrive about 1,000 ms apart.
 

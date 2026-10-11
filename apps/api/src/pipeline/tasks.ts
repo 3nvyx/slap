@@ -6,7 +6,7 @@
  */
 import { inputBlock } from "./util.ts";
 
-export type Task = "outline" | "concepts" | "cards" | "questions" | "grade" | "recall" | "book" | "syllabus";
+export type Task = "outline" | "concepts" | "cards" | "questions" | "grade" | "recall" | "book" | "syllabus" | "pretest" | "ask" | "studyplan";
 
 export interface PromptSeg { i: number; start: number; end: number; text: string }
 
@@ -24,6 +24,47 @@ export interface GradePayload { kind: "short" | "relate"; question: string; mode
 export interface RecallPayload { lectureTitle: string; concepts: Array<{ name: string; definition: string }>; outline: string[]; text: string }
 export interface BookPayload { knownConcepts: string[] }
 export interface SyllabusPayload { today: string }
+export interface AskPayload {
+  lectureTitle: string;
+  question: string;
+  /** The transcript lines most relevant to the question (callers cap the size). */
+  segments: PromptSeg[];
+  concepts: Array<{ name: string; definition: string }>;
+}
+/** Everything the study plan is written from: dates, what each lecture covered, the concept notes and the class's pace. */
+export interface StudyPlanPayload {
+  today: string;
+  horizonDays: number;
+  exams: Array<{ name: string; date: string; daysLeft: number; topics: string[] }>;
+  deadlines: Array<{ name: string; date: string; daysLeft: number }>;
+  /** Dated announcements the lecturer made (from the lecture outlines). */
+  announcements: Array<{ lecture: string; lectureDate: string; kind: string; text: string; when: string | null }>;
+  /** Lectures held so far, oldest first, with the outline summary and section titles (the notes). */
+  lectures: Array<{ title: string; date: string; summary: string; sections: string[] }>;
+  /** Concept notes: definition, lecturer emphasis (0..1), exam flag and the student's mastery (0..1, null = never practised). */
+  concepts: Array<{ name: string; definition: string; emphasis: number; examFlag: boolean; mastery: number | null }>;
+  pace: {
+    lecturesHeld: number;
+    lecturesPerWeek: number | null;
+    firstLectureDate: string | null;
+    lastLectureDate: string | null;
+    /** Syllabus week the class is in now (by date, else by lectures held), and how many weeks the syllabus lists. */
+    currentWeek: number | null;
+    totalWeeks: number;
+    /** Per syllabus week: its topics and how many of them already have a concept note. */
+    weeks: Array<{ week: number; date: string | null; topics: string[]; covered: number }>;
+  };
+  /** Flashcards due per day, index 0 = today. */
+  cardsDueByDay: number[];
+}
+
+export interface PretestPayload {
+  count: number;
+  week: number;
+  topics: string[];
+  /** What the class has covered so far, so questions can build on it. */
+  knownConcepts: Array<{ name: string; definition: string }>;
+}
 
 export const SYSTEM_TUTOR =
   "You turn university lecture transcripts and course documents into accurate study material. " +
@@ -128,6 +169,60 @@ except weeks, which may have a null date.
 JSON shape:
 {"title": string|null, "exams": [{"name": string, "date": "YYYY-MM-DD", "topics": [string]}],
  "weeks": [{"week": number, "topics": [string], "date": "YYYY-MM-DD"|null}], "deadlines": [{"name": string, "date": "YYYY-MM-DD"}]}
+
+${inputBlock(p)}`;
+}
+
+export function askPrompt(p: AskPayload): string {
+  return `A student asks a question about the lecture "${p.lectureTitle}". Answer it in 2-5 sentences using only what the
+transcript lines in "segments" say (each line is "[i @ m:ss] text"; "concepts" are the lecture's concept notes for context).
+Quote or paraphrase the lecturer. "cites" lists the i of every line the answer rests on (1-4 lines). If the transcript does
+not cover the question, say so in one sentence, set "notInLecture" true and leave "cites" empty; do not answer from outside
+knowledge.
+
+JSON shape: {"answer": string, "cites": [number], "notInLecture": boolean}
+
+${inputBlock(p)}`;
+}
+
+export function pretestPrompt(p: PretestPayload): string {
+  return `Write exactly ${p.count} short pre-lecture questions for a student about to attend week ${p.week}, whose syllabus topics are listed
+in "topics". The student has NOT had that lecture yet: ask about the prerequisite ideas, intuitions and definitions a prepared
+student should bring, drawing on "knownConcepts" (what the course has covered so far) where they connect. One question per topic
+where possible. Kinds: "mcq" (exactly 4 options, one correct; "answer" equals the correct option's text) or "short" (answerable
+in 1-2 sentences; "answer" is a model answer). "topic" is the syllabus topic the question is about. "explanation" is one line.
+
+JSON shape:
+{"questions": [{"topic": string, "kind": "mcq"|"short", "prompt": string, "options": [string]|null, "answer": string, "explanation": string}]}
+
+${inputBlock(p)}`;
+}
+
+export function studyPlanPrompt(p: StudyPlanPayload): string {
+  return `Write a personal study plan for a student in this course, from today (${p.today}) for ${p.horizonDays} days, paced to the class.
+Use only the input: "exams" and "deadlines" from the syllabus, "announcements" the lecturer made, "lectures" held so far (the notes),
+"concepts" (notes with definitions, lecturer emphasis, examFlag and the student's mastery) and "pace" (how fast the class moves and
+which syllabus week it is in, with per-week topic coverage: weeks with topics but few covered concepts are coming up or were missed).
+
+Plan rules:
+- Back-schedule from the next exam: cover its topics first, finish new material 2 days before it, keep the day before for the weakest
+  high-emphasis concepts, and make exam day light review. Days after an exam resume steady practice toward the next one.
+- Match the class pace: review each lecture's concepts within a few days of it, and preview the syllabus topics of the coming week
+  before the lecture on them. Do not exceed roughly ${p.pace.lecturesPerWeek ?? 2} new lectures' worth of material a week.
+- Interleave: each day mixes 2-4 concepts across lectures, weakest and exam-flagged first; never only one concept all day.
+- Fold in due flashcards ("cardsDueByDay") and deadlines (lighter study days before a deadline).
+- "concepts" in a day are concept names copied exactly from the input. "tasks" are 2-4 concrete things to do (e.g. "Review 12 cards",
+  "Practice: 3 questions on X", "Re-read lecture 3 notes on Y", "Preview: Z before Thursday's lecture"). "minutes" is a realistic
+  total (20-120). "reason" is one line on why this day looks like this.
+- "keyDates": every exam, deadline and dated announcement in the window plus the next exam even if outside it, soonest first,
+  each with a one-line note on how to prepare. "overview" is 2-3 sentences on the strategy. "pace" is 1-2 sentences on how the
+  class is moving and whether the student is keeping up, from the data.
+- Exactly ${p.horizonDays} days, consecutive from today, dates as YYYY-MM-DD.
+
+JSON shape:
+{"overview": string, "pace": string,
+ "keyDates": [{"date": "YYYY-MM-DD", "name": string, "kind": "exam"|"deadline"|"lecture"|"other", "note": string}],
+ "days": [{"date": "YYYY-MM-DD", "focus": string (<= 8 words), "concepts": [string], "tasks": [string], "minutes": number, "reason": string}]}
 
 ${inputBlock(p)}`;
 }

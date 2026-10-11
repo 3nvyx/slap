@@ -64,6 +64,21 @@ export const QuestionsOut = z.object({
 });
 export type QuestionsOut = z.infer<typeof QuestionsOut>;
 
+export const PretestOut = z.object({
+  questions: z.array(z.object({
+    topic: nonEmpty,
+    kind: z.enum(["mcq", "short"]),
+    prompt: nonEmpty,
+    options: z.array(nonEmpty).nullish(),
+    answer: nonEmpty,
+    explanation: str.default(""),
+  })).default([]),
+});
+export type PretestOut = z.infer<typeof PretestOut>;
+
+export const AskOut = z.object({ answer: nonEmpty, cites: z.array(idx).default([]), notInLecture: z.coerce.boolean().default(false) });
+export type AskOut = z.infer<typeof AskOut>;
+
 export const GradeOut = z.object({ correct: z.coerce.boolean(), feedback: str.default("") });
 export type GradeOut = z.infer<typeof GradeOut>;
 
@@ -97,6 +112,26 @@ export const SyllabusOut = z.object({
   deadlines: z.array(z.object({ name: nonEmpty, date: isoDay })).default([]),
 });
 export type SyllabusOut = z.infer<typeof SyllabusOut>;
+
+export const StudyPlanOut = z.object({
+  overview: str.default(""),
+  pace: str.default(""),
+  keyDates: z.array(z.object({
+    date: isoDay,
+    name: nonEmpty,
+    kind: z.enum(["exam", "deadline", "lecture", "other"]).catch("other"),
+    note: str.default(""),
+  })).default([]),
+  days: z.array(z.object({
+    date: isoDay,
+    focus: str.default(""),
+    concepts: names,
+    tasks: names,
+    minutes: z.coerce.number().min(0).max(600).catch(45),
+    reason: str.default(""),
+  })).default([]),
+});
+export type StudyPlanOut = z.infer<typeof StudyPlanOut>;
 
 /** Removes ``` fences and any prose before the first `{` / after the last `}`. */
 export function stripToJson(text: string): string {

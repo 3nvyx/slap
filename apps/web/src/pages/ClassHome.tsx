@@ -3,26 +3,29 @@ import { QRCodeSVG } from 'qrcode.react'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useClass } from '../components/ClassLayout'
+import { AnnouncementList } from '../components/Announcements'
 import { Button, Empty, ErrorBox, inputCls, Label, PageTitle, Panel, Pill, textareaCls } from '../components/ui'
 import { api } from '../lib/api'
 import { useMicStreamer } from '../lib/micStream'
 import { examInfo, fmtDate, fmtTime } from '../lib/format'
-import type { ClassDevice } from '../lib/types'
+import { LANGUAGES } from '../lib/languages'
+import type { ClassDevice, ClassLive } from '../lib/types'
 import { deviceLabel, useAction, useMyDevices } from '../lib/devices'
+import { useApi } from '../lib/useApi'
 import { PairForm } from './Devices'
 
 export function ClassHome() {
   const { classId, detail, reloadClass } = useClass()
   const cls = detail.class
-  const owner = cls.role === 'owner'
   const live = detail.lectures.find((l) => l.status === 'live')
   const exam = examInfo(detail.nextExam)
   const lectures = [...detail.lectures].sort((a, b) => b.date.localeCompare(a.date))
   const latestReady = lectures.find((l) => l.status === 'ready')
+  const announcements = useApi(() => api.announcements(classId), [classId, lectures.filter((l) => l.status === 'ready').length])
 
   return (
     <div>
-      <PageTitle kicker={`${cls.code} · ${cls.role}`} title={cls.name}>
+      <PageTitle kicker={cls.code} title={cls.name}>
         {exam && (
           <div className="rounded-md border border-line bg-panel px-4 py-2 text-right">
             <Label>Next: {exam.name}</Label>
@@ -36,7 +39,7 @@ export function ClassHome() {
 
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <div className="space-y-6">
-          <SessionPanel classId={classId} owner={owner} live={live} device={detail.device} onChange={reloadClass} latestReady={latestReady} />
+          <SessionPanel classId={classId} live={live} liveInfo={detail.live ?? null} device={detail.device} onChange={reloadClass} latestReady={latestReady} />
           <Panel title={`Lectures · ${lectures.length}`}>
             {lectures.length === 0 ? (
               <Empty>No lectures yet. Start a session, or import a transcript below.</Empty>
@@ -48,13 +51,18 @@ export function ClassHome() {
               </ol>
             )}
           </Panel>
-          {owner && <ImportPanel classId={classId} onDone={reloadClass} />}
+          {announcements.data && announcements.data.length > 0 && (
+            <Panel title={`Announcements · ${announcements.data.length}`}>
+              <AnnouncementList items={announcements.data} classId={classId} limit={6} />
+            </Panel>
+          )}
+          <ImportPanel classId={classId} onDone={reloadClass} />
         </div>
 
         <div className="space-y-6">
           <JoinPanel code={cls.code} />
           <DevicePanel classId={classId} device={detail.device} onChange={reloadClass} />
-          {owner && <UploadPanel classId={classId} onDone={reloadClass} />}
+          <UploadPanel classId={classId} onDone={reloadClass} />
           <Panel title="Documents">
             {detail.documents.length === 0 ? (
               <p className="text-sm text-muted">No syllabus or book chapter yet.</p>
@@ -88,17 +96,27 @@ function LectureRow({ classId, l }: { classId: string; l: LectureSummary }) {
   )
 }
 
+/** "3 watching · EN, ES" while a lecture is live (in-memory viewer counts from the API). */
+function Watching({ info }: { info: ClassLive }) {
+  const names = info.languages.map((code) => LANGUAGES.find((l) => l.code === code)?.native ?? code.toUpperCase())
+  return (
+    <span className="text-muted">
+      <span className="font-mono text-ink">{info.viewers}</span> watching{names.length > 0 && <> · {names.join(', ')}</>}
+    </span>
+  )
+}
+
 function SessionPanel({
   classId,
-  owner,
   live,
+  liveInfo,
   device,
   onChange,
   latestReady,
 }: {
   classId: string
-  owner: boolean
   live?: LectureSummary
+  liveInfo: ClassLive | null
   device: ClassDevice
   onChange: () => Promise<void>
   latestReady?: LectureSummary
@@ -107,7 +125,7 @@ function SessionPanel({
   const [error, setError] = useState<unknown>(null)
   const [title, setTitle] = useState('')
   const [useMic, setUseMic] = useState(false)
-  const mic = useMicStreamer(live?.id ?? null, owner && useMic && !!live)
+  const mic = useMicStreamer(live?.id ?? null, useMic && !!live)
   const navigate = useNavigate()
 
   const act = async (fn: () => Promise<unknown>) => {
@@ -123,12 +141,29 @@ function SessionPanel({
     }
   }
 
+  // A replay has no lecture row: it only shows up in the in-memory `live` info.
+  const replay = !live && liveInfo?.replay ? liveInfo : null
+
   return (
     <section className="dotgrid overflow-hidden rounded-md border border-line bg-panel">
       <div className="flex flex-wrap items-center gap-6 p-5 md:p-6">
         <div className="min-w-0 flex-1">
           <Label>Session</Label>
-          {live ? (
+          {replay ? (
+            <>
+              <div className="mt-2 flex items-center gap-2">
+                <Pill status="replay">replay</Pill>
+                <span className="truncate text-lg font-semibold">{replay.title}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-3 text-sm">
+                <Link className="underline" to={`/live/${replay.lectureId}`}>
+                  Open captions
+                </Link>
+                <Watching info={replay} />
+                <span className="text-muted">Saved captions played back · labelled as a replay</span>
+              </div>
+            </>
+          ) : live ? (
             <>
               <div className="mt-2 flex items-center gap-2">
                 <Pill status="live" />
@@ -138,6 +173,7 @@ function SessionPanel({
                 <Link className="underline" to={`/live/${live.id}`}>
                   Open captions
                 </Link>
+                {liveInfo && liveInfo.lectureId === live.id && <Watching info={liveInfo} />}
                 <span className="text-muted">Recording light on · audio never stored</span>
               </div>
             </>
@@ -145,16 +181,17 @@ function SessionPanel({
             <>
               <div className="mt-2 text-lg font-semibold">Not recording</div>
               <div className="mt-1 text-sm text-muted">
-                Device {device.paired ? <>{device.name ? `${device.name} · ` : ''}{device.state ?? 'idle'}</> : 'not recording into this course'}. {owner ? 'Double-slap the device or press start.' : 'Captions start when the lecturer begins.'}
+                Device {device.paired ? <>{device.name ? `${device.name} · ` : ''}{device.state ?? 'idle'}</> : 'not recording into this course'}. Double-slap the device or press start.
               </div>
-              {owner && (
-                <input className={inputCls + ' mt-3 max-w-sm'} placeholder="Title (optional)" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Lecture title" />
-              )}
+              <input className={inputCls + ' mt-3 max-w-sm'} placeholder="Title (optional)" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Lecture title" />
             </>
           )}
         </div>
-        {owner &&
-          (live ? (
+        {replay ? (
+            <Button variant="ink" size="lg" className="min-w-40" disabled={busy} onClick={() => void act(() => api.stopLecture(replay.lectureId))}>
+              <span className="size-3 rounded-[2px] bg-yellow-400" /> {busy ? 'Stopping…' : 'Stop replay'}
+            </Button>
+          ) : live ? (
             <Button
               variant="ink"
               size="lg"
@@ -174,19 +211,17 @@ function SessionPanel({
             <Button variant="accent" size="lg" className="min-w-48" disabled={busy} onClick={() => void act(() => api.startSession(classId, title.trim() || undefined))}>
               <span className="size-3 rounded-full bg-white" /> {busy ? 'Starting…' : 'Start session'}
             </Button>
-          ))}
+          )}
       </div>
-      {owner && (
-        <MicRow
-          on={useMic}
-          onToggle={() => setUseMic((v) => !v)}
-          live={!!live}
-          state={mic.state}
-          level={mic.level}
-          error={mic.error}
-          devicePaired={device.paired}
-        />
-      )}
+      <MicRow
+        on={useMic}
+        onToggle={() => setUseMic((v) => !v)}
+        live={!!live}
+        state={mic.state}
+        level={mic.level}
+        error={mic.error}
+        devicePaired={device.paired}
+      />
       <PartnerRow classId={classId} latestReady={latestReady} />
       {error != null && (
         <div className="px-5 pb-5">
@@ -280,7 +315,7 @@ function MicRow({
   )
 }
 
-/** The caller's device for this course: its state, a switch to this course, or the pair form when none is paired. */
+/** The device for this course: its state, a switch to this course, or the pair form when none is paired. */
 function DevicePanel({ classId, device, onChange }: { classId: string; device: ClassDevice; onChange: () => Promise<void> }) {
   const devices = useMyDevices()
   const [pairing, setPairing] = useState(false)
@@ -336,19 +371,19 @@ function DevicePanel({ classId, device, onChange }: { classId: string; device: C
     body = (
       <div className="flex items-center gap-2 text-sm">
         <Pill status={device.paired ? (device.state ?? 'idle') : 'unpaired'} />
-        <span>{device.paired ? `${device.name ?? 'A member’s device'} records into this course` : 'No device paired'}</span>
+        <span>{device.paired ? `${device.name ?? 'A device'} records into this course` : 'No device paired'}</span>
       </div>
     )
   }
-  const showForm = devices.data !== undefined && (mine.length === 0 || pairing)
+  const showForm = devices.data !== undefined && (pairing || mine.length === 0)
 
   return (
     <Panel
       title="Device"
       action={
-        mine.length > 0 && !pairing ? (
+        devices.data !== undefined && !showForm ? (
           <button className="cursor-pointer text-xs text-muted underline hover:text-ink" onClick={() => setPairing(true)}>
-            Pair another
+            {mine.length > 0 ? 'Pair another' : 'Pair a device'}
           </button>
         ) : null
       }
@@ -395,7 +430,9 @@ function JoinPanel({ code }: { code: string }) {
               {copied ? 'Copied' : 'Copy link'}
             </Button>
           </div>
-          <p className="mt-3 text-xs text-muted">No sign-in needed. The link only shows live captions.</p>
+          <p className="mt-3 text-xs text-muted">
+            No sign-in needed. The link shows live captions, and from there the notes, graph and practice.
+          </p>
         </div>
       </div>
     </Panel>

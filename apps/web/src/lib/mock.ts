@@ -22,11 +22,12 @@ import type {
   RecallResult,
   Segment,
   StudyBundleStatus,
+  StudyPlan,
   StudyPlanDay,
 } from '@slap/contracts'
 import sample from '../fixtures/lecture_sample.txt?raw'
 import { ApiError } from './api'
-import type { ClassDetail, ClassDocument, ConceptDetail, DeviceSummary, Graph, JoinInfo, LectureDetail, Me, PairResult, PublicLecture, Today } from './types'
+import type { ClassDetail, ClassDocument, ConceptDetail, DeviceSummary, Graph, JoinInfo, LectureDetail, PairResult, PublicLecture, Today } from './types'
 
 const delay = (ms = 180 + Math.random() * 220) => new Promise((r) => setTimeout(r, ms))
 const iso = (d: Date) => d.toLocaleDateString('en-CA')
@@ -92,8 +93,8 @@ const CLASS2_ID = 'cls_stats116'
 const EXAM_DATE = iso(daysFromNow(12))
 
 const classes: ClassSummary[] = [
-  { id: CLASS_ID, name: 'CS229 Machine Learning', code: 'CS229', role: 'owner', lectureCount: 4, nextExam: EXAM_DATE },
-  { id: CLASS2_ID, name: 'STATS116 Probability', code: 'STAT116', role: 'student', lectureCount: 1, nextExam: null },
+  { id: CLASS_ID, name: 'CS229 Machine Learning', code: 'CS229', lectureCount: 4, nextExam: EXAM_DATE },
+  { id: CLASS2_ID, name: 'STATS116 Probability', code: 'STAT116', lectureCount: 1, nextExam: null },
 ]
 
 const lectures: LectureSummary[] = [
@@ -262,6 +263,46 @@ function plan(): StudyPlanDay[] {
   })
 }
 
+let studyPlanSeq = 0
+function studyPlan(fresh = false): StudyPlan {
+  if (fresh) studyPlanSeq++
+  const today = iso(new Date())
+  const examDays = 12
+  const horizon = examDays + 1
+  const ranked = [...concepts].sort((a, b) => Number(b.examFlag) - Number(a.examFlag) || (a.mastery ?? 0) - (b.mastery ?? 0) || b.emphasis - a.emphasis)
+  const weakest = ranked.slice(0, 3)
+  const days = Array.from({ length: horizon }, (_, i) => {
+    const date = iso(daysFromNow(i))
+    const cardsDue = Math.max(2, 14 - i * 2)
+    const pick = i === examDays ? ranked.filter((c) => c.examFlag).slice(0, 2) : i === examDays - 1 ? weakest : [0, 1, 2].map((j) => ranked[((i + studyPlanSeq) * 3 + j) % ranked.length])
+    const reason = i === examDays ? 'Midterm today: light review of flagged concepts only.' : i === examDays - 1 ? 'Day before the midterm: retrieval practice on your weakest flagged concepts.' : i >= examDays - 2 ? `${examDays - i} days to the midterm: no new material, mixed review.` : `${examDays - i} days to the midterm: three concepts mixed across lectures, keeping pace with two lectures a week.`
+    return {
+      date,
+      focus: pick[0]?.name ?? 'Review',
+      concepts: pick.map((c) => ({ id: c.id, name: c.name })),
+      tasks: [`Review ${cardsDue} cards`, ...pick.slice(0, 2).map((c) => `Practice: 3 questions on ${c.name}`), ...(pick[2] ? [`Re-read the notes on ${pick[2].name}`] : [])],
+      minutes: 20 + 15 * pick.length + Math.min(30, cardsDue),
+      cardsDue,
+      reason,
+    }
+  })
+  return {
+    date: today,
+    generatedAt: new Date().toISOString(),
+    horizonDays: horizon,
+    overview: 'Twelve days to the midterm: cover its topics first, interleaved across the four lectures, and finish new material two days early so the last stretch is retrieval practice.',
+    pace: 'Four lectures in two weeks, about two a week; the syllabus is in week 5 of 10 and your notes cover every topic so far.',
+    paceData: { lecturesHeld: 4, lecturesPerWeek: 2, currentWeek: 5, totalWeeks: 10, lastLectureDate: iso(daysFromNow(-2)) },
+    nextExam: { name: 'Midterm', date: EXAM_DATE, daysLeft: examDays },
+    keyDates: [
+      { date: iso(daysFromNow(3)), daysLeft: 3, name: 'Lecture: Exponential family', kind: 'lecture', note: 'Preview the syllabus topics the day before.' },
+      { date: iso(daysFromNow(6)), daysLeft: 6, name: 'Problem set 2', kind: 'deadline', note: 'Keep the day before light and get it in early.' },
+      { date: EXAM_DATE, daysLeft: examDays, name: 'Midterm', kind: 'exam', note: 'Covers lectures 1-6; finish new material two days before.' },
+    ],
+    days,
+  }
+}
+
 function lectureDetail(id: string): LectureDetail {
   const lecture = lectures.find((l) => l.id === id)
   if (!lecture) throw new ApiError(404, 'lecture not found')
@@ -414,6 +455,21 @@ function partnerTurn(sessionId: string, form: FormData): PartnerTurn {
   }
 }
 
+// ---------- pretest ----------
+let pretestQs: Array<{ id: string; topic: string; kind: 'mcq' | 'short'; prompt: string; options: string[] | null }> = []
+let pretestSeq = 0
+function mockPretest(fresh = false) {
+  if (fresh || pretestQs.length === 0) {
+    const n = ++pretestSeq
+    pretestQs = [
+      { id: `pre_${n}_1`, topic: 'Exponential family', kind: 'mcq', prompt: 'Week 5 covers the exponential family. Which idea from the course so far is it most closely built on?', options: ['Gaussian', 'Least squares', 'Law of large numbers', 'Normalizing constant'] },
+      { id: `pre_${n}_2`, topic: 'Generalized linear models', kind: 'short', prompt: 'Before the lecture on generalized linear models: what do you already know about them, and how might they connect to linear regression?', options: null },
+      { id: `pre_${n}_3`, topic: 'Softmax regression', kind: 'short', prompt: 'Softmax regression handles more than two classes. What would you expect it to generalise from logistic regression?', options: null },
+    ]
+  }
+  return { week: { week: 5, topics: ['Exponential family', 'Generalized linear models', 'Softmax regression'], date: iso(daysFromNow(3)) }, questions: pretestQs }
+}
+
 // ---------- router ----------
 type Handler = (m: RegExpMatchArray, body: unknown, q: URLSearchParams) => unknown
 const routes: Array<[string, RegExp, Handler]> = [
@@ -429,21 +485,27 @@ const routes: Array<[string, RegExp, Handler]> = [
     const lec = lectures.find((l) => l.id === m[1])
     if (!lec) throw new ApiError(404, 'lecture not found')
     const cls = classes.find((c) => c.id === lec.classId)!
-    return { title: lec.title, className: cls.name, status: lec.status, finals: [] }
+    return { title: lec.title, className: cls.name, classId: cls.id, status: lec.status, finals: [] }
   }],
-  ['GET', /^\/api\/me$/, (): Me => ({ userId: 'usr_demo', email: 'demo@slap.dev', classes })],
+  ['POST', /^\/api\/lectures\/([^/]+)\/replay$/, (m): LectureSummary => {
+    const lec = lectures.find((l) => l.id === m[1])
+    if (!lec) throw new ApiError(404, 'lecture not found')
+    if (lec.status === 'live') throw new ApiError(409, `"${lec.title}" is live in this class; stop it first`)
+    // The mock caption stream is the same for every id; point at the live fixture lecture.
+    return { ...lectures.find((l) => l.status === 'live')!, title: `Replay · ${lec.title}` }
+  }],
+  ['GET', /^\/api\/classes\/([^/]+)\/announcements$/, (m) =>
+    lectures
+      .filter((l) => l.classId === m[1] && l.status === 'ready')
+      .flatMap((l) => lectureDetail(l.id).announcements.map((a) => ({ ...a, lectureId: l.id, lectureTitle: l.title, lectureDate: l.date })))
+      .sort((a, b) => (a.when && b.when ? a.when.localeCompare(b.when) : a.when ? -1 : b.when ? 1 : 0))],
+  ['GET', /^\/api\/classes$/, (): ClassSummary[] => classes],
   ['POST', /^\/api\/classes$/, (_m, body): ClassSummary => {
     const { name, code } = body as { name: string; code: string }
     if (!name || !code) throw new ApiError(400, 'name and code are required')
     if (classes.some((c) => c.code.toUpperCase() === code.toUpperCase())) throw new ApiError(400, 'code already in use')
-    const cls: ClassSummary = { id: `cls_${code.toLowerCase()}`, name, code: code.toUpperCase(), role: 'owner', lectureCount: 0, nextExam: null }
+    const cls: ClassSummary = { id: `cls_${code.toLowerCase()}`, name, code: code.toUpperCase(), lectureCount: 0, nextExam: null }
     classes.push(cls)
-    return cls
-  }],
-  ['POST', /^\/api\/classes\/join$/, (_m, body): ClassSummary => {
-    const code = String((body as { code: string }).code ?? '').toUpperCase()
-    const cls = classes.find((c) => c.code.toUpperCase() === code)
-    if (!cls) throw new ApiError(404, 'unknown class code')
     return cls
   }],
   ['GET', /^\/api\/classes\/([^/]+)$/, (m): ClassDetail => {
@@ -456,6 +518,10 @@ const routes: Array<[string, RegExp, Handler]> = [
       device: (() => {
         const d = deviceIn(cls.id)
         return d ? { paired: true, state: d.state, name: d.name } : { paired: false, state: 'offline', name: null }
+      })(),
+      live: (() => {
+        const live = ls.find((l) => l.status === 'live')
+        return live ? { lectureId: live.id, title: live.title, replay: false, viewers: 23, languages: ['en', 'es', 'zh'] } : null
       })(),
       nextExam: cls.id === CLASS_ID ? { name: 'Midterm', date: EXAM_DATE } : null,
       documents: cls.id === CLASS_ID ? documents : [],
@@ -492,7 +558,7 @@ const routes: Array<[string, RegExp, Handler]> = [
     const lec: LectureSummary = { id: `lec_${Date.now().toString(36)}`, classId: m[1], title: (body as { title?: string })?.title || `Lecture ${n}`, date: iso(new Date()), status: 'live' }
     // The web start records with the user's device, switching it to this course first.
     const d = deviceIn(m[1]) ?? devices.find((x) => x.state !== 'recording')
-    if (!deviceIn(m[1]) && !d && devices.length) throw new ApiError(409, 'your device is recording another course; stop that lecture first')
+    if (!deviceIn(m[1]) && !d && devices.length) throw new ApiError(409, 'the device is recording another course; stop that lecture first')
     lectures.unshift(lec)
     if (d) {
       pointAt(d, m[1])
@@ -593,7 +659,29 @@ const routes: Array<[string, RegExp, Handler]> = [
     plan: plan(),
     nextExam: { name: 'Midterm', date: EXAM_DATE },
   })],
-  ['GET', /^\/api\/classes\/([^/]+)\/mastery$/, () => Object.fromEntries(concepts.filter((c) => c.mastery != null).map((c) => [c.id, c.mastery]))],
+  ['POST', /^\/api\/lectures\/([^/]+)\/ask$/, (_m, body) => {
+    const q = String((body as { question: string }).question ?? '').toLowerCase()
+    const words = q.split(/\W+/).filter((w) => w.length > 3)
+    const hits = SEGMENTS.map((s) => ({ s, n: words.filter((w) => s.text.toLowerCase().includes(w)).length })).filter((x) => x.n > 0).sort((a, b) => b.n - a.n).slice(0, 3).sort((a, b) => a.s.idx - b.s.idx)
+    if (!hits.length) return { answer: 'The lecture does not seem to cover that; nothing in the transcript matches the question.', citations: [], notInLecture: true }
+    return {
+      answer: `From the lecture: ${hits.map((h) => `“${h.s.text.slice(0, 160)}”`).join(' … ')}`,
+      citations: hits.map((h) => ({ segmentId: h.s.id, start: h.s.start, excerpt: h.s.text.slice(0, 160) })),
+      notInLecture: false,
+    }
+  }],
+  ['GET', /^\/api\/classes\/([^/]+)\/study-plan$/, () => studyPlan()],
+  ['POST', /^\/api\/classes\/([^/]+)\/study-plan$/, () => studyPlan(true)],
+  ['GET', /^\/api\/classes\/([^/]+)\/pretest$/, () => mockPretest()],
+  ['POST', /^\/api\/classes\/([^/]+)\/pretest$/, () => mockPretest(true)],
+  ['POST', /^\/api\/classes\/([^/]+)\/pretest\/([^/]+)\/attempt$/, (m, body) => {
+    const answer = String((body as { answer: string }).answer ?? '')
+    const q = pretestQs.find((x) => x.id === m[2])
+    if (!q) throw new ApiError(404, 'that pretest question has expired; load the pretest again')
+    const correct = q.kind === 'mcq' ? answer === q.options?.[0] : answer.trim().split(/\s+/).length >= 8
+    return { questionId: q.id, answer, correct, feedback: correct ? 'Yes: that is the connection to look for in the lecture.' : `Listen for this in the lecture: ${q.topic} builds on what the course has covered so far.` }
+  }],
+  ['GET', /^\/api\/classes\/([^/]+)\/mastery$/,() => Object.fromEntries(concepts.filter((c) => c.mastery != null).map((c) => [c.id, c.mastery]))],
   ['POST', /^\/api\/classes\/([^/]+)\/documents$/, (_m, body) => {
     const form = body as FormData
     const file = form.get('file') as File | null

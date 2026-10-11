@@ -1,5 +1,5 @@
-import type { Attempt, Concept, Question } from '@slap/contracts'
-import { useMemo, useState } from 'react'
+import type { Attempt, Concept, Question, QuestionKind } from '@slap/contracts'
+import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useClass } from '../components/ClassLayout'
 import { Button, cx, Empty, ErrorBox, Label, PageTitle, Spinner, textareaCls } from '../components/ui'
@@ -8,15 +8,17 @@ import { useApi } from '../lib/useApi'
 
 export function PracticePage() {
   const { classId } = useClass()
+  const { detail } = useClass()
   const [params, setParams] = useSearchParams()
   const focus = params.get('concept') ?? undefined
+  const lectureId = params.get('lecture') ?? undefined
   const [round, setRound] = useState(0)
-  const set = useApi(() => api.practice(classId, 5, focus), [classId, focus, round])
+  const set = useApi(() => api.practice(classId, 5, { conceptId: focus, lectureId }), [classId, focus, lectureId, round])
   const concepts = useApi(() => api.concepts(classId), [classId])
   const byId = useMemo(() => new Map((concepts.data ?? []).map((c) => [c.id, c])), [concepts.data])
   const [score, setScore] = useState({ correct: 0, total: 0 })
 
-  const focusName = focus ? byId.get(focus)?.name : undefined
+  const focusName = focus ? byId.get(focus)?.name : lectureId ? detail.lectures.find((l) => l.id === lectureId)?.title : undefined
 
   return (
     <div className="max-w-3xl">
@@ -30,10 +32,10 @@ export function PracticePage() {
         </div>
       </PageTitle>
 
-      {focus && (
+      {(focus || lectureId) && (
         <div className="mb-6 flex items-center gap-3 text-sm">
-          <span className="label">Focus</span>
-          <span className="font-medium">{focusName ?? 'this concept'}</span>
+          <span className="label">{focus ? 'Focus' : 'Lecture first'}</span>
+          <span className="font-medium">{focusName ?? (focus ? 'this concept' : 'this lecture')}</span>
           <button className="cursor-pointer text-muted underline" onClick={() => setParams({})}>
             clear
           </button>
@@ -69,22 +71,70 @@ export function PracticePage() {
   )
 }
 
+/** A practice question from the class pool: concept link and style in the header, graded through /attempt. */
 function QuestionCard({ n, q, byId, classId, onGraded }: { n: number; q: Question; byId: Map<string, Concept>; classId: string; onGraded: (a: Attempt) => void }) {
-  const [answer, setAnswer] = useState('')
-  const [result, setResult] = useState<Attempt | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<unknown>(null)
   const concept = byId.get(q.conceptId)
   const other = q.relateTo ? (byId.get(q.relateTo)?.name ?? q.relateTo) : null
+  return (
+    <AnswerCard
+      n={n}
+      q={q}
+      header={
+        <>
+          <span className="label">{q.kind === 'mcq' ? 'Multiple choice' : q.kind === 'short' ? 'Short answer' : 'Relate'}</span>
+          <span className="label">· {q.styleSource === 'book' ? 'book style' : 'lecture style'}</span>
+          {concept && (
+            <Link to={`/c/${classId}/concept/${concept.id}`} className="ml-auto text-xs underline">
+              {concept.name}
+            </Link>
+          )}
+        </>
+      }
+      relate={q.kind === 'relate' && concept && other ? { a: concept.name, b: other } : null}
+      grade={(answer) => api.attempt(q.id, answer)}
+      onGraded={onGraded}
+    />
+  )
+}
+
+export interface Graded {
+  correct: boolean
+  feedback: string
+}
+
+/** One answerable question: options or a textarea, keyboard answering, formative feedback. Used by Practice and the pretest. */
+export function AnswerCard<G extends Graded>({
+  n,
+  q,
+  header,
+  relate,
+  grade,
+  onGraded,
+}: {
+  n: number
+  q: { id: string; kind: QuestionKind; prompt: string; options?: string[] | null }
+  header?: ReactNode
+  relate?: { a: string; b: string } | null
+  grade: (answer: string) => Promise<G>
+  onGraded: (g: G) => void
+}) {
+  const [answer, setAnswer] = useState('')
+  const [result, setResult] = useState<Graded | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  const card = useRef<HTMLElement>(null)
 
   const submit = async () => {
     if (!answer.trim() || result) return
     setBusy(true)
     setError(null)
     try {
-      const a = await api.attempt(q.id, answer)
-      setResult(a)
-      onGraded(a)
+      const g = await grade(answer)
+      setResult(g)
+      onGraded(g)
+      // Hands off to the next question so a set can be answered from the keyboard alone.
+      const next = card.current?.nextElementSibling
+      if (next instanceof HTMLElement && next.tagName === 'ARTICLE') next.focus({ preventScroll: false })
     } catch (e) {
       setError(e)
     } finally {
@@ -92,24 +142,40 @@ function QuestionCard({ n, q, byId, classId, onGraded }: { n: number; q: Questio
     }
   }
 
+  // Keyboard: A–D (or 1–4) picks an option, Enter checks; typed answers use ⌘/Ctrl+Enter (set on the textarea).
+  const onKey = (e: KeyboardEvent<HTMLElement>) => {
+    if (result || e.target instanceof HTMLTextAreaElement) return
+    if (q.kind === 'mcq' && q.options) {
+      const i = /^[a-d]$/i.test(e.key) ? e.key.toLowerCase().charCodeAt(0) - 97 : /^[1-4]$/.test(e.key) ? Number(e.key) - 1 : -1
+      if (i >= 0 && i < q.options.length) {
+        e.preventDefault()
+        setAnswer(q.options[i])
+        return
+      }
+    }
+    if (e.key === 'Enter' && answer.trim()) {
+      e.preventDefault()
+      void submit()
+    }
+  }
+
   return (
-    <article className={cx('rounded-md border bg-panel p-5 md:p-6', result ? (result.correct ? 'border-good/60' : 'border-bad/60') : 'border-line')}>
+    <article
+      ref={card}
+      tabIndex={-1}
+      onKeyDown={onKey}
+      className={cx('rounded-md border bg-panel p-5 outline-none focus-visible:ring-2 focus-visible:ring-ink/40 md:p-6', result ? (result.correct ? 'border-good/60' : 'border-bad/60') : 'border-line')}
+    >
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <span className="font-mono text-xs text-muted">{String(n).padStart(2, '0')}</span>
-        <span className="label">{q.kind === 'mcq' ? 'Multiple choice' : q.kind === 'short' ? 'Short answer' : 'Relate'}</span>
-        <span className="label">· {q.styleSource === 'book' ? 'book style' : 'lecture style'}</span>
-        {concept && (
-          <Link to={`/c/${classId}/concept/${concept.id}`} className="ml-auto text-xs underline">
-            {concept.name}
-          </Link>
-        )}
+        {header}
       </div>
 
-      {q.kind === 'relate' && concept && other && (
+      {relate && (
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-          <span className="rounded-md border border-line bg-bg px-2.5 py-1 font-medium">{concept.name}</span>
+          <span className="rounded-md border border-line bg-bg px-2.5 py-1 font-medium">{relate.a}</span>
           <span className="font-mono text-muted">←?→</span>
-          <span className="rounded-md border border-line bg-bg px-2.5 py-1 font-medium">{other}</span>
+          <span className="rounded-md border border-line bg-bg px-2.5 py-1 font-medium">{relate.b}</span>
         </div>
       )}
       <p className="text-lg font-medium leading-snug">{q.prompt}</p>
@@ -137,7 +203,7 @@ function QuestionCard({ n, q, byId, classId, onGraded }: { n: number; q: Questio
         ) : (
           <textarea
             className={textareaCls + ' min-h-28'}
-            placeholder={q.kind === 'relate' ? `Describe how ${concept?.name ?? 'these'} and ${other ?? 'the other concept'} are related…` : 'Your answer…'}
+            placeholder={relate ? `Describe how ${relate.a} and ${relate.b} are related…` : 'Your answer…'}
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
             disabled={!!result}
@@ -160,7 +226,8 @@ function QuestionCard({ n, q, byId, classId, onGraded }: { n: number; q: Questio
           <p className="leading-relaxed text-ink-2">{result.feedback}</p>
         </div>
       ) : (
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex items-center justify-end gap-4">
+          <span className="text-xs text-muted">{q.kind === 'mcq' ? 'A–D picks · Enter checks' : '⌘/Ctrl+Enter checks'}</span>
           <Button variant="ink" disabled={busy || !answer.trim()} onClick={() => void submit()}>
             {busy ? 'Grading…' : 'Check'}
           </Button>

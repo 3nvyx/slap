@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { loginPath } from '../components/RequireAuth'
 import { api } from '../lib/api'
-import { useAuth } from '../lib/auth'
 import { type CaptionState, useCaptions } from '../lib/captions'
 import { LANGUAGES, storedLang, storeLang } from '../lib/languages'
 import { useApi } from '../lib/useApi'
@@ -51,24 +49,35 @@ function SourceLine({ state, size }: { state: CaptionState; size: string }) {
   )
 }
 
-/** Translation line: latest translated final bold, the previous one dim. */
+/** Translation line, subtitle style: the sentence being spoken is translated as it grows (bold) after the last
+ *  finished one (dim). Between sentences: latest translated final bold, the previous one dim. */
 function TranslationLine({ state, lang, size }: { state: CaptionState; lang: string; size: string }) {
   const rtl = LANGUAGES.find((l) => l.code === lang)?.rtl
   const items = useMemo(() => {
     if (lang === 'en') return state.finals.map((f) => ({ id: f.segmentId, text: f.text }))
     return state.finals.filter((f) => state.translations[f.segmentId]).map((f) => ({ id: f.segmentId, text: state.translations[f.segmentId] }))
   }, [state.finals, state.translations, lang])
+  const live = lang !== 'en' ? state.interimTr : null
   const pending = lang !== 'en' && state.finals.length > 0 && !state.translations[state.finals[state.finals.length - 1].segmentId]
   const latest = items[items.length - 1]
   const prev = items[items.length - 2]
-  if (!latest) return null
+  if (!latest && !live) return null
   return (
     <p dir={rtl ? 'rtl' : undefined} lang={lang} className="leading-[1.22] tracking-tight" style={{ fontSize: size }} aria-live="polite">
-      {prev && <span className="text-white/40">{prev.text} </span>}
-      <span key={latest.id} className="font-bold text-white">
-        {latest.text}
-      </span>
-      {pending && <span className="pulse text-white/40"> …</span>}
+      {live ? (
+        <>
+          {latest && <span className="text-white/40">{latest.text} </span>}
+          <span className="font-bold text-white">{live.text}</span>
+        </>
+      ) : (
+        <>
+          {prev && <span className="text-white/40">{prev.text} </span>}
+          <span key={latest.id} className="font-bold text-white">
+            {latest.text}
+          </span>
+          {pending && <span className="pulse text-white/40"> …</span>}
+        </>
+      )}
     </p>
   )
 }
@@ -79,7 +88,6 @@ export function LivePage() {
   const [sizeIdx, setSizeIdx] = useState(readSize)
   const meta = useApi(() => api.publicLecture(lectureId, lang), [lectureId])
   const { state, socket } = useCaptions(lectureId, lang)
-  const { user } = useAuth()
   useWakeLock(true)
 
   // Captions page is always dark, whatever the system theme.
@@ -104,6 +112,8 @@ export function LivePage() {
 
   const ended = state.status?.state === 'ended' || (meta.data && meta.data.status !== 'live' && state.finals.length === 0 && !state.interim)
   const live = !ended && socket === 'open' && state.status?.state === 'recording'
+  // Clearly labelled: a replay of a saved lecture is not the room's live audio.
+  const replay = !!(state.status?.replay || meta.data?.replay)
   const translated = lang !== 'en'
   const size = SIZES[sizeIdx]
   const smaller = SIZES[Math.max(0, sizeIdx - 1)]
@@ -118,6 +128,11 @@ export function LivePage() {
           <span className="hidden sm:inline">slap</span>
         </Link>
         <div className="min-w-0 flex-1 truncate text-sm text-white/60">
+          {replay && (
+            <span className="mr-2 inline-flex h-5 items-center rounded-sm border border-yellow-400/70 px-1.5 font-mono text-[10px] uppercase tracking-wider text-yellow-300" title="A saved lecture played back, not live audio">
+              Replay
+            </span>
+          )}
           {meta.data ? (
             <>
               <span className="text-white/90">{meta.data.className}</span> · {meta.data.title}
@@ -165,25 +180,25 @@ export function LivePage() {
         <div className="mx-auto w-full max-w-6xl space-y-6">
           {ended && (
             <div className="rounded-md border border-white/15 bg-white/5 p-5 text-base" onClick={(e) => e.stopPropagation()}>
-              <div className="font-mono text-xs uppercase tracking-widest text-white/50">Lecture ended</div>
-              <p className="mt-2 text-white/80">Captions stopped. Notes, flashcards and practice will be ready shortly.</p>
+              <div className="font-mono text-xs uppercase tracking-widest text-white/50">{replay ? 'Replay ended' : 'Lecture ended'}</div>
+              <p className="mt-2 text-white/80">{replay ? 'That was a saved lecture played back; its notes and practice are already in the class.' : 'Captions stopped. Notes, flashcards and practice will be ready shortly.'}</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link
-                  to={user ? `/recall/${lectureId}` : loginPath(`/recall/${lectureId}`)}
+                  to={`/recall/${lectureId}`}
                   className="inline-flex h-10 items-center rounded-md bg-[#ff6a00] px-4 text-sm font-semibold text-white"
                 >
                   Take the 3-minute recall check
                 </Link>
-                {!user && (
-                  <Link to={loginPath('/classes')} className="inline-flex h-10 items-center rounded-md border border-white/20 px-4 text-sm">
-                    Sign in
+                {meta.data && (
+                  <Link to={`/c/${meta.data.classId}/lecture/${lectureId}`} className="inline-flex h-10 items-center rounded-md border border-white/20 px-4 text-sm">
+                    Open the lecture notes
                   </Link>
                 )}
               </div>
             </div>
           )}
           <div>
-            <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">Lecturer · EN</div>
+            <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">{replay ? 'Replay of a saved lecture · EN' : 'Lecturer · EN'}</div>
             <SourceLine state={state} size={translated ? smaller : size} />
           </div>
           {(translated || state.finals.length > 0) && (
@@ -191,7 +206,7 @@ export function LivePage() {
               <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">
                 {translated ? `${LANGUAGES.find((l) => l.code === lang)?.native ?? lang} · machine translation, approximate` : 'Last sentence'}
               </div>
-              {translated && state.finals.length > 0 && Object.keys(state.translations).length === 0 ? (
+              {translated && state.finals.length > 0 && Object.keys(state.translations).length === 0 && !state.interimTr ? (
                 <p className="pulse text-white/40" style={{ fontSize: size }}>
                   Translating…
                 </p>
@@ -205,9 +220,9 @@ export function LivePage() {
 
       <footer className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-white/10 px-4 py-2.5 font-mono text-[11px] uppercase tracking-wider text-white/55 md:px-8">
         <span className="flex items-center gap-2">
-          <span className={`size-2 rounded-full ${live ? 'pulse bg-[#ff6a00]' : socket === 'reconnecting' ? 'bg-yellow-400' : 'bg-white/30'}`} />
-          <span className={live ? 'text-[#ff8a3d]' : ''}>
-            {ended ? 'Ended' : socket === 'reconnecting' ? 'Reconnecting' : socket === 'connecting' ? 'Connecting' : live ? 'Live' : (state.status?.state ?? 'Waiting')}
+          <span className={`size-2 rounded-full ${live ? (replay ? 'pulse bg-yellow-400' : 'pulse bg-[#ff6a00]') : socket === 'reconnecting' ? 'bg-yellow-400' : 'bg-white/30'}`} />
+          <span className={live ? (replay ? 'text-yellow-300' : 'text-[#ff8a3d]') : ''}>
+            {ended ? 'Ended' : socket === 'reconnecting' ? 'Reconnecting' : socket === 'connecting' ? 'Connecting' : live ? (replay ? 'Replay' : 'Live') : (state.status?.state ?? 'Waiting')}
           </span>
         </span>
         {state.status && <span>{state.status.viewers} watching</span>}

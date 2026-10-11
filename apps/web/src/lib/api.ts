@@ -5,18 +5,22 @@ import type {
   Concept,
   ExamTopic,
   Health,
+  LectureAnswer,
   LectureSummary,
   PartnerSession,
   PartnerTurn,
   PartnerVoice,
+  Pretest,
+  PretestAttempt,
   Question,
   Rating,
   RecallResult,
   StudyBundleStatus,
+  StudyPlan,
 } from '@slap/contracts'
-import { clearToken, getToken } from './auth'
 import { API_BASE, MOCK } from './env'
 import type {
+  ClassAnnouncement,
   ClassDetail,
   ConceptDetail,
   DeviceSummary,
@@ -24,13 +28,14 @@ import type {
   Graph,
   JoinInfo,
   LectureDetail,
-  Me,
   PairResult,
   PublicLecture,
+  ReplayOpts,
   ReviewResult,
   Today,
   UploadResult,
 } from './types'
+import { userId } from './user'
 
 export class ApiError extends Error {
   status: number
@@ -44,21 +49,14 @@ type Method = 'GET' | 'POST' | 'DELETE'
 
 interface RequestOptions {
   body?: unknown
-  /** Public routes skip the token. */
-  auth?: boolean
 }
 
-async function request<T>(method: Method, path: string, opts: RequestOptions = {}, retried = false): Promise<T> {
+async function request<T>(method: Method, path: string, opts: RequestOptions = {}): Promise<T> {
   if (MOCK) {
     const { mockRequest } = await import('./mock')
     return mockRequest<T>(method, path, opts.body)
   }
-  const headers: Record<string, string> = { Accept: 'application/json' }
-  const auth = opts.auth ?? true
-  if (auth) {
-    const token = await getToken()
-    if (token) headers.Authorization = `Bearer ${token}`
-  }
+  const headers: Record<string, string> = { Accept: 'application/json', 'X-Slap-User': userId() }
   let body: BodyInit | undefined
   if (opts.body instanceof FormData) body = opts.body
   else if (opts.body !== undefined) {
@@ -71,10 +69,6 @@ async function request<T>(method: Method, path: string, opts: RequestOptions = {
     res = await fetch(API_BASE + path, { method, headers, body })
   } catch {
     throw new ApiError(0, 'Network error: is the API running?')
-  }
-  if (res.status === 401 && auth && !retried) {
-    clearToken()
-    return request<T>(method, path, opts, true)
   }
   const text = await res.text()
   let data: unknown = null
@@ -92,28 +86,32 @@ async function request<T>(method: Method, path: string, opts: RequestOptions = {
   return data as T
 }
 
-const get = <T>(path: string, auth = true) => request<T>('GET', path, { auth })
+const get = <T>(path: string) => request<T>('GET', path)
 const post = <T>(path: string, body?: unknown) => request<T>('POST', path, { body: body ?? {} })
 const enc = encodeURIComponent
 
 export const api = {
-  health: () => get<Health>('/api/health/ready', false),
+  health: () => get<Health>('/api/health/ready'),
 
-  // public
-  join: (code: string) => get<JoinInfo>(`/api/join/${enc(code)}`, false),
-  publicLecture: (id: string, lang: string) => get<PublicLecture>(`/api/lectures/${enc(id)}/public?lang=${enc(lang)}`, false),
+  // join link and caption page
+  join: (code: string) => get<JoinInfo>(`/api/join/${enc(code)}`),
+  publicLecture: (id: string, lang: string) => get<PublicLecture>(`/api/lectures/${enc(id)}/public?lang=${enc(lang)}`),
 
-  // signed in
-  me: () => get<Me>('/api/me'),
+  // classes
+  /** Every class; there is no sign-in, so the list is the same for everyone. */
+  classes: () => get<ClassSummary[]>('/api/classes'),
   createClass: (name: string, code: string) => post<ClassSummary>('/api/classes', { name, code }),
-  joinClass: (code: string) => post<ClassSummary>('/api/classes/join', { code }),
   classDetail: (classId: string) => get<ClassDetail>(`/api/classes/${enc(classId)}`),
+  announcements: (classId: string) => get<ClassAnnouncement[]>(`/api/classes/${enc(classId)}/announcements`),
   startSession: (classId: string, title?: string) =>
     post<LectureSummary>(`/api/classes/${enc(classId)}/sessions/start`, title ? { title } : {}),
+  /** Stops a live lecture or a running replay (the replay's own id). */
   stopLecture: (lectureId: string) => post<LectureSummary>(`/api/lectures/${enc(lectureId)}/stop`),
+  /** Plays a saved lecture back through the caption page; returns the new (in-memory) lecture to open at /live/:id. */
+  replay: (lectureId: string, opts: ReplayOpts = {}) => post<LectureSummary>(`/api/lectures/${enc(lectureId)}/replay`, opts),
   importLecture: (classId: string, input: { title: string; date: string; transcript: string }) =>
     post<LectureSummary>(`/api/classes/${enc(classId)}/lectures/import`, input),
-  /** Pairs to the caller. `classId` becomes the active class (omitted: the caller's only class, if exactly one). */
+  /** Pairs the device showing the code. `classId` becomes the active class (omitted: the only class, if exactly one exists). */
   pairDevice: (pairCode: string, classId?: string) =>
     post<PairResult>('/api/devices/pair', classId ? { pairCode, classId } : { pairCode }),
   devices: () => get<DeviceSummary[]>('/api/devices'),
@@ -132,15 +130,24 @@ export const api = {
   rerunBundle: (lectureId: string) => post<StudyBundleStatus>(`/api/lectures/${enc(lectureId)}/bundle`),
   due: (classId: string, limit = 20) => get<Card[]>(`/api/classes/${enc(classId)}/review/due?limit=${limit}`),
   review: (cardId: string, rating: Rating) => post<ReviewResult>(`/api/cards/${enc(cardId)}/review`, { rating }),
-  /** `conceptId` is an optional extension (not in the spec); the API may ignore it. */
-  practice: (classId: string, n = 5, conceptId?: string) =>
+  /** `conceptId` puts that concept's questions first; `lectureId` then prefers that lecture's. */
+  practice: (classId: string, n = 5, focus: { conceptId?: string; lectureId?: string } = {}) =>
     get<Question[]>(
-      `/api/classes/${enc(classId)}/practice?n=${n}${conceptId ? `&conceptId=${enc(conceptId)}` : ''}`,
+      `/api/classes/${enc(classId)}/practice?n=${n}${focus.conceptId ? `&conceptId=${enc(focus.conceptId)}` : ''}${focus.lectureId ? `&lectureId=${enc(focus.lectureId)}` : ''}`,
     ),
   attempt: (questionId: string, answer: string) => post<Attempt>(`/api/questions/${enc(questionId)}/attempt`, { answer }),
   recall: (lectureId: string, text: string) => post<RecallResult>(`/api/lectures/${enc(lectureId)}/recall`, { text }),
+  /** A question answered from the transcript only, with the segments it rests on. */
+  ask: (lectureId: string, question: string) => post<LectureAnswer>(`/api/lectures/${enc(lectureId)}/ask`, { question }),
+  /** Before the next lecture: questions on the syllabus's upcoming week (generated once a day; not stored). */
+  pretest: (classId: string) => get<Pretest>(`/api/classes/${enc(classId)}/pretest`),
+  regeneratePretest: (classId: string) => post<Pretest>(`/api/classes/${enc(classId)}/pretest`),
+  pretestAttempt: (classId: string, questionId: string, answer: string) =>
+    post<PretestAttempt>(`/api/classes/${enc(classId)}/pretest/${enc(questionId)}/attempt`, { answer }),
   examTopics: (classId: string) => get<ExamTopic[]>(`/api/classes/${enc(classId)}/exam-topics`),
   today: (classId: string) => get<Today>(`/api/classes/${enc(classId)}/today`),
+  studyPlan: (classId: string) => get<StudyPlan>(`/api/classes/${enc(classId)}/study-plan`),
+  regenerateStudyPlan: (classId: string) => post<StudyPlan>(`/api/classes/${enc(classId)}/study-plan`),
   mastery: (classId: string) => get<Record<string, number>>(`/api/classes/${enc(classId)}/mastery`),
   uploadDocument: (classId: string, kind: 'book' | 'syllabus', file: File) => {
     const form = new FormData()
@@ -164,15 +171,46 @@ export const api = {
   endPartner: (sessionId: string) => request<unknown>('DELETE', `/api/partner/${enc(sessionId)}`),
 }
 
-/** Partner audio URLs come back as `/api/partner/audio/:id` (public). Resolve against the API origin. */
+/** Downloads a file with the caller's id (an `<a href>` cannot send the header): fetch → blob → save. */
+export async function downloadFile(path: string, fallbackName: string): Promise<void> {
+  const headers: Record<string, string> = { 'X-Slap-User': userId() }
+  let res: Response
+  try {
+    res = await fetch(API_BASE + path, { headers })
+  } catch {
+    throw new ApiError(0, 'Network error: is the API running?')
+  }
+  if (!res.ok) {
+    let message = `${res.status} ${res.statusText || 'Request failed'}`
+    try {
+      const data = (await res.json()) as { error?: string }
+      if (typeof data.error === 'string') message = data.error
+    } catch {
+      /* not JSON */
+    }
+    throw new ApiError(res.status, message)
+  }
+  const name = /filename="?([^";]+)"?/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallbackName
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
+/** Obsidian vault of the class's notes. */
+export const exportVault = (classId: string, code: string) => downloadFile(`/api/classes/${enc(classId)}/export`, `${code}-vault.zip`)
+
+/** Partner audio URLs come back as `/api/partner/audio/:id`. Resolve against the API origin. */
 export function audioSrc(url: string): string {
   return url.startsWith('/') ? API_BASE + url : url
 }
 
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status === 401) return 'Please sign in again.'
-    if (err.status === 403) return "You don't have access to this."
     if (err.status === 404) return 'Not found.'
     if (err.status >= 502 && err.status <= 504) return 'The Slap API is not reachable right now.'
     return err.message

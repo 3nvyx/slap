@@ -19,6 +19,9 @@ export interface CaptionState {
   finals: LiveFinal[]
   interim: { text: string; words: CaptionWord[] } | null
   translations: Record<number, string>
+  /** Translation of the sentence still being spoken. Once that sentence is final it stands in for the
+   *  final's translation (`forSegment`) until the real one arrives. */
+  interimTr: { text: string; forSegment?: number } | null
   status: StatusEvent | null
   /** ms timestamp of the last caption event, for "receiving" feedback. */
   lastEventAt: number
@@ -27,13 +30,14 @@ export interface CaptionState {
 const MAX_FINALS = 60
 
 export function initialCaptions(lang: string): CaptionState {
-  return { lang, seq: 0, finals: [], interim: null, translations: {}, status: null, lastEventAt: 0 }
+  return { lang, seq: 0, finals: [], interim: null, translations: {}, interimTr: null, status: null, lastEventAt: 0 }
 }
 
 function upsertFinal(finals: LiveFinal[], f: LiveFinal): LiveFinal[] {
   const i = finals.findIndex((x) => x.segmentId === f.segmentId)
   const next = i >= 0 ? finals.map((x, j) => (j === i ? { ...x, ...f, words: f.words ?? x.words } : x)) : [...finals, f]
-  next.sort((a, b) => a.segmentId - b.segmentId)
+  // Time order, not id order: ids are negative and decreasing for replays and unpersisted lectures.
+  next.sort((a, b) => a.start - b.start || a.segmentId - b.segmentId)
   return next.length > MAX_FINALS ? next.slice(-MAX_FINALS) : next
 }
 
@@ -52,7 +56,7 @@ export function captionReducer(s: CaptionState, a: CaptionAction): CaptionState 
         finals = upsertFinal(finals, { segmentId: f.segmentId, text: f.text, start: f.start, end: f.end })
         if (f.translation) translations[f.segmentId] = f.translation
       }
-      return { ...s, finals, translations, interim: null, seq: Math.max(s.seq, ev.seq), lastEventAt: now }
+      return { ...s, finals, translations, interim: null, interimTr: null, seq: Math.max(s.seq, ev.seq), lastEventAt: now }
     }
     case 'interim':
       if (ev.seq <= s.seq) return s
@@ -63,6 +67,7 @@ export function captionReducer(s: CaptionState, a: CaptionAction): CaptionState 
         ...s,
         seq: ev.seq,
         interim: null,
+        interimTr: s.interimTr && s.interimTr.forSegment === undefined ? { ...s.interimTr, forSegment: ev.segmentId } : s.interimTr,
         finals: upsertFinal(s.finals, { segmentId: ev.segmentId, text: ev.text, start: ev.start, end: ev.end, words: ev.words }),
         lastEventAt: now,
       }
@@ -73,8 +78,12 @@ export function captionReducer(s: CaptionState, a: CaptionAction): CaptionState 
         ...s,
         seq: Math.max(s.seq, ev.seq),
         translations: { ...s.translations, [ev.segmentId]: ev.text },
+        interimTr: s.interimTr?.forSegment === ev.segmentId ? null : s.interimTr,
         lastEventAt: now,
       }
+    case 'interimTranslation':
+      if (ev.lang !== s.lang) return { ...s, seq: Math.max(s.seq, ev.seq) }
+      return { ...s, seq: Math.max(s.seq, ev.seq), interimTr: { text: ev.text }, lastEventAt: now }
     case 'status':
       return { ...s, status: ev }
     default:
