@@ -10,7 +10,7 @@ Base: same origin as the web app. JSON bodies. Types in `packages/contracts`.
 - `GET /api/health` liveness `{ ok }`; `GET /api/health/ready` → `Health` (checks DB and reports backends live/mock/down; never calls paid APIs).
 - `GET /api/join/:code` → `{ classId, className, lectureId | null, live: boolean }` (code = class code, e.g. `CS229`).
 - `GET /api/lectures/:id/public?lang=xx` → `{ title, className, classId, status, finals: [{segmentId,text,start,end,translation?}] }` for the caption page.
-- `WS /ws/live/:lectureId?lang=xx` → `CaptionEvent` stream; client sends `LiveClientMessage` (`subscribe` with `since` for reconnect; server replies `snapshot` then live events).
+- `WS /ws/live/:lectureId?lang=xx` → `CaptionEvent` stream; client sends `LiveClientMessage` (`subscribe` with `since` for reconnect; server replies `snapshot` then live events). Viewers of another language also get `interimTranslation`: the sentence still being spoken, translated about once a second, superseded by the `translation` of its final.
 
 ## Device
 - `WS /ws/device?key=<DEVICE_KEY>` → protocol in contracts (`DeviceToServer` / `ServerToDevice`, binary PCM up, binary OLED frames down).
@@ -58,7 +58,7 @@ Base: same origin as the web app. JSON bodies. Types in `packages/contracts`.
 ## Learning partner (spoken practice, Fish Audio)
 - `GET /api/partner/voices` → `PartnerVoice[]` (curated list; the env default first).
 - `POST /api/classes/:classId/partner/session` `{ lectureId?, voiceId?, lang? }` → `PartnerSession` with an opening question already rendered to audio.
-- `POST /api/partner/:sessionId/turn` multipart `{ audio? (webm/opus, wav or mp3 ≤ 60 s), text? }` → `PartnerTurn`. The server transcribes with Fish ASR (`transcribe-1-pro`), decides the intent (answer to the open question → grade via the practice pipeline and reschedule the card; "explain X" → explanation from the concept note and its lecture excerpts; "skip"/"next" → new question), and renders the reply with Fish TTS (`s2.1-pro`, the session's voice).
+- `POST /api/partner/:sessionId/turn` multipart `{ audio? (webm/opus, wav or mp3 ≤ 60 s), text? }` → `PartnerTurn`. The server transcribes with Fish ASR (`transcribe-1-pro`), decides the intent (answer to the open question → grade via the practice pipeline and reschedule the card; "explain X" → explanation from the concept note and its lecture excerpts; "skip"/"next" → new question; a bare greeting such as "hi, how are you?" → a short hello and the open question again, ungraded), and renders the reply with Fish TTS (`s2.1-pro`, the session's voice).
 - `GET /api/partner/audio/:id` (unguessable id) → `audio/mpeg`, cached in memory for ~10 minutes.
 - `DELETE /api/partner/:sessionId` ends the session.
 - Sessions live in memory (one process); a session grades for the caller id that started it, in its class and optional lecture; questions are picked weak-concepts-first and interleaved across lectures (same picker as `/practice`).

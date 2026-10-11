@@ -80,7 +80,7 @@ test("a new language backfills recent finals; later finals are translated once p
   assert.ok(snapEn.type === "snapshot" && snapEn.finals.every(f => f.translation === undefined));
 });
 
-test("status events report viewers and languages; interims are never translated", async () => {
+test("status events report viewers and languages; the unfinished sentence is translated, throttled, per language", async () => {
   const l = s.createEphemeralLecture({ sttBackend: "mock" });
   const a = viewer("fr");
   s.addViewer(l, a.v);
@@ -93,6 +93,11 @@ test("status events report viewers and languages; interims are never translated"
   await settle();
   assert.ok(a.got.some(e => e.type === "interim"));
   assert.equal(a.got.filter(e => e.type === "translation").length, 0);
+  // Several interims arrived at once: one request went out, the rest wait for the gap.
+  const live = a.got.filter(e => e.type === "interimTranslation");
+  assert.equal(live.length, 1);
+  assert.ok(live[0]!.type === "interimTranslation" && live[0]!.lang === "fr" && live[0]!.text.startsWith("[fr] "));
+  assert.equal(b.got.filter(e => e.type === "interimTranslation").length, 0, "English viewers get none");
   s.removeViewer(l, b.v);
   const st2 = a.got.filter(e => e.type === "status").at(-1);
   assert.ok(st2?.type === "status" && st2.viewers === 1);
@@ -100,6 +105,18 @@ test("status events report viewers and languages; interims are never translated"
   const end = a.got.filter(e => e.type === "status").at(-1);
   assert.ok(end?.type === "status" && end.state === "ended");
   assert.ok(a.got.some(e => e.type === "final"), "stop flushes the pending sentence as a final");
+});
+
+test("a translation of an unfinished sentence is dropped once that sentence is final", async () => {
+  const l = s.createEphemeralLecture({ sttBackend: "mock" });
+  const es = viewer("es");
+  s.addViewer(l, es.v);
+  for (let i = 0; i < 45; i++) s.pushAudio(l.id, loudPcm(100));   // interims and their final in one go
+  await settle();
+  assert.equal(es.got.filter(e => e.type === "final").length, 1);
+  assert.equal(es.got.filter(e => e.type === "translation").length, 1);
+  assert.equal(es.got.filter(e => e.type === "interimTranslation").length, 0, "the request was still in flight when the final came");
+  await s.stopSession(l.id);
 });
 
 test("/ws/live accepts same-origin, public URL and local dev origins only", async () => {

@@ -46,6 +46,19 @@ test("intent: everything else is an answer; long answers that mention 'next' are
   assert.equal(p.classifyIntent("I don't know", concepts).intent, "answer");
 });
 
+test("intent: a bare greeting is not an answer; a greeting followed by an answer or a request still is", () => {
+  for (const t of ["Hi", "Hello there!", "Hi Elon, how are you?", "hey, what's up", "Good morning", "Nice to meet you"]) {
+    const r = p.classifyIntent(t, concepts);
+    assert.deepEqual([r.intent, r.ambiguous], ["greet", false], t);
+  }
+  assert.equal(p.classifyIntent("hey, B", concepts).intent, "answer");
+  assert.equal(p.classifyIntent("Hi, true", concepts).intent, "answer");
+  assert.equal(p.classifyIntent("Hello, it's the sum of squared errors", concepts).intent, "answer");
+  assert.equal(p.classifyIntent("hey explain that", concepts).intent, "explain");
+  assert.equal(p.classifyIntent("Hey, what is least squares?", concepts).intent, "explain");
+  assert.equal(p.classifyIntent("hi, next question please", concepts).intent, "skip");
+});
+
 test("matchConcept: exact, containment, word overlap, or nothing", () => {
   assert.equal(p.matchConcept("the least squares", concepts)?.id, "c3");
   assert.equal(p.matchConcept("likelihood estimation", concepts)?.id, "c2");

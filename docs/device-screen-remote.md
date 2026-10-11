@@ -43,6 +43,7 @@ For layout, font and language work use `screen-lab/` (see `screen-lab/README.md`
 ### 3. Device pointed at the other machine's API
 
 - Both machines and the device must be on the same network. The device joins 2.4 GHz only. Campus and venue networks often block device-to-device traffic; use a phone hotspot if the connection never opens.
+- On an iPhone hotspot a Mac can end up IPv6-only (`ipconfig getifaddr en0` prints nothing), and the device, which is IPv4 only, cannot reach it. Give the Mac a fixed address while on the hotspot: `sudo networksetup -setmanual Wi-Fi 172.20.10.14 255.255.255.240 172.20.10.1`, and use that as `SERVER_HOST`. Run `sudo networksetup -setdhcp Wi-Fi` before joining any other network.
 - On the `3nvyx` Mac set `SERVER_HOST` in `firmware/esp32/include/config.h` to the other machine's address (`ipconfig getifaddr en0` there), `SERVER_PORT 8787`, `SERVER_TLS 0`.
 - The other machine's `DEVICE_KEYS` (in `.env.local`) must contain the firmware's `DEVICE_KEY`. The default when unset is `dev-device-key`.
 - Flash on the `3nvyx` Mac: `cd firmware/esp32 && ~/.local/bin/pio run -t upload`.

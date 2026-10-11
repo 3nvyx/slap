@@ -8,11 +8,13 @@ import { db, schema } from "./db/index.ts";
 import { enqueueStudyBundle } from "./pipeline/bundle.ts";
 import { createStt, type SttResult, type SttSession } from "./pipeline/stt.ts";
 import { feedPcm, flushLecture } from "./pipeline/diarize.ts";
-import { isSourceLang, translateMany } from "./pipeline/translate.ts";
+import { isSourceLang, translate, translateMany } from "./pipeline/translate.ts";
 
 const RING = 200;                         // finals kept in memory per lecture for snapshots
 const RESUME_WINDOW_MS = 6 * 3600_000;    // a "live" lecture older than this is not resumed
 const BACKFILL = 20;                      // finals translated when a new language joins mid-lecture
+const INTERIM_TR_GAP_MS = 700;            // the sentence being spoken is translated at most this often per language
+const DEVICE_CAPTION_CHARS = 160;         // tail of the transcript sent to the device screen (it shows two lines)
 const ID_BATCH = 32;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -59,6 +61,14 @@ export interface DeviceLink {
   unpaired(): Promise<void>;
 }
 
+/** Translation of the sentence being spoken, for one language: one request at a time, the newest text wins. */
+interface InterimTranslation {
+  next: string | null;
+  busy: boolean;
+  lastAt: number;
+  timer: NodeJS.Timeout | null;
+}
+
 export interface BrowserAudioSource {
   /** Ends the browser stream (called when the lecture stops). */
   close(reason: string): void;
@@ -96,6 +106,8 @@ export interface LiveLecture {
   refilling: Promise<void> | null;
   stopping: Promise<LectureSummary> | null;
   inflight: Set<string>;      // `${segmentId}|${lang}` translations in progress
+  utterance: number;          // finals received so far; a translation of an unfinished sentence is dropped once it moves
+  interimTr: Map<string, InterimTranslation>;   // by language
   latency: { interim: number[]; final: number[] };
   /** False for ephemeral lectures (tests, no database): nothing is written and segment ids are negative. */
   persistent: boolean;
@@ -141,7 +153,7 @@ function newLecture(row: LectureRow): LiveLecture {
     status: row.status, source: row.source, deviceId: row.deviceId,
     seq: 0, seqFloor: 0, nextIdx: 0, finals: [], viewers: new Set(), stt: null,
     queue: Promise.resolve(), persist: Promise.resolve(), idPool: [], refilling: null, stopping: null,
-    inflight: new Set(), latency: { interim: [], final: [] }, persistent: true, browserAudio: null, audioClock: null, replay: null,
+    inflight: new Set(), utterance: 0, interimTr: new Map(), latency: { interim: [], final: [] }, persistent: true, browserAudio: null, audioClock: null, replay: null,
   };
 }
 
@@ -293,10 +305,48 @@ async function takeSegmentId(l: LiveLecture): Promise<number> {
 function onInterim(l: LiveLecture, r: SttResult) {
   if (r.latencyMs !== undefined) pushCapped(l.latency.interim, r.latencyMs);
   broadcast(l, { type: "interim", seq: ++l.seq, text: r.text, words: r.words, start: r.start, end: r.end });
+  const dev = l.deviceId ? devices.get(l.deviceId) : undefined;
+  if (dev && dev.lectureId === l.id) {
+    dev.lastCaption = `${l.finals.at(-1)?.text ?? ""} ${r.text}`.trim().slice(-DEVICE_CAPTION_CHARS);
+    dev.refresh();
+  }
+  for (const lang of viewerLanguages(l)) {
+    if (isSourceLang(lang)) continue;
+    let st = l.interimTr.get(lang);
+    if (!st) l.interimTr.set(lang, st = { next: null, busy: false, lastAt: 0, timer: null });
+    st.next = r.text;
+    pumpInterimTranslation(l, lang, st);
+  }
+}
+
+/** Sends the newest unfinished sentence for translation unless a request is in flight or the last one was under
+ *  INTERIM_TR_GAP_MS ago. A result that arrives after its sentence became a final is dropped. */
+function pumpInterimTranslation(l: LiveLecture, lang: string, st: InterimTranslation) {
+  if (l.status !== "live") { st.next = null; return; }
+  if (st.busy || st.timer || st.next === null) return;
+  const wait = st.lastAt + INTERIM_TR_GAP_MS - Date.now();
+  if (wait > 0) {
+    st.timer = setTimeout(() => { st.timer = null; pumpInterimTranslation(l, lang, st); }, wait);
+    st.timer.unref();
+    return;
+  }
+  const text = st.next;
+  const utterance = l.utterance;
+  st.next = null;
+  st.busy = true;
+  st.lastAt = Date.now();
+  translate(text, lang)
+    .then(out => {
+      if (l.utterance === utterance && l.status === "live") broadcast(l, { type: "interimTranslation", seq: ++l.seq, lang, text: out }, lang);
+    })
+    .catch(logErr(`translate interim ${lang}`))
+    .finally(() => { st.busy = false; pumpInterimTranslation(l, lang, st); });
 }
 
 /** `stored`: translations already known for this final (replay), sent instead of translating again. */
 function onFinal(l: LiveLecture, r: SttResult, stored?: Map<string, string>) {
+  l.utterance++;
+  for (const st of l.interimTr.values()) st.next = null;
   l.queue = l.queue.then(() => handleFinal(l, r, stored)).catch(logErr("final"));
 }
 
@@ -314,7 +364,7 @@ async function handleFinal(l: LiveLecture, r: SttResult, stored?: Map<string, st
   }
 
   const dev = l.deviceId ? devices.get(l.deviceId) : undefined;
-  if (dev && dev.lectureId === l.id) { dev.lastCaption = f.text; dev.refresh(); }
+  if (dev && dev.lectureId === l.id) { dev.lastCaption = f.text.slice(-DEVICE_CAPTION_CHARS); dev.refresh(); }
 
   if (segmentId > 0) {
     l.persist = l.persist.then(async () => {

@@ -49,24 +49,35 @@ function SourceLine({ state, size }: { state: CaptionState; size: string }) {
   )
 }
 
-/** Translation line: latest translated final bold, the previous one dim. */
+/** Translation line, subtitle style: the sentence being spoken is translated as it grows (bold) after the last
+ *  finished one (dim). Between sentences: latest translated final bold, the previous one dim. */
 function TranslationLine({ state, lang, size }: { state: CaptionState; lang: string; size: string }) {
   const rtl = LANGUAGES.find((l) => l.code === lang)?.rtl
   const items = useMemo(() => {
     if (lang === 'en') return state.finals.map((f) => ({ id: f.segmentId, text: f.text }))
     return state.finals.filter((f) => state.translations[f.segmentId]).map((f) => ({ id: f.segmentId, text: state.translations[f.segmentId] }))
   }, [state.finals, state.translations, lang])
+  const live = lang !== 'en' ? state.interimTr : null
   const pending = lang !== 'en' && state.finals.length > 0 && !state.translations[state.finals[state.finals.length - 1].segmentId]
   const latest = items[items.length - 1]
   const prev = items[items.length - 2]
-  if (!latest) return null
+  if (!latest && !live) return null
   return (
     <p dir={rtl ? 'rtl' : undefined} lang={lang} className="leading-[1.22] tracking-tight" style={{ fontSize: size }} aria-live="polite">
-      {prev && <span className="text-white/40">{prev.text} </span>}
-      <span key={latest.id} className="font-bold text-white">
-        {latest.text}
-      </span>
-      {pending && <span className="pulse text-white/40"> …</span>}
+      {live ? (
+        <>
+          {latest && <span className="text-white/40">{latest.text} </span>}
+          <span className="font-bold text-white">{live.text}</span>
+        </>
+      ) : (
+        <>
+          {prev && <span className="text-white/40">{prev.text} </span>}
+          <span key={latest.id} className="font-bold text-white">
+            {latest.text}
+          </span>
+          {pending && <span className="pulse text-white/40"> …</span>}
+        </>
+      )}
     </p>
   )
 }
@@ -195,7 +206,7 @@ export function LivePage() {
               <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">
                 {translated ? `${LANGUAGES.find((l) => l.code === lang)?.native ?? lang} · machine translation, approximate` : 'Last sentence'}
               </div>
-              {translated && state.finals.length > 0 && Object.keys(state.translations).length === 0 ? (
+              {translated && state.finals.length > 0 && Object.keys(state.translations).length === 0 && !state.interimTr ? (
                 <p className="pulse text-white/40" style={{ fontSize: size }}>
                   Translating…
                 </p>
