@@ -1,4 +1,4 @@
-"""SLAP desk housing v3.1 "deep slab" rebuilt in CadQuery for a Fusion-openable STEP.
+"""SLAP desk housing v3.3 "deep slab" rebuilt in CadQuery for a Fusion-openable STEP.
 
 Mirror of ../housing_slab.scad (the source of truth). Parameter names match the
 OpenSCAD file one to one; change a value there first, then copy it here.
@@ -102,7 +102,7 @@ oled_glass_dx = 0
 oled_glass_dy = 0
 oled_hole_inset_x = 2.0   # from the builder's reference model: 3.0 mm holes 2.0 mm from both edges
 oled_hole_inset_y = 2.0
-oled_hole_d = 3.0
+oled_hole_d = 2.5
 oled_pins = True       # locating pin on each tray post, into the corner holes
 oled_pin_d = 2.0
 oled_pin_h = 2.4
@@ -195,7 +195,7 @@ uno_hole_d = 3.2
 uno_peg_d = 2.6
 uno_peg_h = 3.0
 uno_pad_d = 5.0
-uno_standoff = 5.0
+uno_standoff = 4.0
 uno_usb_gap = 3.5
 uno_back_gap = 5.0
 uno_usb_v = 37.86
@@ -205,6 +205,7 @@ uno_hdr_dig = (17.29, 65.02, 50.8)
 uno_hdr_ana = (26.42, 65.02, 2.54)
 uno_jack = (-2.2, 12.0, 4.1, 13.2, 11.0)
 uno_post_u = 35
+uno_post_u2 = 57    # analog-in strip; the power strip takes the amp's 5V and GND jumpers
 uno_post_d = 5.0
 uno_post_base = 9.0   # the lid posts are cones
 uno_post_gap = 0.5
@@ -216,11 +217,25 @@ imu_pad_d = 34.0
 imu_pad_h = 3.0
 imu_wall_gap = 3.5
 imu_plug_room = 6.0
-imu_pegs = False       # off until the hole spacing is measured
+imu_pegs = True        # on since the fit_imu coupon fitted (11 Oct)
 imu_hole_dx = 14.0
 imu_hole_dy = 21.0
 imu_peg_d = 2.6
 imu_peg_h = 2.6
+
+# Speaker "3128" (body from the builder's STEP file) and its clip-in holder under the lid
+spk_enable = True
+spk_w = 31.0
+spk_d = 28.0
+spk_t = 14.92
+spk_clear = 0.4
+spk_wall = 2.0
+spk_pad = 1.0
+spk_seg = 8.0
+spk_lip = 1.0
+spk_tongue_w = 10.0
+spk_tongue_t = 2.0
+spk_grille_r = 10.5
 
 # USB-C slot
 usb_slot_mode = "uart"  # uart | both | two
@@ -351,7 +366,15 @@ uno_y_f = uno_y_b - uno_w
 uno_usb_y = uno_y_b - uno_usb_v
 uno_usb_z = uno_top + uno_usb_h / 2
 uno_post_z = uno_top + uno_hdr_h + uno_post_gap
-uno_posts = [uno_xy(uno_post_u, uno_hdr_dig[2]), uno_xy(uno_post_u, uno_hdr_ana[2])]
+uno_posts = [uno_xy(uno_post_u, uno_hdr_dig[2]), uno_xy(uno_post_u2, uno_hdr_ana[2])]
+
+# Speaker: under the lid over the back-left bay
+spk_cx = -(beam_fx - hook_t) + 1.5 + spk_tongue_t + spk_clear + spk_w / 2
+spk_cy = uno_y_f + 24
+spk_zb = spk_pad + spk_t
+spk_hw = spk_zb + 1.55
+spk_grille = [(i * grille_pitch, j * grille_pitch) for i in range(-6, 7) for j in range(-6, 7)
+              if math.hypot(i, j) * grille_pitch <= spk_grille_r]
 
 # IMU pad: back-left bay
 imu_cx = -in_hx + imu_wall_gap + imu_pad_w / 2
@@ -528,6 +551,36 @@ def slot_solid(x0, length, yc, zc, wy, hz):
     return cq.Workplane("YZ", origin=(x0, 0, 0)).center(yc, zc).slot2D(wy, hz).extrude(length).val()
 
 
+def speaker_holder():
+    """SCAD speaker_holder_up(), placed under the lid (SCAD: translate z = tray_h + 0.01, mirror z)."""
+    a, b, t = spk_w / 2 + spk_clear, spk_d / 2 + spk_clear, spk_wall
+    zl = tray_h + 0.01
+
+    def ubox(x0, y0, z0, dx, dy, dz):   # box given in the holder's own frame (z into the housing)
+        return box(spk_cx + x0, spk_cy + y0, zl - (z0 + dz), dx, dy, dz)
+
+    def catch(sx, y0, y1):              # SCAD spk_catch_2d(sx), extruded from y0 to y1
+        pts = [(sx * (a + 0.5), spk_zb - 0.75), (sx * (a - spk_lip), spk_zb + 0.75), (sx * (a - 0.4), spk_zb + 1.35),
+               (sx * (a + 0.5), spk_zb + 1.35)]
+        return (cq.Workplane("XZ", origin=(0, spk_cy + y1, 0))
+                .polyline([(spk_cx + x, zl - z) for x, z in pts]).close().extrude(y1 - y0).val())
+
+    parts = []
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            parts.append(ubox(sx * (spk_w / 2 - 2) - 2, sy * (spk_d / 2 - 2) - 2, -0.01, 4, 4, spk_pad + 0.01))
+            parts.append(ubox(a + t - spk_seg if sx > 0 else -a - t, b if sy > 0 else -b - t, -0.01,
+                              spk_seg, t, spk_hw + 0.01))
+    for sy in (-1, 1):
+        parts.append(ubox(a, b + t - spk_seg if sy > 0 else -b - t, -0.01, t, spk_seg, spk_hw + 0.01))
+        y1 = b + 0.5 if sy > 0 else -b + spk_seg - t - 0.5
+        parts.append(catch(1, y1 - (spk_seg - t), y1))
+        parts.append(ubox(-a - t, b + t - 5 if sy > 0 else -b - t, -0.01, t, 5, spk_hw + 0.01))
+    parts.append(ubox(-a - spk_tongue_t, -spk_tongue_w / 2, -0.01, spk_tongue_t, spk_tongue_w, spk_hw + 0.01))
+    parts.append(catch(-1, -spk_tongue_w / 2 + 0.5, spk_tongue_w / 2 - 0.5))
+    return parts
+
+
 def pry_slot(side, along):
     if side == "back":
         return box(along - pry_w / 2, in_hy - 0.1, tray_h - pry_d, pry_w, wall + 1, pry_d + 1)
@@ -614,6 +667,8 @@ def top():
     z_post = pcb_top + dev_usb_h + tol_fit
     for p in posts:
         adds.append(cyl(post_d, tray_h - z_post + 0.01, p[0], p[1], z_post))
+    if spk_enable:
+        adds += speaker_holder()
     # hold-down posts onto the UNO's two header rows
     for p in uno_posts:
         adds.append(cq.Solid.makeCone(uno_post_d / 2, uno_post_base / 2, tray_h - uno_post_z + 0.01,
@@ -657,6 +712,10 @@ def top():
             cuts.append(cyl(grille_hole_d, plate_t + 1,
                             gx + (i - (grille_cols - 1) / 2) * grille_pitch,
                             gy + (j - (grille_rows - 1) / 2) * grille_pitch, tray_h - 0.01))
+    # speaker grille
+    if spk_enable:
+        for qx, qy in spk_grille:
+            cuts.append(cyl(grille_hole_d, plate_t + 1, spk_cx + qx, spk_cy + qy, tray_h - 0.01))
     # mic pocket
     cuts.append(cyl(mic_pocket_dia, mic_ring_h + 1, mic_xy[0], mic_xy[1], tray_h - mic_ring_h - 1))
     # LED bore + window (blind, led_skin left on top in "window" mode)
@@ -973,7 +1032,7 @@ def verify(parts):
 
 def main():
     parts = build()
-    print(f"SLAB v3.1 (CadQuery): outer L x W x H = {L} x {W} x {H:.2f} mm, tray_h {tray_h:.2f}")
+    print(f"SLAB v3.3 (CadQuery): outer L x W x H = {L} x {W} x {H:.2f} mm, tray_h {tray_h:.2f}")
     for name, s in parts.items():
         (x0, y0, z0), (x1, y1, z1) = tight_bbox(s)
         print(f"{name:9s} valid {s.isValid()}  solids {len(s.Solids())}  vol {s.Volume():10.2f} mm3  "

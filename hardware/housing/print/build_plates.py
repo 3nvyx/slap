@@ -81,9 +81,13 @@ export("Slap_fit_tests_black_0.4", [
     ("slab_fit_snap", "fit_snap", 1), ("slab_fit_oled_ring", "fit_oled_ring", 1), ("slab_fit_mic", "fit_mic", 1),
     ("slab_fit_usb", "fit_usb", 1), ("slab_fit_boot", "fit_boot", 1), ("slab_fit_imu", "fit_imu", 1),
     ("slab_fit_uno", "fit_uno", 1), ("slab_fit_oled_pins", "fit_oled_pins", 1),
+    ("slab_fit_speaker", "fit_speaker", 1),
 ])
 # v3.0: tray and lid are 116 x 116.5 mm each, so the housing plate carries only the three parts.
 # Print the coupon plate first: fit_uno and fit_imu check the two hole patterns in minutes.
 export("Slap_housing_black_0.4", [
     ("slab_tray", "tray", 1), ("slab_top", "lid_face_down", 1), ("slab_button", "button_on_cap", 1),
 ])
+# Round 2 (11 Oct): the mic snap-in holder from ../mic_snap_coupon.scad, the one coupon that changed
+# after the first coupon plate was tried.
+export("Slap_fit_mic_snap_black_0.4", [("slab_fit_mic_snap", "fit_mic_snap", 1)])
