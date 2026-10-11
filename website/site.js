@@ -4,8 +4,9 @@
 
 // ---- Settings
 
-// The web address of the Slap app, for example "https://slap.example". While this is empty the
-// site is not connected to the app and the "Sign in" links in the footer stay hidden.
+// The web address of the Slap app, for example "https://slap.example". Leave it empty when the Slap
+// app serves this page itself (the normal case): the page then finds the app at its own address.
+// Opened as a plain file, with no app behind it, the buttons and links into the app stay hidden.
 var APP_URL = "";
 
 // The class shown in the demo.
@@ -272,12 +273,21 @@ $$("[data-accordion]").forEach(function (acc) {
   });
 });
 
-// ---- Links to the app (hidden until APP_URL is set)
+// ---- Buttons and links into the app (hidden until the app is found)
+
+function connectApp(base) {
+  $$("[data-app]").forEach(function (a) { a.href = base + a.getAttribute("data-app"); });
+  $$("[data-app-block]").forEach(function (b) { b.hidden = false; });
+}
 
 var appBase = APP_URL.replace(/\/$/, "");
-if (appBase) {
-  $$("[data-app]").forEach(function (a) { a.href = appBase + a.getAttribute("data-app"); });
-  $$("[data-app-block]").forEach(function (b) { b.hidden = false; });
+if (appBase) connectApp(appBase);
+// No address set: when the Slap app serves this page, the app answers at the same address.
+else if (location.protocol !== "file:") {
+  fetch("/api/health")
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) { if (j && j.ok) connectApp(""); })
+    .catch(function () {});
 }
 
 // ---- Conversation side bar: the tab on the right edge opens and closes it

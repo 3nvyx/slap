@@ -258,6 +258,7 @@ h2 { font-size: clamp(28px, 3.6vw, 42px); line-height: 1.12; letter-spacing: -.0
 /* ---- Narrow screens */
 @media (max-width: 900px) {
   .nav-links { display: none; }
+  .nav-app { margin-left: auto; }
   .hero-in { grid-template-columns: 1fr; padding-block: 52px 56px; min-height: 0; }
   .hero-art { justify-self: center; max-width: 520px; }
   .split { grid-template-columns: 1fr; }

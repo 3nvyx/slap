@@ -4,17 +4,19 @@ The public page that explains Slap: what it is, how to use it, what the study ap
 
 Everything for it lives in this folder. Nothing here is used by the real device or the web app, so changing these files cannot break them. There is nothing to install.
 
+It is the front page of the Slap app: the app's server shows this folder at `/`, and the app's own pages (`/demo`, `/classes`, ...) sit behind it at the same address.
+
 ## Open it
 
-Double-click `index.html`. After a change to a file, refresh the page.
+With the app running, open http://localhost:8787 (`pnpm dev`) or http://localhost:5173 (`pnpm dev:web`). After a change to a file, refresh the page.
 
-With an AI helper (Claude Code): ask it to "open the website". It starts the `website` preview at http://localhost:4174.
-
-Without the AI, from a terminal in this folder:
+On its own, without the app: double-click `index.html`, or ask an AI helper (Claude Code) to "open the website" (the `website` preview, http://localhost:4174), or from a terminal in this folder:
 
 ```bash
 python3 -m http.server 4174 --bind 127.0.0.1
 ```
+
+On its own the page has no app behind it, so the "Demo" and "Open the app" buttons stay hidden.
 
 ## What is where
 
@@ -26,9 +28,11 @@ python3 -m http.server 4174 --bind 127.0.0.1
 | `img/` | Pictures of the device (copies of `hardware/housing/preview/assembled_black.png` and `exploded.png`). |
 | `vendor/qrcode.js` | Third-party QR code maker (MIT licence). Do not edit. |
 
-## Not connected to the app yet
+## Buttons into the app
 
-The "Sign in" links in the footer need the web address of the Slap app. Put it in `APP_URL` at the top of `site.js`, for example `"https://slap.example"`. Until then they stay hidden.
+"Demo" (next to "How it works") opens `/demo`: every device that is recording right now. "Open the app" in the top bar and "Classes" in the footer open `/classes`. Any link with `data-app="/some/page"` works the same way, and `data-app-block` hides an element until the app is found.
+
+The page finds the app by asking its own address for `/api/health`. Only if the page is ever hosted somewhere else than the app, put the app's address in `APP_URL` at the top of `site.js`, for example `"https://slap.example"`.
 
 ## Left out on purpose
 

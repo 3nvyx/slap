@@ -7,7 +7,7 @@
 <meta name="description" content="Slap is a small device for the lecturer's desk. The whole room gets live captions in their own language, and every lecture becomes notes, flashcards and practice.">
 <meta name="theme-color" content="#0e0e0f">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='7' width='28' height='18' rx='4' fill='%23151515'/%3E%3Crect x='6' y='11' width='12' height='10' rx='1' fill='%23f2f2f0'/%3E%3Ccircle cx='24' cy='16' r='3' fill='%23ff6a00'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=21">
+<link rel="stylesheet" href="style.css?v=22">
 <script>document.documentElement.classList.add("js");</script>
 </head>
 <body>
@@ -24,6 +24,7 @@
       <a href="#hardware">Device</a>
       <a href="#faq">FAQ</a>
     </nav>
+    <a class="btn btn-ink btn-sm nav-app" data-app="/classes" data-app-block hidden href="#">Open the app</a>
   </div>
 </header>
 
@@ -38,6 +39,7 @@
       <p class="hero-sub">One small device at the front of the room captions the lecture live, in each student's own language.</p>
       <div class="hero-cta">
         <a class="btn btn-ghost" href="#how">How it works</a>
+        <a class="btn btn-accent" data-app="/demo" data-app-block hidden href="#">Demo</a>
       </div>
     </div>
 
@@ -334,8 +336,8 @@
       </div>
       <div data-app-block hidden>
         <p class="eyebrow eyebrow-dark">App</p>
-        <a data-app="/login" href="#">Sign in</a>
-        <a data-app="/classes" href="#">My classes</a>
+        <a data-app="/demo" href="#">Live demo</a>
+        <a data-app="/classes" href="#">Classes</a>
       </div>
       <div>
         <p class="eyebrow eyebrow-dark">Privacy</p>
@@ -347,6 +349,6 @@
 </footer>
 
 <script src="vendor/qrcode.js"></script>
-<script src="site.js?v=21"></script>
+<script src="site.js?v=22"></script>
 </body>
 </html>
