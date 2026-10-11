@@ -3,10 +3,11 @@
 // text positioned by its top edge. Anything at least half bright becomes a lit pixel; the rest is off.
 //
 // ctx is a normal Canvas 2D context. d is the mock data (see README.md for every field):
-//   d.classCode  d.pairCode  d.joinUrl  d.caption  d.lang  d.seconds  d.level  d.wifiOk  d.message  d.avatar  d.t
+//   d.classCode  d.pairCode  d.joinUrl  d.caption  d.lang  d.seconds  d.level  d.wifiOk  d.message  d.avatar  d.mascot  d.t
 // Helpers: font(px, bold)  centered(ctx, text, y, x0, width)  fitFont(ctx, text, width, max)
 //          wrapText(ctx, text, maxWidth)  drawQr(ctx, text, x, y, box)  mmss(seconds)
 //          drawSprite(ctx, name, x, y, scale)  spriteFit(name, boxW, boxH)
+//          drawMascot(ctx, d, x, y, w, h, asleep, face)   the mascot from sprites.js, fitted into an area (defined further down)
 
 const TODAY = "On the device today";
 const IDEAS = "Ideas to play with";
@@ -163,6 +164,103 @@ screen({
     ctx.font = font(11);
     centered(ctx, "slap to", 32, x0, w);
     centered(ctx, "start", 44, x0, w);
+  },
+});
+
+screen({
+  name: "Avatar + caption",
+  group: IDEAS,
+  note: "The chosen avatar hops with the sound, a small level bar under it, the caption beside it. Press Play, or turn on the microphone and talk.",
+  led: true,
+  draw(ctx, d) {
+    const box = 46, level = Math.min(1, Math.max(0, d.level));
+    const fit = spriteFit(d.avatar, box, 48);
+    const hop = Math.round(level * 6);   // up to 6 pixels off the ground when it is loud
+    drawSprite(ctx, d.avatar, Math.floor((box - fit.w) / 2), Math.max(0, 54 - fit.h - hop), fit.scale);
+    ctx.fillRect(2, 58, Math.round(level * (box - 4)), 3);
+    ctx.font = font(11);
+    const x0 = box + 4;
+    const lines = wrapText(ctx, d.caption, W - x0 - 1).slice(-4);
+    lines.forEach((l, i) => ctx.fillText(l, x0, 4 + i * 14));
+  },
+});
+
+// The mascot from sprites.js: a box head with a face in it.
+// It is drawn as large as fits in the area (x, y, w, h), in the middle of it, at a whole-number size
+// so the pixels stay square. It blinks now and then, and its mouth grows as the sound gets louder.
+// `face` is one of the faces in sprites.js; left out, it is the one chosen on the page.
+function drawMascot(ctx, d, x, y, w, h, asleep = false, face = d.mascot) {
+  const fit = spriteFit(`mascot/${face}/head`, w, h);
+  const px = x + Math.floor((w - fit.w) / 2), py = y + Math.floor((h - fit.h) / 2);
+  const shut = asleep || d.t % 3.2 > 3;
+  const mouth = asleep || d.level < 0.15 ? "quiet" : d.level < 0.45 ? "half" : "open";
+  drawSprite(ctx, `mascot/${face}/head`, px, py, fit.scale);
+  drawSprite(ctx, `mascot/${face}/${shut ? "blink" : "eyes"}`, px, py, fit.scale);
+  drawSprite(ctx, `mascot/${face}/${mouth}`, px, py, fit.scale);
+}
+
+screen({
+  name: "Mascot face",
+  group: IDEAS,
+  note: "The mascot, as large as fits. Choose the face under Mascot on the right. Its mouth follows the sound and it blinks: drag Sound level, press Play, or turn on the microphone.",
+  led: true,
+  draw(ctx, d) {
+    drawMascot(ctx, d, 0, 0, W, H);
+  },
+});
+
+screen({
+  name: "Mascot + caption",
+  group: IDEAS,
+  note: "The mascot talks along with the lecture, with the caption beside it.",
+  led: true,
+  draw(ctx, d) {
+    drawMascot(ctx, d, 0, 0, 54, H);
+    ctx.font = font(11);
+    const x0 = 57;
+    const lines = wrapText(ctx, d.caption, W - x0 - 1).slice(-4);
+    lines.forEach((l, i) => ctx.fillText(l, x0, 4 + i * 14));
+  },
+});
+
+screen({
+  name: "Mascot ready",
+  group: IDEAS,
+  note: "Waiting to start: the mascot beside the class code.",
+  draw(ctx, d) {
+    drawMascot(ctx, { ...d, level: 0 }, 2, 0, 54, H);
+    const x0 = 58, w = W - x0;
+    ctx.font = font(fitFont(ctx, d.classCode, w - 2, 18), true);
+    centered(ctx, d.classCode, 8, x0, w);
+    ctx.font = font(11);
+    centered(ctx, "slap to", 32, x0, w);
+    centered(ctx, "start", 44, x0, w);
+  },
+});
+
+screen({
+  name: "Mascot: both sketches",
+  group: IDEAS,
+  note: "Two of the earlier sketches side by side, to compare them. Both react to the sound.",
+  draw(ctx, d) {
+    drawMascot(ctx, d, 8, 4, 52, 40, false, "round");
+    drawMascot(ctx, d, 68, 4, 52, 40, false, "odd");
+    ctx.font = font(10);
+    centered(ctx, "round", 49, 8, 52);
+    centered(ctx, "odd", 49, 68, 52);
+  },
+});
+
+screen({
+  name: "Mascot asleep",
+  group: IDEAS,
+  note: "Nothing is happening: eyes shut, mouth small.",
+  draw(ctx, d) {
+    drawMascot(ctx, d, 10, 0, 84, H, true);
+    ctx.font = font(10, true);
+    ctx.fillText("z", 98, 14);
+    ctx.font = font(13, true);
+    ctx.fillText("z", 107, 1);
   },
 });
 

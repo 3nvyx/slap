@@ -15,8 +15,6 @@ Start the `screen-lab` launch configuration (`.claude/launch.json`: `python3 -m 
 
 A broken file shows a red bar at the top of the page with the error text. Check for it after every edit.
 
-Do not show the designer `index.html` through a static file preview: it renders the page without running its scripts (an orange "has not started" notice appears). Use the server URL.
-
 ## Files
 
 | File | Role |
@@ -56,7 +54,7 @@ Leave the five `TODAY` screens as they are: they mirror `apps/api/src/oled.ts`, 
 
 `ctx` is a Canvas 2D context, already set to white fill and stroke with `textBaseline = "top"`. `d` is the mock data:
 
-`d.classCode`, `d.pairCode`, `d.joinUrl`, `d.caption` (grows while Play runs), `d.fullCaption`, `d.lang` (`{ code, name, native, rtl }`), `d.seconds`, `d.level` (0–1), `d.wifiOk`, `d.message`, `d.avatar` (name of the chosen sprite), `d.t` (seconds since Play, 0 when stopped; drive animation from it).
+`d.classCode`, `d.pairCode`, `d.joinUrl`, `d.caption` (grows while Play runs), `d.fullCaption`, `d.lang` (`{ code, name, native, rtl }`), `d.seconds`, `d.level` (0–1), `d.wifiOk`, `d.message`, `d.avatar` (name of the chosen sprite), `d.mascot` (name of the chosen mascot face), `d.t` (seconds since Play, 0 when stopped; drive animation from it).
 
 Helpers (globals from `lab.js`):
 
@@ -76,6 +74,14 @@ Leave `ctx.textBaseline` as `"top"` and give `fillText` the y of the text's top 
 
 Keep `draw` portable: synchronous, Canvas 2D calls and these helpers only. No DOM, no images loaded by URL, no reading the clock (use `d.t` and `d.seconds`). The same function later runs on the server under `@napi-rs/canvas`.
 
+## Live sound and real size (`lab.js`)
+
+- "Use this laptop's microphone" replaces `d.level` with the microphone's level: loudest 85 ms of each 200 ms frame, on the server's scale (`micMeter`, the same formula as `meter` in `apps/api/src/ws/device.ts`). It also starts Play. Stopping Play stops the microphone.
+- "Write what I say as the caption" replaces `d.caption` with the browser's speech-to-text (Web Speech API; Chrome and Safari only; the sound goes to the browser vendor's service). `"Listening..."` until something is heard, as on the server.
+- A `draw` needs nothing special for either: it reads `d.level` and `d.caption` as before.
+- The "Real size" view draws the housing from `hardware/housing` (v2.3: 104.5 × 56 mm body, 63.4 × 40.4 mm glass window, 55 × 27.5 mm lit area, 12 mm button, 3 mm LED, 8 × 7 grille). Every length is `calc(mm * var(--mm))`; `--mm` is `state.pxPerMm`, set by the card outline. The lit area is centred in the glass because its real offset is not measured. Button, LED and grille positions are read off the housing preview, good to about a millimetre.
+- The last converted picture is kept in this browser's storage and comes back as the avatar `imported`. It is still not in the files.
+
 A new field of mock data needs three edits: a default in `MOCK` (`data.js`), the key added to `DATA_KEYS` and `mockData()` in `lab.js`, and a control with `data-key="…"` in `index.html`.
 
 ## Avatars
@@ -93,7 +99,17 @@ sprite("cat", `
 
 One row of text per pixel row; `#` is lit, `.` is off; every row the same length; at most 64 rows and 128 columns. Whole-number `scale` only. For an avatar that moves, draw it with canvas shapes in `screens.js` and animate from `d.t` and `d.level` (see `drawFace`).
 
-The page's "Turn a picture into an avatar" converts an image and shows the `sprite(…)` text. It is lost on refresh; paste it into `sprites.js` under a proper name to keep it.
+### The mascot
+
+The mascot follows the designer's own pencil sketches: a box head with a face in it, no body. `cat` is the one the designer calls "the mascot": a box about 1.5 times as wide as tall with two open-triangle cat ears on its top edge, two outlined round eyes joined by a thin bar (like glasses), and an outlined square mouth low in the box. Three earlier sketches are kept as other faces: `round` (outlined round eyes, wide outlined flat mouth), `odd` (a big outlined rectangle for the left eye, a small outlined square for the right, an outlined triangle mouth), `tall` (tall rounded outlined eyes with a band across the top, small filled square mouth).
+
+Per face, `sprites.js` holds six layers on one grid: `mascot/NAME/head`, `/eyes`, `/blink`, `/quiet`, `/half`, `/open` (`cat` is 26 × 21 with the ears in rows 0–3; the others 26 × 20). There is no shared head layer. `drawMascot(ctx, d, x, y, w, h, asleep, face)` in `screens.js` centres the face in the area at the largest whole scale (`spriteFit` on the head layer), then draws the head, one eye layer (blink from `d.t`) and one mouth layer (from `d.level`). `face` defaults to `d.mascot`, the "Mascot face" menu, which lists every NAME that has an `eyes` layer. A face the browser has not shown before is selected automatically on load (`state.mascotSeen`). The whole display gives scale 3, a 54-wide column beside a caption gives scale 2. Stay close to the sketches' proportions unless the designer asks otherwise. Any sprite whose name contains `/` is a part and is hidden from the Avatar menu.
+
+When the designer asks to change the mascot, redraw the layers and keep them the same size. A new expression is a new layer plus a line in `drawMascot`. Shapes are solid on purpose: a line one pixel thick is hard to see at real size. Show the result on the "Mascot face" screen and in "Real size".
+
+An earlier reference was another artist's illustration of a monitor-headed character. Do not trace or reproduce a reference picture that is not the team's own; say so if asked to.
+
+The page's "Turn a picture into an avatar" converts an image and shows the `sprite(…)` text. This browser remembers the last one across refreshes, but it is not in the files; paste it into `sprites.js` under a proper name to keep it.
 
 ## Fonts
 

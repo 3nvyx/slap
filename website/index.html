@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slap: live captions for the whole classroom</title>
+<meta name="description" content="Slap is a small device for the lecturer's desk. The whole room gets live captions in their own language, and every lecture becomes notes, flashcards and practice.">
+<meta name="theme-color" content="#0e0e0f">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='7' width='28' height='18' rx='4' fill='%23151515'/%3E%3Crect x='6' y='11' width='12' height='10' rx='1' fill='%23f2f2f0'/%3E%3Ccircle cx='24' cy='16' r='3' fill='%23ff6a00'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css?v=21">
+<script>document.documentElement.classList.add("js");</script>
+</head>
+<body>
+
+<!-- ============ Navigation ============ -->
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="logo" href="#top" aria-label="Slap, back to top">
+      <span class="logo-mark"><i></i><b></b></span>slap
+    </a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#about">About</a>
+      <a href="#how">How it works</a>
+      <a href="#hardware">Device</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ============ Hero ============ -->
+<section class="hero">
+  <div class="hero-bg" aria-hidden="true"><span></span><span></span><span></span></div>
+  <div class="wrap hero-in">
+    <div class="hero-copy">
+      <h1>To get higher quality of education from the small device.</h1>
+      <p class="hero-sub">One small device at the front of the room captions the lecture live, in each student's own language.</p>
+      <div class="hero-cta">
+        <a class="btn btn-ghost" href="#how">How it works</a>
+      </div>
+    </div>
+
+    <div class="hero-art">
+      <div class="device hero-device" data-led="on">
+        <div class="device-body">
+          <div class="device-glass"><canvas class="oled" width="512" height="256" data-screen="recording" role="img" aria-label="The device screen: recording, with a sound level bar and the latest caption"></canvas></div>
+          <span class="device-grille"></span>
+          <span class="device-eng device-eng-rec">REC</span>
+          <span class="device-led"></span>
+          <span class="device-btn"></span>
+          <span class="device-eng device-eng-slap">SLAP</span>
+        </div>
+      </div>
+
+      <div class="phone hero-phone">
+        <div class="phone-body">
+          <div class="phone-bar">
+            <span class="logo-mark logo-mark-light"><i></i><b></b></span>
+            <span class="phone-class">CS229 · Lecture 4</span>
+            <span class="phone-lang" data-cap="langcode">ES</span>
+          </div>
+          <div class="phone-caps">
+            <p class="cap-label">Lecturer · EN</p>
+            <p class="cap-source" data-cap="source"></p>
+            <hr>
+            <p class="cap-label" data-cap="langlabel">Your language · Español</p>
+            <p class="cap-trans" data-cap="trans"></p>
+          </div>
+          <div class="phone-foot"><span class="live-dot"></span>Live</div>
+        </div>
+      </div>
+
+      <div class="langs">
+        <div class="lang-chips" role="group" aria-label="Caption language for the demo">
+          <button type="button" data-lang="es" aria-pressed="true">Español</button>
+          <button type="button" data-lang="zh" aria-pressed="false">中文</button>
+          <button type="button" data-lang="ja" aria-pressed="false">日本語</button>
+          <button type="button" data-lang="vi" aria-pressed="false">Tiếng Việt</button>
+          <button type="button" data-lang="ko" aria-pressed="false">한국어</button>
+          <button type="button" data-lang="fr" aria-pressed="false">Français</button>
+          <button type="button" data-lang="de" aria-pressed="false">Deutsch</button>
+          <button type="button" data-lang="pt" aria-pressed="false">Português</button>
+        </div>
+        <p class="langs-more">and Hindi, Arabic, Tagalog and English</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ About ============ -->
+<section class="section soft" id="about">
+  <div class="wrap split">
+    <figure class="about-img reveal">
+      <img src="img/device.png" width="1600" height="1100" alt="The Slap device: a small black box with a screen, a microphone grille and an orange button">
+    </figure>
+    <div class="reveal">
+      <h2>What is Slap?</h2>
+      <p class="lead">Slap is a small device that sits on the professor’s desk. It listens to the lecture and displays live captions on each student’s phone in their preferred language.</p>
+      <p class="punch">One device. The whole room.</p>
+      <a class="btn btn-ink" href="#how">See how it works</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ How to use ============ -->
+<section class="section" id="how">
+  <div class="wrap">
+    <div class="center-head reveal">
+      <h2>How Slap works</h2>
+    </div>
+    <div class="split split-top">
+      <div class="stage reveal" id="howStage" aria-hidden="true">
+        <!-- 01: ready -->
+        <div class="scene on">
+          <div class="device stage-device" data-led="off">
+            <div class="device-body">
+              <div class="device-glass"><canvas class="oled" width="512" height="256" data-screen="ready"></canvas></div>
+              <span class="device-grille"></span>
+              <span class="device-eng device-eng-rec">REC</span>
+              <span class="device-led"></span>
+              <span class="device-btn"></span>
+              <span class="device-eng device-eng-slap">SLAP</span>
+            </div>
+          </div>
+        </div>
+        <!-- 02: recording -->
+        <div class="scene">
+          <div class="device stage-device slapped" data-led="on">
+            <div class="device-body">
+              <div class="device-glass"><canvas class="oled" width="512" height="256" data-screen="recording"></canvas></div>
+              <span class="device-grille"></span>
+              <span class="device-eng device-eng-rec">REC</span>
+              <span class="device-led"></span>
+              <span class="device-btn"></span>
+              <span class="device-eng device-eng-slap">SLAP</span>
+            </div>
+          </div>
+          <p class="scene-note">The red light is on while the microphone is live.</p>
+        </div>
+        <!-- 03: pick a language -->
+        <div class="scene">
+          <div class="phone stage-phone">
+            <div class="phone-body">
+              <div class="phone-bar"><span class="logo-mark logo-mark-light"><i></i><b></b></span><span class="phone-class">CS229</span></div>
+              <div class="phone-pick">
+                <p class="cap-label">Read captions in</p>
+                <ul>
+                  <li>English</li><li class="on">Español</li><li>中文</li><li>Tiếng Việt</li><li>한국어</li><li>हिन्दी</li><li>العربية</li><li>Français</li><li>Deutsch</li><li>Português</li><li>日本語</li><li>Tagalog</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- 04: read along -->
+        <div class="scene">
+          <div class="phone stage-phone">
+            <div class="phone-body">
+              <div class="phone-bar"><span class="logo-mark logo-mark-light"><i></i><b></b></span><span class="phone-class">CS229 · Lecture 4</span><span class="phone-lang" data-cap="langcode">ES</span></div>
+              <div class="phone-caps">
+                <p class="cap-label">Lecturer · EN</p>
+                <p class="cap-source" data-cap="source"></p>
+                <hr>
+                <p class="cap-label" data-cap="langlabel">Your language · Español</p>
+                <p class="cap-trans" data-cap="trans"></p>
+              </div>
+              <div class="phone-foot"><span class="live-dot"></span>Live</div>
+            </div>
+          </div>
+        </div>
+        <!-- 05: study bundle -->
+        <div class="scene">
+          <div class="bundle">
+            <p class="cap-label">CS229 · Lecture 4</p>
+            <p class="bundle-title">Your study bundle</p>
+            <ul>
+              <li><span>Outline</span><b>Ready</b></li>
+              <li><span>Concepts</span><b>Ready</b></li>
+              <li><span>Flashcards</span><b>Ready</b></li>
+              <li><span>Practice questions</span><b>Ready</b></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc reveal" data-accordion data-stage="howStage" data-required>
+        <div class="acc-item open">
+          <h3><button class="acc-head" type="button" aria-expanded="true" aria-controls="how1"><span class="acc-n">01</span><span class="acc-t">Put it on the lecturer's desk</span><span class="acc-i" aria-hidden="true"></span></button></h3>
+          <div class="acc-body" id="how1"><div><p>Plug it into a laptop or a power bank with USB-C. Slap joins the Wi-Fi and its screen shows the class code and a QR code for the room.</p></div></div>
+        </div>
+        <div class="acc-item">
+          <h3><button class="acc-head" type="button" aria-expanded="false" aria-controls="how2"><span class="acc-n">02</span><span class="acc-t">Press the button, or slap it twice</span><span class="acc-i" aria-hidden="true"></span></button></h3>
+          <div class="acc-body" id="how2"><div><p>The orange button starts and stops a session. So does a double slap on the case. The recording light is on whenever the microphone is live, so everyone can see it.</p></div></div>
+        </div>
+        <div class="acc-item">
+          <h3><button class="acc-head" type="button" aria-expanded="false" aria-controls="how3"><span class="acc-n">03</span><span class="acc-t">Students scan and pick a language</span><span class="acc-i" aria-hidden="true"></span></button></h3>
+          <div class="acc-body" id="how3"><div><p>Scan the sticker on the device, tap it with NFC, or type the class code. The captions open in the browser on a laptop or phone. No account and nothing to install.</p></div></div>
+        </div>
+        <div class="acc-item">
+          <h3><button class="acc-head" type="button" aria-expanded="false" aria-controls="how4"><span class="acc-n">04</span><span class="acc-t">Read along, live</span><span class="acc-i" aria-hidden="true"></span></button></h3>
+          <div class="acc-body" id="how4"><div><p>The lecturer's words appear as they are spoken, with each new word in bold. The translation in your language follows a moment later, sentence by sentence.</p></div></div>
+        </div>
+        <div class="acc-item">
+          <h3><button class="acc-head" type="button" aria-expanded="false" aria-controls="how5"><span class="acc-n">05</span><span class="acc-t">Stop. The lecture becomes study material</span><span class="acc-i" aria-hidden="true"></span></button></h3>
+          <div class="acc-body" id="how5"><div><p>When the session stops, Slap builds an outline, concepts, flashcards and practice questions from the lecture. Sign in to keep them with your class.</p></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Hardware ============ -->
+<section class="section soft" id="hardware">
+  <div class="wrap">
+    <div class="center-head reveal">
+      <h2>Small enough to forget it is there</h2>
+    </div>
+    <div class="split">
+      <figure class="hw-img reveal">
+        <img src="img/exploded.png" width="1600" height="1100" loading="lazy" alt="The Slap case opened up: a lid with the screen window and the orange button, above a tray holding the electronics">
+      </figure>
+      <dl class="specs reveal">
+        <div><dt>Size</dt><dd>104.5 × 56 × 31.4 mm</dd></div>
+        <div><dt>Screen</dt><dd>2.42″ OLED, 128 × 64 pixels</dd></div>
+        <div><dt>Microphone</dt><dd>Digital microphone behind the grille</dd></div>
+        <div><dt>Start and stop</dt><dd>Orange button, or a double slap</dd></div>
+        <div><dt>Power</dt><dd>USB-C, from a laptop or a power bank</dd></div>
+        <div><dt>Connection</dt><dd>Wi-Fi, 2.4 GHz</dd></div>
+        <div><dt>Case</dt><dd>3D-printed in three parts, snaps together without screws</dd></div>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section class="section" id="faq">
+  <div class="wrap narrow">
+    <div class="reveal">
+      <h2>Questions</h2>
+    </div>
+    <div class="acc acc-faq reveal" data-accordion>
+      <div class="acc-item">
+        <h3><button class="acc-head" type="button" aria-expanded="false" aria-controls="faq1"><span class="acc-t">Do students need an account or an app?</span><span class="acc-i" aria-hidden="true"></span></button></h3>
+        <div class="acc-body" id="faq1"><div><p>No. Scanning the sticker opens the captions in the browser, on a laptop or a phone. You only sign in if you want the notes, flashcards and practice afterwards.</p></div></div>
+      </div>
+      <div class="acc-item">
+        <h3><button class="acc-head" type="button" aria-expanded="false" aria-controls="faq2"><span class="acc-t">Is the lecture recorded?</span><span class="acc-i" aria-hidden="true"></span></button></h3>
+        <div class="acc-body" id="faq2"><div><p>The audio is never stored. Slap keeps only the text of the lecture. The recording light on the device is on whenever the microphone is live, and captions run only while the lecturer has a session going.</p></div></div>
+      </div>
+      <div class="acc-item">
+        <h3><button class="acc-head" type="button" aria-expanded="false" aria-controls="faq3"><span class="acc-t">Which languages can I read in?</span><span class="acc-i" aria-hidden="true"></span></button></h3>
+        <div class="acc-body" id="faq3"><div><p>English, Spanish, Chinese, Vietnamese, Korean, Hindi, Arabic, French, German, Portuguese, Japanese and Tagalog.</p></div></div>
+      </div>
+      <div class="acc-item">
+        <h3><button class="acc-head" type="button" aria-expanded="false" aria-controls="faq4"><span class="acc-t">What does the device need?</span><span class="acc-i" aria-hidden="true"></span></button></h3>
+        <div class="acc-body" id="faq4"><div><p>USB-C power from a laptop or a power bank, and a 2.4 GHz Wi-Fi network.</p></div></div>
+      </div>
+      <div class="acc-item">
+        <h3><button class="acc-head" type="button" aria-expanded="false" aria-controls="faq5"><span class="acc-t">Can I try it without the device?</span><span class="acc-i" aria-hidden="true"></span></button></h3>
+        <div class="acc-body" id="faq5"><div><p>Yes. In the app, a class can use the laptop's microphone in place of the device.</p></div></div>
+      </div>
+      <div class="acc-item">
+        <h3><button class="acc-head" type="button" aria-expanded="false" aria-controls="faq6"><span class="acc-t">Can I buy one?</span><span class="acc-i" aria-hidden="true"></span></button></h3>
+        <div class="acc-body" id="faq6"><div><p>Not yet. Slap is a prototype built at a hackathon.</p></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ============ Conversation (side bar) ============
+     Listens through the microphone, writes down what is said, and sorts it into turns by speaker. -->
+<button class="said-tab" id="saidTab" type="button" aria-expanded="false" aria-controls="saidPanel"><i aria-hidden="true"></i>Conversation</button>
+<div class="said-shade" id="saidShade"></div>
+<aside class="said" id="saidPanel" aria-label="Conversation">
+  <div class="said-head">
+    <h2>Conversation</h2>
+    <button class="said-close" id="saidClose" type="button" aria-label="Close"><span aria-hidden="true"></span></button>
+  </div>
+  <p class="said-intro">This side bar listens to what people say, writes it down, and sorts it into turns under the person who is speaking.</p>
+
+  <div class="talk-actions">
+    <button class="btn btn-accent" id="talkStart" type="button">Start listening</button>
+    <button class="btn btn-ghost" id="talkDemo" type="button">Play an example</button>
+  </div>
+  <p class="talk-status" id="talkStatus" role="status"></p>
+
+  <div class="talk-row">
+    <span class="talk-label" id="talkWhoLabel">Who is speaking</span>
+    <div class="seg" id="talkWho" role="group" aria-labelledby="talkWhoLabel">
+      <button type="button" data-who="professor" aria-pressed="true">Professor</button>
+      <button type="button" data-who="student" aria-pressed="false">Student</button>
+    </div>
+  </div>
+  <div class="talk-row">
+    <label class="talk-label" for="talkLang">Spoken language</label>
+    <select id="talkLang">
+      <option value="en-US">English</option>
+      <option value="es-ES">Español</option>
+      <option value="zh-CN">中文</option>
+      <option value="vi-VN">Tiếng Việt</option>
+      <option value="ko-KR">한국어</option>
+      <option value="hi-IN">हिन्दी</option>
+      <option value="ar-SA">العربية</option>
+      <option value="fr-FR">Français</option>
+      <option value="de-DE">Deutsch</option>
+      <option value="pt-BR">Português</option>
+      <option value="ja-JP">日本語</option>
+      <option value="fil-PH">Tagalog</option>
+    </select>
+  </div>
+
+  <ol class="talk-list" id="talkList"></ol>
+  <p class="talk-empty" id="talkEmpty">Nothing yet. Press “Start listening” and talk, or play the example.</p>
+
+  <div class="talk-foot">
+    <button class="talk-link" id="talkCopy" type="button">Copy</button>
+    <button class="talk-link" id="talkClear" type="button">Clear</button>
+  </div>
+  <p class="said-note">To turn sound into text, your browser sends it to its own speech service (Google in Chrome, Apple in Safari). This page saves nothing: the conversation is gone when you close or refresh it.</p>
+</aside>
+
+<!-- ============ Footer ============ -->
+<footer class="footer">
+  <div class="wrap">
+    <div class="footer-cols">
+      <div>
+        <p class="eyebrow eyebrow-dark">Sections</p>
+        <a href="#about">About</a>
+        <a href="#how">How it works</a>
+        <a href="#hardware">Device</a>
+        <a href="#faq">FAQ</a>
+      </div>
+      <div data-app-block hidden>
+        <p class="eyebrow eyebrow-dark">App</p>
+        <a data-app="/login" href="#">Sign in</a>
+        <a data-app="/classes" href="#">My classes</a>
+      </div>
+      <div>
+        <p class="eyebrow eyebrow-dark">Privacy</p>
+        <p class="footer-note"><span class="live-dot"></span>Recording light on, audio never stored. Captions run only while the lecturer has a session going.</p>
+      </div>
+    </div>
+    <p class="footer-end"><span class="logo logo-light"><span class="logo-mark logo-mark-light"><i></i><b></b></span>slap</span><span>© 2026 Slap · hackathon build</span></p>
+  </div>
+</footer>
+
+<script src="vendor/qrcode.js"></script>
+<script src="site.js?v=21"></script>
+</body>
+</html>
