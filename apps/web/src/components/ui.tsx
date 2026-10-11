@@ -2,56 +2,40 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { Link } from 'react-router'
 import { errorMessage } from '../lib/api'
 import { masteryColor } from '../lib/format'
+import { cn } from '../lib/utils'
 import { LogoArt } from './LogoArt'
+import { Badge } from './shadcn/badge'
+import { Button as BaseButton } from './shadcn/button'
+import { Card } from './shadcn/card'
 
-export function cx(...xs: Array<string | false | null | undefined>) {
-  return xs.filter(Boolean).join(' ')
-}
+// Slap's own building blocks. The pages import from here; underneath, the button, panel and tags are the
+// shadcn/ui components in ./shadcn, already styled for Slap.
+
+/** Joins class names. A later Tailwind class wins over an earlier one for the same property. */
+export const cx = cn
 
 export function Label({ children, className }: { children: ReactNode; className?: string }) {
   return <div className={cx('label', className)}>{children}</div>
 }
 
 type Variant = 'ink' | 'accent' | 'outline' | 'ghost'
-const VARIANTS: Record<Variant, string> = {
-  ink: 'bg-ink text-bg hover:opacity-90',
-  accent: 'bg-accent text-accent-ink hover:brightness-105 shadow-[0_2px_0_rgba(0,0,0,0.25)]',
-  outline: 'border border-line bg-panel text-ink hover:bg-panel-2',
-  ghost: 'text-ink-2 hover:bg-panel-2',
+type Size = 'sm' | 'md' | 'lg'
+
+export function Button({ variant = 'outline', size = 'md', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) {
+  return <BaseButton variant={variant} size={size} {...props} />
 }
 
-export function Button({
-  variant = 'outline',
-  size = 'md',
-  className,
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: 'sm' | 'md' | 'lg' }) {
+export function ButtonLink({ to, variant = 'outline', size = 'md', className, children }: { to: string; variant?: Variant; size?: Size; className?: string; children: ReactNode }) {
   return (
-    <button
-      {...props}
-      className={cx(
-        'inline-flex items-center justify-center gap-2 rounded-md font-medium transition select-none disabled:opacity-45 disabled:pointer-events-none cursor-pointer',
-        size === 'sm' && 'h-8 px-3 text-sm',
-        size === 'md' && 'h-10 px-4 text-sm',
-        size === 'lg' && 'h-14 px-6 text-base font-semibold tracking-tight',
-        VARIANTS[variant],
-        className,
-      )}
-    />
-  )
-}
-
-export function ButtonLink({ to, variant = 'outline', className, children }: { to: string; variant?: Variant; className?: string; children: ReactNode }) {
-  return (
-    <Link to={to} className={cx('inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition', VARIANTS[variant], className)}>
-      {children}
-    </Link>
+    <BaseButton asChild variant={variant} size={size} className={className}>
+      <Link to={to}>{children}</Link>
+    </BaseButton>
   )
 }
 
 export function Panel({ children, className, title, action }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode }) {
   return (
-    <section className={cx('rounded-md border border-line bg-panel p-5', className)}>
+    <Card className={cx('block gap-0 p-5', className)}>
       {(title || action) && (
         <div className="mb-4 flex items-center justify-between gap-3">
           {title ? <Label>{title}</Label> : <span />}
@@ -59,7 +43,7 @@ export function Panel({ children, className, title, action }: { children: ReactN
         </div>
       )}
       {children}
-    </section>
+    </Card>
   )
 }
 
@@ -85,10 +69,10 @@ const PILL: Record<string, string> = {
 
 export function Pill({ status, children }: { status: string; children?: ReactNode }) {
   return (
-    <span className={cx('inline-flex h-5 items-center gap-1.5 rounded-sm px-1.5 font-mono text-[10px] uppercase tracking-wider', PILL[status] ?? 'bg-panel-2 text-ink')}>
+    <Badge className={PILL[status] ?? 'bg-panel-2 text-ink'}>
       {(status === 'live' || status === 'recording' || status === 'replay') && <span className="pulse inline-block size-1.5 rounded-full bg-white mix-blend-difference" />}
       {children ?? status}
-    </span>
+    </Badge>
   )
 }
 
@@ -106,7 +90,7 @@ export function MasteryBar({ value }: { value: number | null | undefined }) {
 }
 
 export function ExamBadge() {
-  return <span className="inline-flex h-5 items-center rounded-sm border border-accent px-1.5 font-mono text-[10px] uppercase tracking-wider text-accent">Exam</span>
+  return <Badge className="border-accent bg-transparent text-accent">Exam</Badge>
 }
 
 export function Spinner({ label = 'Loading' }: { label?: string }) {
@@ -146,7 +130,7 @@ export function Async<T>({ state, children, label }: { state: { data: T | undefi
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <div className="dotgrid rounded-md border border-dashed border-line px-5 py-8 text-center text-sm text-muted">{children}</div>
+  return <div className="dotgrid rounded-lg border border-dashed border-line px-5 py-8 text-center text-sm text-muted">{children}</div>
 }
 
 export function PageTitle({ kicker, title, children }: { kicker?: ReactNode; title: ReactNode; children?: ReactNode }) {
@@ -154,7 +138,7 @@ export function PageTitle({ kicker, title, children }: { kicker?: ReactNode; tit
     <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
       <div>
         {kicker && <Label className="mb-2">{kicker}</Label>}
-        <h1 className="text-3xl font-bold tracking-tight md:text-4xl">{title}</h1>
+        <h1 className="text-3xl font-bold tracking-[-0.035em] md:text-4xl">{title}</h1>
       </div>
       {children}
     </header>
@@ -170,7 +154,8 @@ export function Logo({ className }: { className?: string }) {
   )
 }
 
+// For plain <input> and <textarea>; the same look as the shadcn Input and Textarea.
 export const inputCls =
-  'h-10 w-full rounded-md border border-line bg-bg px-3 text-sm text-ink placeholder:text-muted focus:border-ink focus:outline-none'
+  'h-9 w-full rounded-md border border-line bg-bg px-3 text-sm text-ink outline-none transition-[color,border-color,box-shadow] placeholder:text-muted hover:border-ink/30 focus-visible:border-ink focus-visible:ring-[3px] focus-visible:ring-accent/25'
 export const textareaCls =
-  'w-full rounded-md border border-line bg-bg px-3 py-2 text-sm leading-relaxed text-ink placeholder:text-muted focus:border-ink focus:outline-none'
+  'w-full rounded-md border border-line bg-bg px-3 py-2 text-sm leading-relaxed text-ink outline-none transition-[color,border-color,box-shadow] placeholder:text-muted hover:border-ink/30 focus-visible:border-ink focus-visible:ring-[3px] focus-visible:ring-accent/25'
