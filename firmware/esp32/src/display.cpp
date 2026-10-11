@@ -24,8 +24,16 @@ bool g_frameDirty = false;
 bool g_showingServer = false;
 uint32_t g_frameAt = 0;
 uint32_t g_lastDraw = 0;
-bool g_splashShown = false;
+int g_splashFrame = -1;        // frame of the switch-on animation on screen (-1 = none yet)
+bool g_splashRunning = false, g_splashDone = false;
 uint32_t g_splashAt = 0;
+
+void drawSplash(int i) {
+  u8g2.clearBuffer();
+  u8g2.drawXBM(0, 0, 128, 64, kSplash[i]);
+  u8g2.sendBuffer();
+  g_splashFrame = i;
+}
 
 const uint8_t* FONT_TEXT = u8g2_font_helvR10_tf;    // hint and detail lines, about 22 chars per line
 const uint8_t* FONT_TITLE = u8g2_font_helvB12_tr;
@@ -124,7 +132,7 @@ void drawLocal(uint32_t nowMs, const DisplayModel& m) {
 
   switch (m.state) {
     case AppState::BOOTING:
-      u8g2.drawXBM(0, 0, 128, 64, kSplash);   // the switch-on art (splash.h)
+      u8g2.drawXBM(0, 0, 128, 64, kSplash[kSplashFrames - 1]);   // the switch-on art (splash.h); display_update animates it
       break;
 
     case AppState::WIFI:
@@ -213,17 +221,27 @@ bool display_setServerFrame(const uint8_t* data, size_t len, uint32_t nowMs) {
 void display_dropServerFrame() { g_haveFrame = false; }
 
 void display_update(uint32_t nowMs, const DisplayModel& m) {
-  // The switch-on art is drawn once, at once, and stays for SPLASH_MS while Wi-Fi joins behind it.
+  // Switching on: the first frame of the animation is drawn at once from setup(). The rest plays from the
+  // first loop() pass (setup blocks for a moment, which would swallow frames), and the last frame stays until
+  // SPLASH_MS. Wi-Fi joins behind it meanwhile.
   if (m.state == AppState::BOOTING) {
-    if (!g_splashShown) {
-      drawLocal(nowMs, m);
-      g_splashShown = true;
-      g_splashAt = g_lastDraw = nowMs;
-    }
+    if (g_splashFrame < 0) drawSplash(0);
     return;
   }
-  if (g_splashShown && nowMs - g_splashAt < SPLASH_MS && m.state != AppState::ERROR) return;
-  if (nowMs - g_lastDraw < 1000u / OLED_MAX_FPS) return;
+  if (g_splashFrame >= 0 && !g_splashDone && m.state != AppState::ERROR) {
+    if (!g_splashRunning) {
+      g_splashRunning = true;
+      g_splashAt = nowMs;
+    }
+    uint32_t t = nowMs - g_splashAt;
+    if (t < SPLASH_MS) {
+      int i = 0;
+      for (uint32_t end = 0; i < kSplashFrames - 1 && t >= (end += kSplashFrameMs[i]); i++) {}
+      if (i != g_splashFrame) drawSplash(i);
+      return;
+    }
+    g_splashDone = true;
+  }
 
 #if OLED_SERVER_FRAME_TTL_MS > 0
   // Signed age: a frame stamped in the network callback can be a few ms newer than this pass's nowMs.
@@ -232,18 +250,20 @@ void display_update(uint32_t nowMs, const DisplayModel& m) {
   bool fresh = g_haveFrame && m.wsUp;   // TTL 0: keep the last server frame while connected
 #endif
   if (fresh) {
-    // Server bitmap: XBM layout (16 bytes per row, LSB = leftmost pixel, 1 = lit),
-    // exactly what drawXBM expects. Only redraw when a new frame arrived.
-    if (g_frameDirty || !g_showingServer) {
+    // Server bitmap: XBM layout (16 bytes per row, LSB = leftmost pixel, 1 = lit), exactly what drawXBM
+    // expects. Redrawn only when a new frame arrived, at most OLED_SERVER_FPS times a second: the server
+    // animates captions with short bursts of frames. A frame that arrives too soon waits for the next pass.
+    if ((g_frameDirty || !g_showingServer) && nowMs - g_lastDraw >= 1000u / OLED_SERVER_FPS) {
       u8g2.clearBuffer();
       u8g2.drawXBM(0, 0, 128, 64, g_frame);
       u8g2.sendBuffer();
       g_lastDraw = nowMs;
+      g_frameDirty = false;
+      g_showingServer = true;
     }
-    g_frameDirty = false;
-    g_showingServer = true;
     return;
   }
+  if (nowMs - g_lastDraw < 1000u / OLED_MAX_FPS) return;
   g_showingServer = false;
   drawLocal(nowMs, m);
   g_lastDraw = nowMs;

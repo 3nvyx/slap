@@ -772,7 +772,9 @@ function setPlaying(on) {
   timer = null;
   state.t = 0;
   if (!on) stopMic();
-  if (on) timer = setInterval(() => { state.t += 0.2; takeMicLevel(); render(); }, 200);   // 5 fps, the device's redraw limit
+  // 20 frames a second, the most the device draws: enough to see words fade in and lines roll.
+  // The microphone level is still taken once per 200 ms, as the server does.
+  if (on) { let n = 0; timer = setInterval(() => { state.t = Math.round((state.t + 0.05) * 100) / 100; if (++n % 4 === 0) takeMicLevel(); render(); }, 50); }
   $("play").textContent = on ? "■ Stop" : "▶ Play";
   $("play").classList.toggle("on", on);
   render();

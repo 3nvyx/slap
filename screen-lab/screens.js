@@ -48,18 +48,103 @@ function recordingSide(ctx, seconds, level) {
   ctx.fillText(t, 118 - Math.ceil(ctx.measureText(t).width), 63);
 }
 
-// The server's renderRecording: the caption fills the screen (until the first one, "Listening...").
-function drawRecording(ctx, seconds, level, caption) {
-  ctx.textBaseline = "alphabetic";
-  if (!caption.trim()) {
-    ctx.font = font(15);
-    centered(ctx, "Listening...", 32, 0, CAPTION_W + 2);
-  } else {
-    const style = captionStyle(caption);
-    ctx.font = font(style.px, false, caption);
-    wrapText(ctx, caption, CAPTION_W).slice(-style.lines).forEach((l, i) => ctx.fillText(l, 1, style.base + i * style.pitch));
+const ROLL_MS = 200;      // a new line pushes the others up over this long
+const FADE_MS = 160;      // new words fade in over this long (a dither: the screen is 1-bit)
+const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+
+// The server's CaptionRoll (apps/api/src/oled.ts), for text that only grows: a word stays where it was first
+// drawn, new words are added after it and fade in, and when a line fills up the lines roll up by one.
+// update() takes the newest text; draw() draws the caption area at a moment in time (ms).
+class CaptionRoll {
+  constructor() { this.lines = []; this.cjk = false; this.rollAt = this.fadeAt = -Infinity; this.rollBy = 0; this.fadeLine = 0; this.fadeCol = 0; }
+  get style() { return captionStyle(this.cjk ? "あ" : ""); }
+  setFont(ctx) { ctx.font = font(this.style.px, false, this.cjk ? "あ" : ""); }
+  // Lays `text` out in lines. Japanese has no spaces and breaks between any two characters, never leaving
+  // closing punctuation at the start of a line.
+  layout(ctx, text) {
+    this.setFont(ctx);
+    const fits = t => ctx.measureText(t).width <= CAPTION_W, lines = [];
+    let cur = "";
+    for (const word of text.split(/\s+/).filter(Boolean)) {
+      const glue = cur && !(CJK.test(cur.at(-1)) && CJK.test(word[0])) ? " " : "";
+      if (fits(cur + glue + word)) { cur += glue + word; continue; }
+      if (!CJK.test(word) && fits(word)) { lines.push(cur); cur = word; continue; }
+      let lead = glue;
+      for (const ch of word) {
+        if (fits(cur + lead + ch)) cur += lead + ch;
+        else if (NO_LINE_START.test(ch) && [...cur].length > 1) { const cs = [...cur]; lines.push(cs.slice(0, -1).join("")); cur = cs.at(-1) + ch; }
+        else { if (cur) lines.push(cur); cur = ch; }
+        lead = "";
+      }
+    }
+    if (cur) lines.push(cur);
+    return lines;
   }
-  recordingSide(ctx, seconds, level);
+  update(ctx, text, now) {
+    const cjk = CJK.test(text), old = cjk === this.cjk ? this.lines : [], n = captionStyle(cjk ? "あ" : "").lines;
+    this.cjk = cjk;
+    const lines = this.lines = this.layout(ctx, text);
+    // Where the new text starts to differ from what was on screen: from there on it fades in.
+    for (let i = 0; i < lines.length; i++) {
+      const was = old[i] ?? "", is = lines[i];
+      if (was === is) continue;
+      let col = 0;
+      while (col < was.length && col < is.length && was[col] === is[col]) col++;
+      if (col < is.length || i + 1 < lines.length) { this.fadeAt = now; this.fadeLine = i; this.fadeCol = col; }
+      break;
+    }
+    // The window (the last n lines) moved down: roll the lines up into place.
+    const top = Math.max(0, lines.length - n), oldTop = Math.max(0, old.length - n);
+    if (old.length && top > oldTop) { this.rollAt = now; this.rollBy = Math.min(top - oldTop, n); }
+  }
+  draw(ctx, now) {
+    const { lines } = this, style = this.style;
+    if (!lines.length) {
+      ctx.font = font(15);
+      centered(ctx, "Listening...", 32, 0, CAPTION_W + 2);
+      return;
+    }
+    this.setFont(ctx);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, CAPTION_W + 2, 54);
+    ctx.clip();
+    const top = Math.max(0, lines.length - style.lines);
+    const t = (now - this.rollAt) / ROLL_MS, rolling = t >= 0 && t < 1;
+    const shift = rolling ? Math.round(this.rollBy * style.pitch * (1 - t) * (1 - t)) : 0;   // eases into place
+    const from = Math.max(0, top - (rolling ? this.rollBy : 0));
+    const y = i => style.base + (i - top) * style.pitch + shift;
+    for (let i = from; i < lines.length; i++) ctx.fillText(lines[i], 1, y(i));
+    // New words: knock out a share of their pixels, fewer each frame.
+    const f = (now - this.fadeAt) / FADE_MS;
+    if (f >= 0 && f < 1) {
+      const keep = 0.25 + 0.75 * f;
+      ctx.fillStyle = "#000";
+      for (let i = Math.max(from, this.fadeLine); i < lines.length; i++) {
+        const x0 = i === this.fadeLine ? Math.floor(1 + ctx.measureText(lines[i].slice(0, this.fadeCol)).width) : 0;
+        for (let yy = Math.max(0, y(i) - style.px); yy < Math.min(54, y(i) + 5); yy++) {
+          for (let xx = x0; xx < CAPTION_W + 2; xx++) if ((BAYER[yy & 3][xx & 3] + 0.5) / 16 > keep) ctx.fillRect(xx, yy, 1, 1);
+        }
+      }
+      ctx.fillStyle = "#fff";
+    }
+    ctx.restore();
+  }
+}
+
+// One roll per language while Play runs (the lab draws the same screen for several languages at once).
+const rolls = {};
+
+// The server's recording screen. Stopped, it is a still frame; playing, the words fade in and the lines roll.
+function drawRecording(ctx, d, caption) {
+  ctx.textBaseline = "alphabetic";
+  const now = d.t * 1000, key = d.lang.code;
+  let roll = rolls[key];
+  if (!d.t || !roll || now < roll.at) roll = rolls[key] = new CaptionRoll();   // stopped, or Play started again
+  roll.at = now;
+  roll.update(ctx, caption, now);
+  roll.draw(ctx, d.t ? now : Infinity);
+  recordingSide(ctx, d.seconds, d.level);
 }
 
 // One large line with a hint under it (the server's renderNotice).
@@ -71,12 +156,20 @@ function drawNotice(ctx, big, small) {
   centered(ctx, small, 52);
 }
 
+// Which frame of the switch-on animation is up `ms` after it started (the firmware does the same sum).
+function splashFrame(ms) {
+  let i = 0;
+  for (let end = 0; i < SPLASH_FRAME_MS.length && ms >= (end += SPLASH_FRAME_MS[i]); i++);
+  return i + 1;
+}
+
 screen({
   name: "Switching on",
   group: TODAY,
-  note: "For the first second and a half after a shake, while the device joins Wi-Fi. The picture is the sprite screen/splash in sprites.js; the device itself holds a copy (see the note there).",
-  draw(ctx) {
-    drawSprite(ctx, "screen/splash", 0, 0, 1);
+  note: "After a shake, while the device joins Wi-Fi: the hand comes in, slaps, and the last frame stays for about a second. Press Play to watch it (it repeats every three seconds here; stopped, it shows the last frame). The frames are the sprites screen/splash/1 to 6 in sprites.js.",
+  draw(ctx, d) {
+    const n = SPLASH_FRAME_MS.length + 1;
+    drawSprite(ctx, `screen/splash/${d.t ? splashFrame((d.t * 1000) % 3000) : n}`, 0, 0, 1);
   },
 });
 
@@ -86,17 +179,17 @@ screen({
   note: "The session has started (it starts by itself once the device is switched on) and nothing has been said yet.",
   led: true,
   draw(ctx, d) {
-    drawRecording(ctx, d.seconds, d.level, "");
+    drawRecording(ctx, d, "");
   },
 });
 
 screen({
   name: "Captions",
   group: TODAY,
-  note: "During a lecture: the latest three lines of caption (four in Japanese). On the right the sound level is a column of blocks that rises with the voice, with a record dot and the timer at its foot. Choose the language on the right of the page.",
+  note: "During a lecture: the latest three lines of caption (four in Japanese). Press Play: new words fade in where they belong, and when a line fills up the lines roll up by one. On the right the sound level is a column of blocks that rises with the voice, with a record dot and the timer at its foot.",
   led: true,
   draw(ctx, d) {
-    drawRecording(ctx, d.seconds, d.level, d.caption);
+    drawRecording(ctx, d, d.caption);
   },
 });
 

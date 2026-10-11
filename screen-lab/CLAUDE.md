@@ -35,6 +35,15 @@ A broken file shows a red bar at the top of the page with the error text. Check 
 - The device shows three languages: English, Vietnamese and Japanese (`LANGUAGES` in `data.js`). Its font is Noto Sans (first in the font menu). Japanese is drawn with the device's own pixel font whatever the menu says (`font(px, bold, text)` builds the list from the text); that font is sharp at exactly 12 px and whole multiples (24 px), and blurred at any other size.
 - At 15 px Noto Sans reaches 14 rows above the baseline (accented capitals; 16 for stacked Vietnamese accents) and 4 below. `captionStyle` in `screens.js` holds the sizes that keep the caption lines clear of the strip under them.
 
+## Motion
+
+Play advances `d.t` 20 times a second, the most the device draws. Two things move on the device, and the lab shows both:
+
+- **Captions** (`CaptionRoll` in `screens.js`, a copy of the server's in `apps/api/src/oled.ts`): a word stays where it was first drawn, new words fade in over 160 ms (a dither, since a pixel is on or off), and when a line fills up the lines roll up by one over 200 ms. Change the times or the motion in both places.
+- **Switching on**: the six frames above.
+
+Stopped (`d.t` = 0) every screen is a still frame. Check motion with Play, and in "Real size".
+
 ## Add or change a screen
 
 ```js
@@ -50,7 +59,7 @@ screen({
 });
 ```
 
-Leave the six `TODAY` screens as they are (Switching on, Listening, Captions, Language, Saved, Error): the last five mirror `apps/api/src/oled.ts`, and the designer compares new ideas against them. To propose a change to one, copy it into `IDEAS` under a new name. The device has no home screen: it is either asleep or recording. The firmware draws "Joining Wi-Fi", "Connecting" and "Asleep" itself (`firmware/esp32/src/display.cpp`); they are not in the lab. "Switching on" is the sprite `screen/splash` in `sprites.js` (the whole 128 × 64 screen, the team's own drawing of a hand slapping the mascot). The device holds a copy in `firmware/esp32/src/splash.h`: after a change to the sprite, say that `node firmware/esp32/tools/splash_from_lab.mjs` and a flash are needed, which is outside this folder. Do not redraw it after someone else's picture or characters.
+Leave the six `TODAY` screens as they are (Switching on, Listening, Captions, Language, Saved, Error): the last five mirror `apps/api/src/oled.ts`, and the designer compares new ideas against them. To propose a change to one, copy it into `IDEAS` under a new name. The device has no home screen: it is either asleep or recording. The firmware draws "Joining Wi-Fi", "Connecting" and "Asleep" itself (`firmware/esp32/src/display.cpp`); they are not in the lab. "Switching on" is an animation: the sprites `screen/splash/1` to `screen/splash/6` in `sprites.js` (each the whole 128 × 64 screen; the team's own drawing of a hand slapping the mascot), with the time each frame stays in `SPLASH_FRAME_MS` there; the last frame stays up. The device holds a copy in `firmware/esp32/src/splash.h`: after a change to a frame or a time, say that `node firmware/esp32/tools/splash_from_lab.mjs` and a flash are needed, which is outside this folder. Do not redraw it after someone else's picture or characters.
 
 `ctx` is a Canvas 2D context, already set to white fill and stroke with `textBaseline = "top"`. `d` is the mock data:
 

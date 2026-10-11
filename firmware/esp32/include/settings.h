@@ -204,9 +204,15 @@
 #ifndef OLED_SERVER_FRAME_TTL_MS
 #define OLED_SERVER_FRAME_TTL_MS 5000
 #endif
-// How long the switch-on art stays up before "Joining Wi-Fi" (Wi-Fi joins behind it meanwhile).
+// How long the switch-on animation and its last frame stay up before "Joining Wi-Fi" (Wi-Fi joins behind it
+// meanwhile). The animation itself is about 0.6 s (src/splash.h).
 #ifndef SPLASH_MS
-#define SPLASH_MS 1500
+#define SPLASH_MS 1800
+#endif
+// Server frames are drawn as they arrive, up to this many a second (one takes about 25 ms on the I2C bus).
+// The device's own screens redraw at OLED_MAX_FPS.
+#ifndef OLED_SERVER_FPS
+#define OLED_SERVER_FPS 20
 #endif
 #ifndef OLED_MAX_FPS
 #define OLED_MAX_FPS 5

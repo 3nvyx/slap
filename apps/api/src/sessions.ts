@@ -17,7 +17,7 @@ const BACKFILL = 20;                      // finals translated when a new langua
 const INTERIM_TR_GAP_MS = 700;            // the sentence being spoken is translated at most this often per language
 const DEVICE_GONE_MS = 90_000;            // a device that stays away this long has its recording ended and saved
 const RESUME_GAP_MS = 5 * 60_000;         // after a server restart a device carries on in its lecture if that was active this recently
-const DEVICE_CAPTION_CHARS = 160;         // tail of the transcript sent to the device screen (it shows the last three or four lines)
+const DEVICE_CAPTION_FINALS = 6;          // finished sentences kept for the device screen (it shows the last three or four lines)
 const ID_BATCH = 32;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -58,8 +58,9 @@ export interface DeviceLink {
   level: number;            // 0..1 for the OLED meter
   /** Caption language on the device's own screen (tilt left or right on the device). */
   lang: DeviceLang;
-  /** Tail of the caption in `lang`. */
-  lastCaption: string;
+  /** What its screen shows of the transcript, in `lang`: finished sentences (a few recent ones, oldest first,
+   *  keyed by segment id) and the sentence being spoken. */
+  caption: { finals: Array<{ id: number; text: string }>; interim: string };
   /** Length in seconds of the recording that just ended, for the "Saved" screen. Null before the first stop. */
   savedSeconds: number | null;
   /** Re-sends state JSON and the OLED frame if either changed. */
@@ -312,7 +313,7 @@ function onInterim(l: LiveLecture, r: SttResult) {
   broadcast(l, { type: "interim", seq: ++l.seq, text: r.text, words: r.words, start: r.start, end: r.end });
   const dev = deviceOf(l);
   if (dev && isSourceLang(dev.lang)) {
-    dev.lastCaption = `${l.finals.at(-1)?.text ?? ""} ${r.text}`.trim().slice(-DEVICE_CAPTION_CHARS);
+    dev.caption.interim = r.text;
     dev.refresh();
   }
   for (const lang of captionLanguages(l)) {
@@ -346,7 +347,7 @@ function pumpInterimTranslation(l: LiveLecture, lang: string, st: InterimTransla
       broadcast(l, { type: "interimTranslation", seq: ++l.seq, lang, text: out }, lang);
       const dev = deviceOf(l);
       if (dev && dev.lang === lang) {
-        dev.lastCaption = `${l.finals.at(-1)?.tr.get(lang)?.text ?? ""} ${out}`.trim().slice(-DEVICE_CAPTION_CHARS);
+        dev.caption.interim = out;
         dev.refresh();
       }
     })
@@ -375,7 +376,12 @@ async function handleFinal(l: LiveLecture, r: SttResult, stored?: Map<string, st
   }
 
   const dev = deviceOf(l);
-  if (dev && isSourceLang(dev.lang)) { dev.lastCaption = f.text.slice(-DEVICE_CAPTION_CHARS); dev.refresh(); }
+  // The sentence is finished: in English it joins the finished ones now, in another language once it is translated.
+  if (dev) {
+    dev.caption.interim = "";
+    if (isSourceLang(dev.lang)) deviceFinal(dev, f.segmentId, f.text);
+    dev.refresh();
+  }
 
   if (segmentId > 0) {
     l.persist = l.persist.then(async () => {
@@ -397,23 +403,30 @@ function captionLanguages(l: LiveLecture): string[] {
   return [...new Set([...viewerLanguages(l), ...(d ? [d.lang] : [])])];
 }
 
-/** Puts the newest finished sentence on the device's screen in the device's language, once it is translated. */
+/** Adds a finished sentence to what the device's screen shows (once per sentence). */
+function deviceFinal(d: DeviceLink, id: number, text: string) {
+  if (d.caption.finals.some(f => f.id === id)) return;
+  d.caption.finals.push({ id, text });
+  if (d.caption.finals.length > DEVICE_CAPTION_FINALS) d.caption.finals.shift();
+}
+
+/** Starts the device's screen again from the newest finished sentence, in the device's language if it is translated already. */
 function showLatestOnDevice(l: LiveLecture) {
   const d = deviceOf(l), last = l.finals.at(-1);
-  if (!d || !last) return;
-  const text = isSourceLang(d.lang) ? last.text : last.tr.get(d.lang)?.text;
-  if (text === undefined) return;
-  d.lastCaption = text.slice(-DEVICE_CAPTION_CHARS);
+  if (!d) return;
+  d.caption = { finals: [], interim: "" };
+  const text = last && (isSourceLang(d.lang) ? last.text : last.tr.get(d.lang)?.text);
+  if (last && text !== undefined) deviceFinal(d, last.segmentId, text);
   d.refresh();
 }
 
-/** Switches the caption language on the device's screen. The English caption stays up until the first translation arrives. */
+/** Switches the caption language on the device's screen; it starts again from the newest sentence in that language. */
 export function setDeviceLang(d: DeviceLink, lang: DeviceLang) {
   d.lang = lang;
   const l = d.lectureId ? lectures.get(d.lectureId) : undefined;
   if (l) {
     showLatestOnDevice(l);
-    if (!isSourceLang(lang)) void translateEntries(l, l.finals.slice(-2), lang);
+    if (!isSourceLang(lang)) void translateEntries(l, l.finals.slice(-1), lang);
   }
   d.refresh();
 }
@@ -432,7 +445,11 @@ async function translateEntries(l: LiveLecture, entries: FinalEntry[], lang: str
       broadcast(l, { type: "translation", seq, segmentId: f.segmentId, lang, text }, lang);
       if (f.segmentId > 0) rows.push({ segmentId: f.segmentId, lang, text });
     });
-    if (deviceOf(l)?.lang === lang && todo.includes(l.finals.at(-1)!)) showLatestOnDevice(l);
+    const dev = deviceOf(l);
+    if (dev && dev.lang === lang) {
+      for (const f of todo) deviceFinal(dev, f.segmentId, f.tr.get(lang)!.text);
+      dev.refresh();
+    }
     if (rows.length) {
       l.persist = l.persist.then(async () => {
         await db.insert(schema.translations).values(rows)
@@ -550,7 +567,7 @@ function bindDevice(l: LiveLecture, d: DeviceLink) {
   }
   d.lectureId = l.id;
   d.state = "recording";
-  d.lastCaption = "";
+  d.caption = { finals: [], interim: "" };
   ensureStt(l);
   showLatestOnDevice(l);
   d.refresh();
@@ -837,7 +854,7 @@ export async function stopSession(lectureId: string): Promise<LectureSummary | n
     if (l.replay?.timer) { clearInterval(l.replay.timer); l.replay.timer = null; }
     const d = deviceOf(l);
     if (d) {
-      Object.assign(d, { lectureId: null, state: "idle", lastCaption: "", classId: null, classCode: null, className: null, savedSeconds: Math.round((l.endedAt - l.startedAt) / 1000) });
+      Object.assign(d, { lectureId: null, state: "idle", caption: { finals: [], interim: "" }, classId: null, classCode: null, className: null, savedSeconds: Math.round((l.endedAt - l.startedAt) / 1000) });
       d.refresh();
     }
     l.browserAudio?.close("lecture ended");

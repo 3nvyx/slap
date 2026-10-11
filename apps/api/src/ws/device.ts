@@ -7,7 +7,7 @@ import { AUDIO_FRAME_BYTES, DEVICE_LANGS, type DeviceLang, type DeviceToServer, 
 import { eq } from "drizzle-orm";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { db, schema } from "../db/index.ts";
-import { renderLanguage, renderNotice, renderRecording, renderSaved, renderText } from "../oled.ts";
+import { CaptionRoll, renderLanguage, renderNotice, renderSaved, renderText } from "../oled.ts";
 import { pcmRms } from "../pipeline/stt.ts";
 import { attachDevice, detachDevice, getLecture, pushAudio, setDeviceLang, startDeviceSession, stopSession, type DeviceLink } from "../sessions.ts";
 import { settings } from "../settings.ts";
@@ -17,6 +17,7 @@ const DEAD_MS = 30_000;
 const SEEN_WRITE_MS = 60_000;
 const MAX_BUFFERED = 256 * 1024;                            // skip OLED frames if the device is not draining
 const LANG_BANNER_MS = 1500;     // how long the language name covers the caption after a tilt
+const ANIMATION_MS = 50;         // frame spacing while captions roll or fade in (the firmware draws up to 20 a second)
 const FRAME_REFRESH_MS = 3000;   // firmware shows a server frame for 5 s (OLED_SERVER_FRAME_TTL_MS), so resend before that
 
 type DeviceRow = typeof schema.devices.$inferSelect;
@@ -66,7 +67,7 @@ function meter(rms: number): number {
 
 const isLang = (v: unknown): v is DeviceLang => (DEVICE_LANGS as readonly unknown[]).includes(v);
 
-function screen(d: DeviceLink, banner: boolean, message?: string): Uint8Array {
+function screen(d: DeviceLink, roll: CaptionRoll, banner: boolean, message?: string): Uint8Array {
   switch (d.state) {
     // Idle is the moment between a stop and the device going to sleep (or a start that has not happened yet).
     case "idle": return d.savedSeconds === null ? renderNotice("Slap", "Starting...") : renderSaved(d.savedSeconds);
@@ -74,7 +75,8 @@ function screen(d: DeviceLink, banner: boolean, message?: string): Uint8Array {
       if (banner) return renderLanguage(d.lang);
       const l = d.lectureId ? getLecture(d.lectureId) : undefined;
       const secs = l ? (Date.now() - l.startedAt) / 1000 : 0;
-      return renderRecording(secs, d.level, d.lastCaption);
+      roll.update(d.caption, Date.now());
+      return roll.frame(secs, d.level, Date.now());
     }
     case "error": return renderText(["Error", message ?? "something went wrong"]);
   }
@@ -94,6 +96,8 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
   let errorMessage: string | undefined;
   let errorTimer: NodeJS.Timeout | undefined;
   let bannerUntil = 0;          // the language name is on screen until then
+  const roll = new CaptionRoll();   // where each caption word sits on this device's screen
+  let animation: NodeJS.Timeout | undefined;
 
   const send = (m: ServerToDevice) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m)); };
 
@@ -146,7 +150,7 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
       lectureId: null,
       level: 0,
       lang,
-      lastCaption: "",
+      caption: { finals: [], interim: "" },
       savedSeconds: null,
       refresh() {
         if (ws.readyState !== WebSocket.OPEN) return;
@@ -159,11 +163,16 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
         const s = JSON.stringify(msg);
         if (s !== lastState) { ws.send(s); lastState = s; }
         if (ws.bufferedAmount > MAX_BUFFERED) return;
-        const frame = screen(d, Date.now() < bannerUntil, errorMessage);
+        const frame = screen(d, roll, Date.now() < bannerUntil, errorMessage);
         if (!lastFrame || Buffer.compare(frame, lastFrame) !== 0 || Date.now() - lastFrameAt >= FRAME_REFRESH_MS) {
           ws.send(frame, { binary: true });
           lastFrame = frame;
           lastFrameAt = Date.now();
+        }
+        // Captions rolling up or fading in: keep drawing until they have settled.
+        if (!animation && d.state === "recording" && roll.animating(Date.now())) {
+          animation = setTimeout(() => { animation = undefined; d.refresh(); }, ANIMATION_MS);
+          animation.unref();
         }
       },
     };
@@ -262,6 +271,7 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
     clearInterval(heartbeat);
     clearInterval(tick);
     clearTimeout(errorTimer);
+    clearTimeout(animation);
     if (!link) return;
     if (sockets.get(link.id) === ws) sockets.delete(link.id);
     touchSeen(true);

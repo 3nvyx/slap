@@ -26,7 +26,8 @@ void display_begin();
 // Copies a 1,024-byte server frame; other lengths are ignored (returns false).
 bool display_setServerFrame(const uint8_t* data, size_t len, uint32_t nowMs);
 void display_dropServerFrame();
-// Redraws at most OLED_MAX_FPS times per second.
+// Plays the switch-on animation, then draws server frames as they arrive (at most OLED_SERVER_FPS a second)
+// or, without a fresh one, a local screen (at most OLED_MAX_FPS a second).
 void display_update(uint32_t nowMs, const DisplayModel& m);
 // Immediate two-line notice (boot, sleep).
 void display_notice(const char* big, const char* small);
