@@ -14,7 +14,7 @@ Updated 2026-10-10. Agent-facing: one rule per line, imperative, no padding. Mat
 ## Where the pixels come from
 
 - Server frames: `apps/api/src/oled.ts` renders each 128 x 64 one-bit frame; `apps/api/src/ws/device.ts` picks the screen for the device state and resends it every `FRAME_REFRESH_MS` (3 s) over `/ws/device`.
-- Firmware screens: `firmware/esp32/src/display.cpp` draws SLAP, WI-FI, LINK and SLEEP when no server frame arrived within `OLED_SERVER_FRAME_TTL_MS` (5 s, `firmware/esp32/include/settings.h`).
+- Firmware screens: `firmware/esp32/src/display.cpp` draws "Slap" (boot), "Joining Wi-Fi", "Connecting" and "Asleep", and its own ready, recording and error screens, when no server frame arrived within `OLED_SERVER_FRAME_TTL_MS` (5 s, `firmware/esp32/include/settings.h`).
 - USB carries power, flashing and the serial log only. No frame travels over USB.
 - A change to `oled.ts` or `ws/device.ts` needs no flash. A change to `display.cpp` needs a flash.
 
@@ -31,7 +31,7 @@ node --env-file-if-exists=../../.env.local src/scripts/fake_device.ts --pair-cod
 ```
 
 `--show-oled` prints every frame the server sends as ASCII. `--no-start` stays on the idle screen instead of recording.
-For layout, font and language work use `screen-lab/` (see `screen-lab/README.md`); it matches the server's text position to within 2 px.
+For layout, font and language work use `screen-lab/` (see `screen-lab/README.md`); it draws with the server's own font files and matches its line breaks and text position; single pixels on letter edges differ.
 
 ### 2. Push and pull
 

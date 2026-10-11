@@ -100,7 +100,7 @@ function screen(d: DeviceLink, message?: string): Uint8Array {
     case "recording": {
       const l = d.lectureId ? getLecture(d.lectureId) : undefined;
       const secs = l ? (Date.now() - l.startedAt) / 1000 : 0;
-      return renderRecording(secs, d.level, d.lastCaption || "Listening...");
+      return renderRecording(secs, d.level, d.lastCaption);
     }
     case "error": return renderText(["Error", message ?? "something went wrong"]);
   }
@@ -265,7 +265,7 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
         onHello(m).catch(e => {
           console.error("[device] hello failed:", (e as Error).message);
           send({ type: "state", state: "error", message: "server database unavailable" });
-          if (ws.readyState === WebSocket.OPEN) ws.send(renderText(["Server error", "retrying..."]), { binary: true });
+          if (ws.readyState === WebSocket.OPEN) ws.send(renderText(["Server error", "Retrying..."]), { binary: true });
           helloSeen = false;
         });
         break;

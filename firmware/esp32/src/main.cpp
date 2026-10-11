@@ -108,7 +108,7 @@ void startWifi() {
 
 void enterDeepSleep(const char* why) {
   Serial.printf("[sleep] %s: deep sleep, wake on REC%s\n", why, slap_imuOk() ? " or IMU motion (shake/slap)" : "");
-  display_notice("SLEEP", slap_imuOk() ? "shake or REC to wake" : "REC to wake");
+  display_notice("Asleep", slap_imuOk() ? "Shake or tap REC" : "Press REC to wake");
   audio_setStreaming(false);
   link_stop();
   WiFi.disconnect(true);

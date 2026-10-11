@@ -7,7 +7,8 @@ test("every screen is exactly one 1,024-byte frame", () => {
   for (const f of [
     renderUnpaired("A7K2QX"),
     renderIdle("CS229", "https://slap.study/j/CS229"),
-    renderRecording(125, 0.5, "a fairly long caption that has to wrap onto more than two lines of the small screen"),
+    renderRecording(125, 0.5, "a fairly long caption that has to wrap onto more than three lines of the small screen"),
+    renderRecording(3, 0.5, ""),
     renderText(["hello", "world"]),
     renderPickCourse(),
   ]) assert.equal(f.length, OLED_FRAME_BYTES);
@@ -39,11 +40,11 @@ test("idle QR leaves the right half for text and fits 64 px", () => {
   assert.ok(left > 1500, `expected a lit QR block, got ${left} lit pixels`);
 });
 
-// Caption area of a recording frame (below the level meter), as rows of 0/1.
+// Caption area of a recording frame (above the timer and level strip), as rows of 0/1.
 const lit = (f: Uint8Array, x: number, y: number) => (f[y * 16 + (x >> 3)]! >> (x & 7)) & 1;
 const captionCell = (f: Uint8Array, x0: number, w: number) => {
   let s = "";
-  for (let y = 23; y < 64; y++) for (let x = x0; x < x0 + w; x++) s += lit(f, x, y);
+  for (let y = 0; y < 55; y++) for (let x = x0; x < x0 + w; x++) s += lit(f, x, y);
   return s;
 };
 const caption = (text: string) => captionCell(renderRecording(0, 0, text), 0, 128);
@@ -82,4 +83,54 @@ test("Arabic is shaped and laid out from the right edge", () => {
   assert.ok(cols[0]! > 64, `a short word should not reach the left half, starts at ${cols[0]}`);
   // Zero-width non-joiners draw nothing themselves; they only stop the letters joining.
   assert.notEqual(caption("سلام"), caption("س‌ل‌ا‌م"));
+});
+
+const inkRows = (f: Uint8Array, y0: number, y1: number, x0 = 0, x1 = 128) => {
+  const rows: number[] = [];
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (lit(f, x, y)) { rows.push(y); break; }
+  return rows;
+};
+
+test("a caption in any script stays clear of the timer and level strip", () => {
+  // Three or four full lines with descenders, stacked accents, matras and Arabic tails; the strip starts at row 55.
+  const long = [
+    "gjpqy gjpqy gjpqy gjpqy gjpqy gjpqy gjpqy gjpqy gjpqy gjpqy gjpqy gjpqy",
+    "Ế Ỗ ặ ự gjy Ế Ỗ ặ ự gjy Ế Ỗ ặ ự gjy Ế Ỗ ặ ự gjy Ế Ỗ ặ ự gjy Ế Ỗ ặ ự gjy",
+    "那么高斯分布是什么样子的？它是一条以均值为中心的钟形曲线。只要数据足够多，这就是一个相当好的模型。",
+    "पर्याप्त डेटा होने पर यह काफ़ी अच्छा मॉडल है। कू कृ पर्याप्त डेटा होने पर यह काफ़ी अच्छा मॉडल है। कू कृ",
+    "مع بيانات كافية، يُعد هذا نموذجًا جيدًا إلى حد كبير. مع بيانات كافية، يُعد هذا نموذجًا جيدًا إلى حد كبير.",
+  ];
+  for (const text of long) {
+    // level 0 and a timer on one side only: the middle columns of rows 54-57 are empty unless the caption reaches them.
+    const f = renderRecording(0, 0, text);
+    assert.ok(inkRows(f, 30, 54).length > 10, `${text.slice(0, 12)}: no caption drawn`);
+    assert.deepEqual(inkRows(f, 54, 58, 40, 88), [], `${text.slice(0, 12)}: caption runs into the strip`);
+  }
+});
+
+test("the level bar grows with the sound and the timer sits beside it, mirrored for Arabic", () => {
+  const count = (f: Uint8Array, x0: number, x1: number) => {
+    let n = 0;
+    for (let y = 58; y < 62; y++) for (let x = x0; x < x1; x++) n += lit(f, x, y);
+    return n;
+  };
+  const quiet = renderRecording(65, 0.1, "Gauss"), loud = renderRecording(65, 0.9, "Gauss");
+  assert.ok(count(loud, 0, 90) > count(quiet, 0, 90) + 100);
+  assert.ok(lit(loud, 2, 59) === 1 && lit(quiet, 60, 59) === 0);
+  const ar = renderRecording(65, 0.9, "سلام");
+  assert.ok(lit(ar, 125, 59) === 1 && lit(ar, 40, 59) === 0, "under an Arabic caption the bar grows from the right");
+});
+
+test("with no caption yet the screen shows the timer large, and it differs from a captioned frame", () => {
+  const a = renderRecording(5, 0.3, ""), b = renderRecording(6, 0.3, "");
+  assert.notDeepEqual(a, b);
+  assert.ok(inkRows(a, 0, 24).length > 15, "large timer in the top rows");
+});
+
+test("Chinese and Japanese captions never start a line with closing punctuation", () => {
+  const f = renderRecording(0, 0, "かなり良いモデルです。");   // ten characters fit; the full stop is the eleventh
+  // The second line holds two characters (す。), not a lone full stop: ink reaches past the first cell.
+  let right = 0;
+  for (let y = 14; y < 27; y++) for (let x = 0; x < 128; x++) if (lit(f, x, y)) right = Math.max(right, x);
+  assert.ok(right > 14, `second line should start with a character, ink ends at x=${right}`);
 });

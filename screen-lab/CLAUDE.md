@@ -22,7 +22,7 @@ A broken file shows a red bar at the top of the page with the error text. Check 
 | `screens.js` | The screens. Most requests are edits here. |
 | `sprites.js` | Avatars as pixel art. |
 | `data.js` | `MOCK` (starting values of the controls), `FONTS` (font menu), `LANGUAGES` (12 languages with a sample caption each). |
-| `fonts/` | Font files referenced from `FONTS`. |
+| `fonts/` | Font files referenced from `FONTS`. `fonts/device` is a link to `apps/api/fonts`, the files the server draws with; do not replace it with copies. |
 | `lab.js`, `index.html` | The emulator and its page. Change only when the lab needs a new control or view. |
 | `vendor/qrcode.js` | Third-party QR generator. Do not edit. |
 
@@ -32,8 +32,9 @@ A broken file shows a red bar at the top of the page with the error text. Check 
 - Physical size is 55 × 27 mm, read from across a desk. Judge legibility on the real-size copy under the main view.
 - Latin text reads down to about 10 px. CJK, Devanagari and Arabic need about 12 px or more. At 11 px Helvetica a full-width line holds about 26 Latin characters.
 - Thin strokes (1 px, or anti-aliased curves) can vanish. Use `lineWidth = 2` for outlines and whole-number coordinates for rectangles.
-- Chinese, Japanese, Korean, Hindi and Arabic (`deviceBoxes: true` in `data.js`) come out as empty boxes on the real device, because its server has no font for them. The lab draws them with this computer's fonts and warns on the page. A design for these languages cannot ship until a font file for the script is added to the server; tell the designer when their request depends on it.
-- Arabic is right-to-left: set `ctx.direction = "rtl"` and `ctx.textAlign = "right"` and draw from the right edge (see "Big caption").
+- The device's font is Noto Sans (first in the font menu). Chinese, Japanese, Korean, Hindi and Arabic are drawn with the device's own fonts for those scripts whatever the menu says; `font(px, bold, text)` builds the list from the text. The Chinese, Japanese and Korean font is a pixel font, sharp at exactly 12 px and blurred at any other size.
+- The scripts differ in height around the same baseline. At 15 px Latin reaches 14 rows above it (accented capitals) and 4 below; Hindi 14 and 5; Arabic 19 and 7. `captionStyle` in `screens.js` holds the sizes that keep three lines clear of the strip under the caption.
+- Arabic is right-to-left: draw it with `paragraph`, which sets the direction and the right edge.
 
 ## Add or change a screen
 
@@ -50,7 +51,7 @@ screen({
 });
 ```
 
-Leave the five `TODAY` screens as they are: they mirror `apps/api/src/oled.ts`, and the designer compares new ideas against them. To propose a change to one, copy it into `IDEAS` under a new name.
+Leave the six `TODAY` screens as they are: they mirror `apps/api/src/oled.ts`, and the designer compares new ideas against them. To propose a change to one, copy it into `IDEAS` under a new name.
 
 `ctx` is a Canvas 2D context, already set to white fill and stroke with `textBaseline = "top"`. `d` is the mock data:
 
@@ -60,24 +61,25 @@ Helpers (globals from `lab.js`):
 
 | Helper | Does |
 | --- | --- |
-| `font(px, bold)` | Font string in the family chosen on the page. Always set `ctx.font` with it so the font menu applies. |
+| `font(px, bold, text = "")` | Font string in the family chosen on the page, followed by the device's fonts for other scripts. Always set `ctx.font` with it so the font menu applies; pass the text when it may not be Latin. |
 | `centered(ctx, text, y, x0 = 0, width = 128)` | Draws text centred in a horizontal span. |
 | `fitFont(ctx, text, width, max, bold = true)` | Largest px size at which the text fits; also sets `ctx.font`. |
 | `wrapText(ctx, text, maxWidth)` | Array of lines. Use `.slice(-n)` to keep the latest n. |
+| `paragraph(ctx, text, lines, baseline, pitch, inset = 1)` | Draws wrapped lines from the left edge, or from the right for Arabic. `baseline` is the y of the first line's baseline. Use it for captions and messages. |
 | `drawQr(ctx, text, x, y, box)` | QR code inside a square box; returns false if it cannot fit. |
 | `mmss(seconds)` | `12:34`. |
 | `drawSprite(ctx, name, x, y, scale = 1)` | Draws an avatar from `sprites.js`. |
 | `spriteFit(name, boxW, boxH)` | `{ w, h, scale }` at the largest whole scale that fits. |
 | `W`, `H` | 128, 64. |
 
-Leave `ctx.textBaseline` as `"top"` and give `fillText` the y of the text's top edge. The lab moves `"top"` text to where the server's canvas library puts it (`matchServerText` in `lab.js`); other baselines are not matched and will land differently on the device.
+Leave `ctx.textBaseline` as `"top"` and give `fillText` the y of the text's top edge. The lab moves `"top"` text to where the server's canvas library puts it (`matchServerText` in `lab.js`). The server takes that offset from the font of the text's first character, so a "top" line starting with a digit sits 5 px higher than an Arabic line beside it. Text that can be in any language goes through `paragraph`, which uses the baseline and is the same in the lab and on the server.
 
 Keep `draw` portable: synchronous, Canvas 2D calls and these helpers only. No DOM, no images loaded by URL, no reading the clock (use `d.t` and `d.seconds`). The same function later runs on the server under `@napi-rs/canvas`.
 
 ## Live sound and real size (`lab.js`)
 
 - "Use this laptop's microphone" replaces `d.level` with the microphone's level: loudest 85 ms of each 200 ms frame, on the server's scale (`micMeter`, the same formula as `meter` in `apps/api/src/ws/device.ts`). It also starts Play. Stopping Play stops the microphone.
-- "Write what I say as the caption" replaces `d.caption` with the browser's speech-to-text (Web Speech API; Chrome and Safari only; the sound goes to the browser vendor's service). `"Listening..."` until something is heard, as on the server.
+- "Write what I say as the caption" replaces `d.caption` with the browser's speech-to-text (Web Speech API; Chrome and Safari only; the sound goes to the browser vendor's service). Empty until something is heard, as on the server; the "Recording" screen then shows its large timer and "Listening...".
 - A `draw` needs nothing special for either: it reads `d.level` and `d.caption` as before.
 - The "Real size" view draws the housing from `hardware/housing` (v2.3: 104.5 × 56 mm body, 63.4 × 40.4 mm glass window, 55 × 27.5 mm lit area, 12 mm button, 3 mm LED, 8 × 7 grille). Every length is `calc(mm * var(--mm))`; `--mm` is `state.pxPerMm`, set by the card outline. The lit area is centred in the glass because its real offset is not measured. Button, LED and grille positions are read off the housing preview, good to about a millimetre.
 - The last converted picture is kept in this browser's storage and comes back as the avatar `imported`. It is still not in the files.
@@ -115,6 +117,7 @@ The page's "Turn a picture into an avatar" converts an image and shows the `spri
 
 Add an entry to `FONTS` in `data.js`:
 
+- `{ name: "Noto Sans", file: "fonts/device/…Regular.ttf", bold: "fonts/device/…Bold.ttf" }` — the device's font, first in the list. `bold` is optional for any file font; without it the browser thickens the regular face.
 - `{ name: "Helvetica" }` — installed on this computer.
 - `{ name: "My Font", file: "fonts/my-font.ttf" }` — a file in `fonts/`.
 - `{ name: "Silkscreen", google: true }` — loaded from Google Fonts by its exact name; needs internet.

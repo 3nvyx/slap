@@ -5,7 +5,7 @@
 
 const W = 128, H = 64;
 
-const LAB = { screens: [], sprites: {}, fontFamily: "Helvetica", loadErrors: [] };
+const LAB = { screens: [], sprites: {}, fontFamily: "Noto Sans", loadErrors: [] };
 
 document.getElementById("dead").hidden = true;   // the page shows this notice until this script runs
 
@@ -23,12 +23,26 @@ function sprite(name, art) {
   LAB.sprites[name] = { name, rows, w: Math.max(0, ...rows.map(r => r.length)), h: rows.length };
 }
 
-// ---- Drawing helpers. font, wrapText, centered, fitFont, drawQr and mmss match
+// ---- Drawing helpers. font, wrapText, paragraph, centered, fitFont, drawQr and mmss match
 // apps/api/src/oled.ts, so a draw() that only uses them can move to the server unchanged.
 
-const font = (px, bold = false) => `${bold ? "bold " : ""}${px}px "${LAB.fontFamily}", sans-serif`;
+const CJK = /[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/;
+const KANA = /[\u3040-\u30ff]/, HANGUL = /[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/;
+const RTL = /^[^\p{L}]*[\p{Script=Arabic}\p{Script=Hebrew}]/u;
+const ARABIC = /\p{Script=Arabic}/u, DEVANAGARI = /\p{Script=Devanagari}/u;
+const NO_LINE_START = /[、。，．！？：；）」』】〉》,.!?:;)]/;
 
-/** Greedy word wrap by measured width; words longer than a line are split by characters. */
+/** Font list for drawing `text`, as on the server: the font chosen on the page first, then the device's fonts
+ *  for the other scripts (fonts/device). Text with Chinese, Japanese or Korean in it leads with the device's
+ *  12 px pixel font instead: Japanese shapes with kana, Korean with hangul, otherwise Simplified Chinese. */
+function families(text) {
+  const cjk = `"OLED CJK ${KANA.test(text) ? "ja" : HANGUL.test(text) ? "ko" : "zh"}"`, own = `"${LAB.fontFamily}"`;
+  return `${CJK.test(text) ? `${cjk}, ${own}` : `${own}, ${cjk}`}, "OLED Han rare", "OLED Devanagari", "OLED Arabic", sans-serif`;
+}
+const font = (px, bold = false, text = "") => `${bold ? "bold " : ""}${px}px ${families(text)}`;
+
+/** Greedy word wrap by measured width; words longer than a line are split by characters (text without spaces,
+ *  such as Chinese and Japanese, wraps this way), never leaving closing punctuation at the start of a line. */
 function wrapText(ctx, text, maxWidth) {
   const lines = [];
   let line = "";
@@ -37,6 +51,7 @@ function wrapText(ctx, text, maxWidth) {
     while (ctx.measureText(word).width > maxWidth && word.length > 1) {
       let cut = word.length - 1;
       while (cut > 1 && ctx.measureText(word.slice(0, cut)).width > maxWidth) cut--;
+      if (cut > 1 && NO_LINE_START.test(word[cut])) cut--;   // closing punctuation stays with the character before it
       if (line) { lines.push(line); line = ""; }
       lines.push(word.slice(0, cut));
       word = word.slice(cut);
@@ -47,6 +62,22 @@ function wrapText(ctx, text, maxWidth) {
   }
   if (line) lines.push(line);
   return lines;
+}
+
+/** Draws full-width lines of one paragraph, `pitch` px apart: `inset` px from the left edge, or from the right
+ *  edge when the paragraph starts in a right-to-left script (Arabic). `baseline` is the y of the first line's
+ *  baseline, not of its top: with textBaseline "top" the canvas takes the offset from the font of the line's
+ *  first character, so a line starting with a Latin word or a digit would sit 3 px lower than its Hindi
+ *  neighbours and 5 px higher than its Arabic ones. */
+function paragraph(ctx, text, lines, baseline, pitch, inset = 1) {
+  const rtl = RTL.test(text);
+  ctx.direction = rtl ? "rtl" : "ltr";
+  ctx.textAlign = rtl ? "right" : "left";
+  ctx.textBaseline = "alphabetic";
+  lines.forEach((l, i) => ctx.fillText(l, rtl ? W - inset : inset, baseline + i * pitch));
+  ctx.direction = "ltr";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
 }
 
 function centered(ctx, text, y, x0 = 0, width = W) {
@@ -114,10 +145,11 @@ function spriteFit(name, boxW, boxH) {
 // not listed gets its ascent from the browser and a typical underline value: close, not exact.
 // Since 10 October 2026 the server draws with the files in apps/api/fonts, not Helvetica: Noto Sans
 // (regular and a real bold, so no fakeBold), and Fusion Pixel 12px for Chinese, Japanese and Korean.
-// Their entries apply once FONTS in data.js has those files under these names.
+// The metrics used are those of the first family in the font list, as on the server.
+const PIXEL_CJK = { ascent: 1.0833, under: 0.1667, fakeBold: true };
 const SERVER_FONTS = {
   "Noto Sans": { ascent: 1.069, under: 0.15 },
-  "Fusion Pixel 12px": { ascent: 1.0833, under: 0.1667, fakeBold: true },
+  "OLED CJK zh": PIXEL_CJK, "OLED CJK ja": PIXEL_CJK, "OLED CJK ko": PIXEL_CJK,
   "Helvetica": { ascent: 0.77, under: 0.125, fakeBold: true },
   "Arial": { ascent: 0.9053, under: 0.1792 },
   "Verdana": { ascent: 1.0054, under: 0.1465 },
@@ -128,10 +160,10 @@ const SERVER_FONTS = {
 const FAKE_BOLD = 2;   // stroke width as a multiple of Skia's embolden amount; 2 is the closest match to the server's frames
 const BOLD = /(^|\s)(bold|[6-9]00)\s/;
 const guessed = {};
-const text = { px: 10, fake: false };   // font size and fake-bold flag of the font set on the canvas
+const text = { px: 10, fake: false, lead: "" };   // size, fake-bold flag and first family of the font set on the canvas
 
 function serverFont() {
-  const name = LAB.fontFamily;
+  const name = text.lead || LAB.fontFamily;
   if (SERVER_FONTS[name]) return SERVER_FONTS[name];
   if (guessed[name]) return guessed[name];
   const ctx = document.createElement("canvas").getContext("2d");
@@ -148,6 +180,7 @@ function matchServerText(ctx) {
   Object.defineProperty(ctx, "font", {
     get: () => fontProp.get.call(ctx),
     set(v) {
+      text.lead = /px\s+"?([^",]+)/.exec(v)?.[1].trim() ?? "";
       text.fake = BOLD.test(v) && !!serverFont().fakeBold;
       fontProp.set.call(ctx, text.fake ? v.replace(BOLD, "$1") : v);
       text.px = parseFloat(/([\d.]+)px/.exec(fontProp.get.call(ctx))?.[1] ?? "10");
@@ -196,6 +229,7 @@ function renderFrame(def, d) {
   matchServerText(ctx);
   text.px = 10;
   text.fake = false;
+  text.lead = "";
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = "#fff";
@@ -224,7 +258,7 @@ function paint(canvas, frame, scale, grid, color) {
 const STORE = "slap.screen-lab";
 const DATA_KEYS = ["classCode", "pairCode", "joinBase", "caption", "message", "level", "seconds", "wifiOk"];
 const DEFAULTS = {
-  screen: "", view: "one", lang: "en", font: "Helvetica", avatar: "", mascot: "", color: "#f2f6ff", zoom: 5, grid: true,
+  screen: "", view: "one", lang: "en", font: "Noto Sans", fontEpoch: 0, avatar: "", mascot: "", color: "#f2f6ff", zoom: 5, grid: true,
   classCode: "CS229", pairCode: "A7K2QX", joinBase: "https://slap.example/j/", caption: "",
   message: "Lost connection to the server", level: 0.55, seconds: 754, wifiOk: true,
   // Screen pixels per real millimetre, for the real-size views. A browser's own "mm" is rarely a true one:
@@ -253,7 +287,9 @@ function loadState() {
   if (!(state.pxPerMm >= 2.5 && state.pxPerMm <= 9)) { state.pxPerMm = DEFAULTS.pxPerMm; state.calibrated = false; }
   if (!LAB.screens.some(s => s.name === state.screen)) state.screen = LAB.screens[0]?.name ?? "";
   if (!langs.some(l => l.code === state.lang)) state.lang = langs[0].code;
-  if (!fonts.some(f => f.name === state.font)) state.font = fonts[0].name;
+  // The device changed font (Helvetica to Noto Sans, 10 October 2026): start from the device's font once.
+  if (state.fontEpoch !== 1 || !fonts.some(f => f.name === state.font)) state.font = fonts[0].name;
+  state.fontEpoch = 1;
   if (!LAB.sprites[state.avatar]) state.avatar = Object.keys(LAB.sprites)[0] ?? "";
   // A face this browser has not shown before (just added to sprites.js) is selected straight away.
   const faces = mascotFaces(), seen = Array.isArray(state.mascotSeen) ? state.mascotSeen : [];
@@ -394,7 +430,7 @@ function captionTail(text) {
 }
 
 /** Same placeholder as the server while nothing has been heard yet. */
-const spokenCaption = () => captionTail(`${mic.finals} ${mic.interim}`) || "Listening...";
+const spokenCaption = () => captionTail(`${mic.finals} ${mic.interim}`);   // empty until something is heard, as on the server
 
 function startSpeech() {
   if (!Recognition || !mic.on || mic.speech) return;
@@ -490,15 +526,43 @@ function useFont(name) {
   if (!f || fontsStarted.has(name)) return;
   fontsStarted.add(name);
   if (f.file) {
-    const face = new FontFace(name, `url("${encodeURI(f.file)}")`);
-    face.load().then(() => { document.fonts.add(face); render(); })
-      .catch(() => { LAB.loadErrors.push(`Font "${name}": could not load ${f.file}`); showErrors(); });
+    // With a `bold` file the two are separate weights; without one the browser thickens the regular face.
+    const faces = [[f.file, f.bold ? { weight: "400" } : {}], ...(f.bold ? [[f.bold, { weight: "700" }]] : [])];
+    for (const [file, desc] of faces) {
+      const face = new FontFace(name, `url("${encodeURI(file)}")`, desc);
+      face.load().then(() => { document.fonts.add(face); render(); })
+        .catch(() => { LAB.loadErrors.push(`Font "${name}": could not load ${file}`); showErrors(); });
+    }
   } else if (f.google) {
     const link = document.createElement("link");
     link.rel = "stylesheet";
     link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(name).replace(/%20/g, "+")}&display=swap`;
     document.head.append(link);
     link.onload = () => document.fonts.load(`12px "${name}"`).then(render, render);
+  }
+}
+
+// The fonts the server draws the other scripts with (apps/api/src/oled.ts), under the same family names.
+// fonts/device is a link to apps/api/fonts, so these are the very files the device's frames are made from.
+const DEVICE_FONTS = {
+  "OLED CJK zh": "fusion-pixel/fusion-pixel-12px-proportional-zh_hans.otf.woff2",
+  "OLED CJK ja": "fusion-pixel/fusion-pixel-12px-proportional-ja.otf.woff2",
+  "OLED CJK ko": "fusion-pixel/fusion-pixel-12px-proportional-ko.otf.woff2",
+  "OLED Han rare": "noto-sans-sc-rare/NotoSansSC-Regular.rare.woff2",
+  "OLED Devanagari": "noto-sans-devanagari/NotoSansDevanagari-Regular.ttf",
+  "OLED Arabic": "noto-sans-arabic/NotoSansArabic-Regular.ttf",
+};
+
+function loadDeviceFonts() {
+  let failed = false;
+  for (const [family, file] of Object.entries(DEVICE_FONTS)) {
+    const face = new FontFace(family, `url("fonts/device/${file}")`);
+    face.load().then(() => { document.fonts.add(face); render(); }).catch(() => {
+      if (failed) return;
+      failed = true;
+      LAB.loadErrors.push("The device's fonts (fonts/device) did not load: Chinese, Japanese, Korean, Hindi and Arabic are drawn with this computer's fonts, not the device's.");
+      showErrors();
+    });
   }
 }
 
@@ -770,6 +834,7 @@ function watchFiles() {
 function boot() {
   langs = typeof LANGUAGES !== "undefined" && LANGUAGES.length ? LANGUAGES : [{ code: "en", name: "English", native: "English", sample: ["Hello"] }];
   fonts = typeof FONTS !== "undefined" && FONTS.length ? [...FONTS] : [{ name: "Helvetica" }];
+  loadDeviceFonts();
   if (!LAB.screens.length) LAB.loadErrors.push("No screens found: screens.js did not load.");
   restoreImported();
   loadState();

@@ -24,104 +24,131 @@ bool g_showingServer = false;
 uint32_t g_frameAt = 0;
 uint32_t g_lastDraw = 0;
 
-const uint8_t* FONT_SMALL = u8g2_font_6x10_tf;   // 21 chars per line
-const uint8_t* FONT_TINY = u8g2_font_5x8_tf;     // 25 chars per line
+const uint8_t* FONT_SMALL = u8g2_font_6x10_tf;    // 21 chars per line
+const uint8_t* FONT_TEXT = u8g2_font_helvR10_tf;    // hint and detail lines, about 22 chars per line
+const uint8_t* FONT_TITLE = u8g2_font_helvB12_tr;
 const uint8_t* FONT_BIG = u8g2_font_helvB18_tr;
-const uint8_t* FONT_TIME = u8g2_font_logisoso24_tn;
+const uint8_t* FONT_TIME = u8g2_font_helvB24_tn;
 
 void centered(const char* s, int y) {
   int w = u8g2.getStrWidth(s);
-  u8g2.drawStr((128 - w) / 2, y, s);
+  u8g2.drawStr(w < 128 ? (128 - w) / 2 : 0, y, s);
 }
 
+// Copies `s` into `out`, cut with ".." so it fits `maxW` px in the current font.
+void fitted(char* out, size_t n, const char* s, int maxW) {
+  strncpy(out, s ? s : "", n - 1);
+  out[n - 1] = 0;
+  size_t len = strlen(out);
+  while (len > 2 && u8g2.getStrWidth(out) > maxW) {
+    len--;
+    out[len] = 0;
+    out[len - 1] = out[len - 2] = '.';
+  }
+}
+
+// Wi-Fi strength: four bars, 2 px wide, bottom-aligned at y. Nothing while Wi-Fi is down (the WIFI screen says so).
 void wifiIcon(int x, int y, bool up, int rssi) {
-  // Four bars, 2 px wide, bottom-aligned at y.
-  int bars = !up ? 0 : rssi > -55 ? 4 : rssi > -65 ? 3 : rssi > -75 ? 2 : 1;
+  if (!up) return;
+  int bars = rssi > -55 ? 4 : rssi > -65 ? 3 : rssi > -75 ? 2 : 1;
   for (int i = 0; i < 4; i++) {
     int h = 2 + i * 2;
     if (i < bars) u8g2.drawBox(x + i * 3, y - h, 2, h);
     else u8g2.drawPixel(x + i * 3, y - 1);
   }
-  if (!up) {
-    u8g2.drawLine(x, y - 8, x + 10, y);
-  }
 }
 
-void statusBar(const DisplayModel& m) {
-  u8g2.setFont(FONT_SMALL);
-  if (m.state == AppState::RECORDING) {
-    u8g2.drawDisc(4, 4, 3);
-    u8g2.drawStr(10, 8, "REC");
-    if (m.classCode && m.classCode[0]) {   // active course, up to 7 chars between REC and the icons
-      char cc[8];
-      strncpy(cc, m.classCode, sizeof cc - 1);
-      cc[sizeof cc - 1] = 0;
-      u8g2.drawStr(32, 8, cc);
-    }
-  } else {
-    u8g2.drawStr(0, 8, "SLAP");
-  }
-  int x = 128;
-  // WS indicator: filled box with inverted "WS" when the socket is open, outline when not.
-  x -= 15;
+// Top corners of every local screen but ERROR: Wi-Fi strength, and an up and a down arrow while the
+// server socket is open; "No mic" on the left when the microphone did not start.
+void statusIcons(const DisplayModel& m) {
+  wifiIcon(117, 9, m.wifiUp, m.rssi);
   if (m.wsUp) {
-    u8g2.drawBox(x, 0, 15, 9);
-    u8g2.setDrawColor(0);
-    u8g2.drawStr(x + 2, 8, "WS");
-    u8g2.setDrawColor(1);
-  } else {
-    u8g2.drawFrame(x, 0, 15, 9);
-    u8g2.drawStr(x + 2, 8, "WS");
+    u8g2.drawVLine(105, 1, 8);
+    u8g2.drawHLine(104, 2, 3);
+    u8g2.drawHLine(103, 3, 5);
+    u8g2.drawVLine(111, 1, 8);
+    u8g2.drawHLine(110, 7, 3);
+    u8g2.drawHLine(109, 6, 5);
   }
-  x -= 14;
-  wifiIcon(x, 9, m.wifiUp, m.rssi);
   if (!m.micOk) {
-    x -= 20;
-    u8g2.drawStr(x, 8, "MIC!");
+    u8g2.setFont(FONT_TEXT);
+    u8g2.drawStr(0, 11, "No mic");
   }
-  u8g2.drawHLine(0, 11, 128);
 }
 
-// Truncating copy for one OLED line (21 chars of 6x10).
-void line(char* out, size_t n, const char* s) {
-  strncpy(out, s ? s : "", n - 1);
-  out[n - 1] = 0;
+// Three dots under a "working on it" screen, lit one after another.
+void progressDots(uint32_t nowMs, int y) {
+  int lit = (nowMs / 400) % 4;
+  for (int i = 0; i < 3; i++) {
+    if (i < lit) u8g2.drawBox(55 + i * 8, y, 3, 3);
+    else u8g2.drawPixel(56 + i * 8, y + 1);
+  }
 }
 
+// Word-wraps `s` in the current font into at most `maxLines` lines from the left edge, `pitch` px apart from baseline y.
+void wrapped(const char* s, int y, int pitch, int maxLines) {
+  char buf[40];
+  size_t n = 0, lastSpace = 0;
+  int row = 0;
+  while (*s && row < maxLines) {
+    if (*s == ' ' && n == 0) { s++; continue; }
+    buf[n] = *s;
+    buf[n + 1] = 0;
+    if (*s == ' ') lastSpace = n;
+    if (u8g2.getStrWidth(buf) > 126 || n + 2 >= sizeof buf) {
+      // Break at the last space of the line, or mid-word when it has none.
+      size_t cut = lastSpace ? lastSpace : n;
+      s -= n - cut;
+      buf[cut] = 0;
+      u8g2.drawStr(1, y + row++ * pitch, buf);
+      n = lastSpace = 0;
+      continue;
+    }
+    n++;
+    s++;
+  }
+  if (n && row < maxLines) {
+    buf[n] = 0;
+    u8g2.drawStr(1, y + row * pitch, buf);
+  }
+}
+
+// The screens the device draws by itself: before the server is reached, and when its frames stop.
+// They follow the server's screens (apps/api/src/oled.ts): one large line, one hint under it.
 void drawLocal(uint32_t nowMs, const DisplayModel& m) {
-  char buf[32];
+  char buf[40];
   u8g2.clearBuffer();
-  statusBar(m);
+  if (m.state != AppState::BOOTING && m.state != AppState::ERROR) statusIcons(m);
 
   switch (m.state) {
     case AppState::BOOTING:
       u8g2.setFont(FONT_BIG);
-      centered("SLAP", 38);
-      u8g2.setFont(FONT_SMALL);
-      centered("booting  fw " FW_VERSION, 60);
+      centered("Slap", 36);
+      u8g2.setFont(FONT_TEXT);
+      centered("Starting  v" FW_VERSION, 56);
       break;
 
     case AppState::WIFI:
-      u8g2.setFont(FONT_BIG);
-      centered("WI-FI", 38);
-      u8g2.setFont(FONT_SMALL);
-      snprintf(buf, sizeof buf, "joining %s", m.ssid);
-      buf[21] = 0;
-      centered(buf, 60);
+      u8g2.setFont(FONT_TITLE);
+      centered("Joining Wi-Fi", 30);
+      u8g2.setFont(FONT_TEXT);
+      fitted(buf, sizeof buf, m.ssid, 126);
+      centered(buf, 46);
+      progressDots(nowMs, 55);
       break;
 
     case AppState::CONNECTING:
-      u8g2.setFont(FONT_BIG);
-      centered("LINK", 38);
-      u8g2.setFont(FONT_SMALL);
-      line(buf, 22, m.host);
-      centered(buf, 50);
-      if (m.wsUp) centered("waiting for server", 62);
+      u8g2.setFont(FONT_TITLE);
+      centered("Connecting", 30);
+      u8g2.setFont(FONT_TEXT);
+      fitted(buf, sizeof buf, m.host, 126);
+      centered(buf, 46);
+      if (m.wsUp) centered("Waiting for server", 61);
       else if (m.retryInMs > 0) {
-        snprintf(buf, sizeof buf, "retry in %lus", (unsigned long)((m.retryInMs + 999) / 1000));
-        centered(buf, 62);
+        snprintf(buf, sizeof buf, "Next try in %lu s", (unsigned long)((m.retryInMs + 999) / 1000));
+        centered(buf, 61);
       } else {
-        centered("connecting...", 62);
+        progressDots(nowMs, 55);
       }
       break;
 
@@ -135,50 +162,50 @@ void drawLocal(uint32_t nowMs, const DisplayModel& m) {
       break;
 
     case AppState::IDLE:
-      u8g2.setFont(FONT_BIG);
-      centered("READY", 36);
       if (m.classCode && m.classCode[0]) {
         // Active course chosen in the web app (state.classCode).
-        u8g2.setFont(FONT_SMALL);
-        snprintf(buf, sizeof buf, "course %s", m.classCode);
-        buf[21] = 0;
-        centered(buf, 50);
-        centered("slap to start", 62);
+        u8g2.setFont(FONT_BIG);
+        if (u8g2.getStrWidth(m.classCode) > 126) u8g2.setFont(FONT_TITLE);   // a long code, smaller
+        fitted(buf, sizeof buf, m.classCode, 126);
+        centered(buf, 36);
+        u8g2.setFont(FONT_TEXT);
+        centered("Slap to start", 56);
       } else {
-        // Paired but no active course (state.classCode null/absent): recording has nowhere to go.
-        u8g2.setFont(FONT_TINY);
-        centered("Pick a course in the app", 50);
-        u8g2.setFont(FONT_SMALL);
-        centered("then slap to start", 62);
+        // No active course (state.classCode null/absent): recording has nowhere to go.
+        u8g2.setFont(FONT_TITLE);
+        centered("Pick a course", 32);
+        u8g2.setFont(FONT_TEXT);
+        centered("in the app", 50);
       }
       break;
 
     case AppState::RECORDING: {
+      // The server's "Listening" screen without the caption: timer, hint, sound level.
       uint32_t s = (nowMs - m.recStartMs) / 1000;
-      snprintf(buf, sizeof buf, "%02lu:%02lu", (unsigned long)(s / 60 % 100), (unsigned long)(s % 60));
-      u8g2.setFont(FONT_TIME);
-      centered(buf, 42);
+      if (s >= 3600) snprintf(buf, sizeof buf, "%lu:%02lu:%02lu", (unsigned long)(s / 3600), (unsigned long)(s / 60 % 60), (unsigned long)(s % 60));
+      else snprintf(buf, sizeof buf, "%02lu:%02lu", (unsigned long)(s / 60), (unsigned long)(s % 60));
+      u8g2.setFont(s >= 3600 ? FONT_BIG : FONT_TIME);   // past an hour the digits would run under the icons
+      centered(buf, 34);
+      u8g2.setFont(FONT_TEXT);
+      centered("Slap to stop", 49);
       // Level meter: sqrt-ish scale so speech (-30..-10 dBFS) spans the bar.
       float l = m.level * 4.0f;
       if (l > 1.0f) l = 1.0f;
       int w = (int)(l * 124.0f);
-      u8g2.drawFrame(0, 46, 128, 6);
-      if (w > 0) u8g2.drawBox(2, 48, w, 2);
-      u8g2.setFont(FONT_SMALL);
-      centered("slap to stop", 62);
+      u8g2.drawFrame(0, 53, 128, 10);
+      if (w > 0) u8g2.drawBox(2, 55, w, 6);
       break;
     }
 
     case AppState::ERROR:
-      u8g2.setFont(FONT_BIG);
-      centered("ERROR", 36);
-      u8g2.setFont(FONT_SMALL);
-      line(buf, 22, m.message && m.message[0] ? m.message : "see server");
-      centered(buf, 50);
-      if (m.message && strlen(m.message) > 21) {
-        line(buf, 22, m.message + 21);
-        centered(buf, 62);
-      }
+      // Title on a lit bar, as the server draws it.
+      u8g2.drawBox(0, 0, 128, 17);
+      u8g2.setDrawColor(0);
+      u8g2.setFont(FONT_TITLE);
+      u8g2.drawStr(3, 14, "Error");
+      u8g2.setDrawColor(1);
+      u8g2.setFont(FONT_TEXT);
+      wrapped(m.message && m.message[0] ? m.message : "See the server log", 31, 14, 3);
       break;
   }
   u8g2.sendBuffer();
@@ -232,8 +259,8 @@ void display_update(uint32_t nowMs, const DisplayModel& m) {
 void display_notice(const char* big, const char* small) {
   u8g2.clearBuffer();
   u8g2.setFont(FONT_BIG);
-  centered(big, 34);
-  u8g2.setFont(FONT_SMALL);
+  centered(big, 36);
+  u8g2.setFont(FONT_TEXT);
   centered(small, 56);
   u8g2.sendBuffer();
 }

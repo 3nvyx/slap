@@ -14,7 +14,7 @@ const RING = 200;                         // finals kept in memory per lecture f
 const RESUME_WINDOW_MS = 6 * 3600_000;    // a "live" lecture older than this is not resumed
 const BACKFILL = 20;                      // finals translated when a new language joins mid-lecture
 const INTERIM_TR_GAP_MS = 700;            // the sentence being spoken is translated at most this often per language
-const DEVICE_CAPTION_CHARS = 160;         // tail of the transcript sent to the device screen (it shows two lines)
+const DEVICE_CAPTION_CHARS = 160;         // tail of the transcript sent to the device screen (it shows the last three or four lines)
 const ID_BATCH = 32;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

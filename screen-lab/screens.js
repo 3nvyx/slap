@@ -4,27 +4,29 @@
 //
 // ctx is a normal Canvas 2D context. d is the mock data (see README.md for every field):
 //   d.classCode  d.pairCode  d.joinUrl  d.caption  d.lang  d.seconds  d.level  d.wifiOk  d.message  d.avatar  d.mascot  d.t
-// Helpers: font(px, bold)  centered(ctx, text, y, x0, width)  fitFont(ctx, text, width, max)
-//          wrapText(ctx, text, maxWidth)  drawQr(ctx, text, x, y, box)  mmss(seconds)
+// Helpers: font(px, bold, text)  centered(ctx, text, y, x0, width)  fitFont(ctx, text, width, max)
+//          wrapText(ctx, text, maxWidth)  paragraph(ctx, text, lines, y, pitch)  drawQr(ctx, text, x, y, box)  mmss(seconds)
 //          drawSprite(ctx, name, x, y, scale)  spriteFit(name, boxW, boxH)
 //          drawMascot(ctx, d, x, y, w, h, asleep, face)   the mascot from sprites.js, fitted into an area (defined further down)
 
 const TODAY = "On the device today";
 const IDEAS = "Ideas to play with";
 
-// ---- The five screens the server draws now, copied from apps/api/src/oled.ts.
+// ---- The six screens the server draws now, copied from apps/api/src/oled.ts.
+// Captions come first: while recording, the caption fills the screen and the timer and sound level are a thin
+// strip under it.
 
 screen({
   name: "Pair code",
   group: TODAY,
   note: "A new device, before someone types its code into the web app.",
   draw(ctx, d) {
-    ctx.font = font(11);
-    centered(ctx, "Pair this Slap", 1);
-    ctx.font = font(fitFont(ctx, d.pairCode, 124, 26), true);
-    centered(ctx, d.pairCode, 19);
-    ctx.font = font(10);
-    centered(ctx, "enter code in the app", 52);
+    ctx.font = font(12);
+    centered(ctx, "Pair this Slap", -2);
+    ctx.font = font(fitFont(ctx, d.pairCode, 124, 30), true);
+    centered(ctx, d.pairCode, 11);
+    ctx.font = font(12);
+    centered(ctx, "Enter it in the app", 48);
   },
 });
 
@@ -33,9 +35,9 @@ screen({
   group: TODAY,
   note: "Paired, but no class chosen in the web app yet.",
   draw(ctx) {
-    ctx.font = font(13, true);
-    centered(ctx, "Pick a course", 14);
-    ctx.font = font(11);
+    ctx.font = font(17, true);
+    centered(ctx, "Pick a course", 8);
+    ctx.font = font(13);
     centered(ctx, "in the app", 34);
   },
 });
@@ -45,38 +47,78 @@ screen({
   group: TODAY,
   note: "Waiting to start. Students scan the QR to open the captions page.",
   draw(ctx, d) {
-    if (!drawQr(ctx, d.joinUrl, 0, 0, 64)) { ctx.font = font(10); ctx.fillText("URL too", 2, 20); ctx.fillText("long", 2, 32); }
+    if (!drawQr(ctx, d.joinUrl, 0, 0, 64)) { ctx.font = font(11); ctx.fillText("Link too", 2, 16); ctx.fillText("long", 2, 29); }
     const x0 = 66, w = W - x0;
-    ctx.font = font(fitFont(ctx, d.classCode, w - 2, 18), true);
-    centered(ctx, d.classCode, 4, x0, w);
-    ctx.font = font(11);
-    centered(ctx, "slap to", 28, x0, w);
-    centered(ctx, "start", 40, x0, w);
-    if (!d.wifiOk) { ctx.font = font(9); centered(ctx, "no wifi", 54, x0, w); }
+    ctx.font = font(fitFont(ctx, d.classCode, w - 2, 20), true);
+    centered(ctx, d.classCode, 0, x0, w);
+    ctx.font = font(13);
+    centered(ctx, "Slap to", 24, x0, w);
+    centered(ctx, "start", 38, x0, w);
+    if (!d.wifiOk) { ctx.font = font(9); centered(ctx, "no Wi-Fi", 53, x0, w); }
+  },
+});
+
+// Caption type on the recording screen, by script, sized so the lines' ink stays within rows 0-53. Chinese,
+// Japanese and Korean stay at the pixel font's 12 px (four lines); the others get three lines. `base` is the
+// first line's baseline: Arabic is drawn a size smaller and Hindi a row higher because both reach further
+// below the baseline than Latin does.
+function captionStyle(text) {
+  if (CJK.test(text)) return { px: 12, pitch: 14, lines: 4, base: 11 };
+  if (ARABIC.test(text)) return { px: 14, pitch: 18, lines: 3, base: 13 };
+  if (DEVANAGARI.test(text)) return { px: 15, pitch: 18, lines: 3, base: 13 };
+  return { px: 15, pitch: 18, lines: 3, base: 14 };
+}
+
+const clamp01 = v => Math.min(1, Math.max(0, v));
+
+// Bottom strip of the recording screen (rows 55-62): sound level growing from the left, elapsed time on the
+// right; mirrored under a right-to-left caption, whose short last line ends on the left.
+function recordingFooter(ctx, seconds, level, rtl) {
+  ctx.font = font(10, true);
+  const t = mmss(seconds), tw = Math.ceil(ctx.measureText(t).width);
+  ctx.fillText(t, rtl ? 0 : W - tw, 53);
+  const w = W - tw - 5, fill = Math.round(clamp01(level) * w), x0 = rtl ? W - w : 0;
+  ctx.fillRect(x0, 61, w, 1);
+  ctx.fillRect(rtl ? W - fill : 0, 58, fill, 4);
+}
+
+// The server's renderRecording: with no caption yet the timer is large; after that the caption fills the screen.
+function drawRecording(ctx, seconds, level, caption) {
+  if (!caption.trim()) {
+    ctx.font = font(26, true);
+    centered(ctx, mmss(seconds), -3);
+    ctx.font = font(13);
+    centered(ctx, "Listening...", 27);
+    ctx.fillRect(0, 53, W, 1);
+    ctx.fillRect(0, 62, W, 1);
+    ctx.fillRect(0, 53, 1, 10);
+    ctx.fillRect(W - 1, 53, 1, 10);
+    ctx.fillRect(2, 55, Math.round(clamp01(level) * (W - 4)), 6);
+    return;
+  }
+  const style = captionStyle(caption);
+  ctx.font = font(style.px, false, caption);
+  paragraph(ctx, caption, wrapText(ctx, caption, W - 2).slice(-style.lines), style.base, style.pitch);
+  recordingFooter(ctx, seconds, level, RTL.test(caption));
+}
+
+screen({
+  name: "Listening",
+  group: TODAY,
+  note: "Recording has started and nothing has been said yet: the timer is large, the sound level under it.",
+  led: true,
+  draw(ctx, d) {
+    drawRecording(ctx, d.seconds, d.level, "");
   },
 });
 
 screen({
   name: "Recording",
   group: TODAY,
-  note: "During a lecture: timer, sound level, and the last two lines of caption.",
+  note: "During a lecture: the latest three lines of caption (four in Chinese, Japanese and Korean), with the sound level and timer in a thin strip under them.",
   led: true,
   draw(ctx, d) {
-    ctx.beginPath();
-    ctx.arc(5, 6, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.font = font(11, true);
-    ctx.fillText("REC", 13, 1);
-    const t = mmss(d.seconds);
-    ctx.fillText(t, W - ctx.measureText(t).width - 1, 1);
-    ctx.fillRect(0, 15, W, 1);
-    ctx.fillRect(0, 21, W, 1);
-    ctx.fillRect(0, 15, 1, 7);
-    ctx.fillRect(W - 1, 15, 1, 7);
-    ctx.fillRect(2, 17, Math.round(Math.min(1, Math.max(0, d.level)) * (W - 4)), 3);
-    ctx.font = font(12);
-    const lines = wrapText(ctx, d.caption, W - 2).slice(-2);
-    lines.forEach((l, i) => ctx.fillText(l, 1, 27 + i * 18));
+    drawRecording(ctx, d.seconds, d.level, d.caption);
   },
 });
 
@@ -85,9 +127,21 @@ screen({
   group: TODAY,
   note: "Something went wrong on the server.",
   draw(ctx, d) {
-    ctx.font = font(12);
-    const wrapped = ["Error", d.message].flatMap(l => wrapText(ctx, l, W - 2)).slice(0, 4);
-    wrapped.forEach((l, i) => ctx.fillText(l, 1, 1 + i * 16));
+    const title = "Error";
+    ctx.fillRect(0, 0, W, 17);
+    ctx.fillStyle = "#000";
+    ctx.font = font(13, true, title);
+    paragraph(ctx, title, [title], 13, 0, 3);
+    // Dark text on a lit bar loses its half-covered edge pixels to the threshold; a hairline outline restores the weight.
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 0.8;
+    ctx.textBaseline = "alphabetic";
+    ctx.strokeText(title, 3, 13);
+    ctx.textBaseline = "top";
+    ctx.strokeStyle = "#fff";
+    ctx.fillStyle = "#fff";
+    ctx.font = font(12, false, d.message);
+    paragraph(ctx, d.message, wrapText(ctx, d.message, W - 2).slice(0, 3), 29, 15);
   },
 });
 
