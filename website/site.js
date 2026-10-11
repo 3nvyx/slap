@@ -18,51 +18,27 @@ var DEMO_CLASS = "CS229";
 var LINES = [
   {
     en: "So what does a Gaussian look like?",
-    es: "Entonces, ¿cómo es una gaussiana?",
-    zh: "那么，高斯分布是什么样子的？",
     ja: "では、ガウス分布はどんな形でしょうか。",
     vi: "Vậy phân phối Gauss trông như thế nào?",
-    ko: "그렇다면 가우시안은 어떻게 생겼을까요?",
-    fr: "Alors, à quoi ressemble une gaussienne ?",
-    de: "Wie sieht also eine Gauß-Verteilung aus?",
-    pt: "Então, como é uma gaussiana?",
   },
   {
     en: "The mean is its center.",
-    es: "La media es su centro.",
-    zh: "均值就是它的中心。",
     ja: "平均がその中心です。",
     vi: "Giá trị trung bình là tâm của nó.",
-    ko: "평균이 그 중심입니다.",
-    fr: "La moyenne est son centre.",
-    de: "Der Mittelwert ist ihr Zentrum.",
-    pt: "A média é o seu centro.",
   },
   {
     en: "With enough data, this is a pretty good model.",
-    es: "Con suficientes datos, este es un modelo bastante bueno.",
-    zh: "只要数据足够多，这就是一个相当不错的模型。",
     ja: "データが十分にあれば、これはかなり良いモデルです。",
     vi: "Khi có đủ dữ liệu, đây là một mô hình khá tốt.",
-    ko: "데이터가 충분하면 이것은 꽤 좋은 모델입니다.",
-    fr: "Avec assez de données, c'est un assez bon modèle.",
-    de: "Mit genügend Daten ist das ein ziemlich gutes Modell.",
-    pt: "Com dados suficientes, este é um modelo bastante bom.",
   },
   {
     en: "So it's a great place to start.",
-    es: "Así que es un excelente punto de partida.",
-    zh: "所以这是一个很好的起点。",
     ja: "ですから、出発点として最適です。",
     vi: "Vì vậy đây là một điểm khởi đầu tuyệt vời.",
-    ko: "그래서 시작하기에 아주 좋은 출발점입니다.",
-    fr: "C'est donc un excellent point de départ.",
-    de: "Es ist also ein großartiger Ausgangspunkt.",
-    pt: "Por isso, é um ótimo ponto de partida.",
   },
 ];
 
-var LANG_NAMES = { es: "Español", zh: "中文", ja: "日本語", vi: "Tiếng Việt", ko: "한국어", fr: "Français", de: "Deutsch", pt: "Português" };
+var LANG_NAMES = { ja: "日本語", vi: "Tiếng Việt" };
 
 var TICK_MS = 250;   // one new word every tick
 var PAUSE = 6;       // ticks of silence after each sentence
@@ -173,7 +149,7 @@ function paintOled(canvas, d) {
 
 // ---- The live-caption demo: the device screen and the phones tell the same story.
 
-var lang = "es";
+var lang = "ja";
 var tick = 0;
 var words = LINES.map(function (l) { return l.en.split(" "); });
 var cycle = words.reduce(function (n, w) { return n + w.length + PAUSE; }, 0);

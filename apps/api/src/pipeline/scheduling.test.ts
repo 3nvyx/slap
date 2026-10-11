@@ -97,8 +97,8 @@ const topics = ["A", "B", "C", "D", "E", "F", "G", "H"].map((n, i) => ({
 
 test("plan: back-scheduled from an exam inside the window", () => {
   const exam = nextExam({ exams: [{ name: "Midterm", date: "2026-10-10", topics: [] }, { name: "Old", date: "2026-09-01", topics: [] }] }, T0);
-  assert.deepEqual(exam, { name: "Midterm", date: "2026-10-10", topics: [], daysLeft: 4 });
-  const plan = buildPlan({ today: T0, exam, followingExam: { name: "Final", date: "2026-12-10", topics: [], daysLeft: 65 }, topics, dueByDay: [5, 2, 0, 1, 0, 0, 3], questionsByConcept: new Map([["A", ["qa"]], ["B", ["qb1", "qb2"]]]) });
+  assert.deepEqual(exam, { name: "Midterm", date: "2026-10-10", topics: [], daysLeft: 4, kind: "exam" });
+  const plan = buildPlan({ today: T0, exam, followingExam: { name: "Final", date: "2026-12-10", topics: [], daysLeft: 65, kind: "exam" }, topics, dueByDay: [5, 2, 0, 1, 0, 0, 3], questionsByConcept: new Map([["A", ["qa"]], ["B", ["qb1", "qb2"]]]) });
   assert.equal(plan.length, 7);
   assert.equal(plan[0]!.date, "2026-10-06");
   assert.equal(plan[6]!.date, "2026-10-12");
@@ -115,7 +115,7 @@ test("plan: back-scheduled from an exam inside the window", () => {
 });
 
 test("plan: exam far away paces topics to finish early; no exam gives a steady plan", () => {
-  const far = buildPlan({ today: T0, exam: { name: "Final", date: "2026-10-30", topics: [], daysLeft: 24 }, topics, dueByDay: [], questionsByConcept: new Map() });
+  const far = buildPlan({ today: T0, exam: { name: "Final", date: "2026-10-30", topics: [], daysLeft: 24, kind: "exam" }, topics, dueByDay: [], questionsByConcept: new Map() });
   assert.match(far[0]!.reason, /24 days to Final/);
   assert.ok(far.every(d => d.concepts.length >= 1));
   const none = buildPlan({ today: T0, exam: null, topics, dueByDay: [], questionsByConcept: new Map() });

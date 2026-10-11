@@ -28,7 +28,7 @@
 // =====================================================================
 
 /* [Render] */
-part = "assembly"; // [assembly, top, tray, button, oled_clip, labels, fit_tests, fit_oled_ring, fit_oled_frame, fit_mic, fit_usb, fit_boot, fit_snap, fit_imu, fit_uno, fit_oled_pins, clash_check]
+part = "assembly"; // [assembly, top, tray, button, oled_clip, labels, fit_tests, fit_oled_ring, fit_oled_frame, fit_mic, fit_usb, fit_boot, fit_snap, fit_imu, fit_uno, fit_oled_pins, fit_speaker, clash_check]
 print_orient    = true;   // single parts come out in print orientation
 show_components = true;   // ghost PCBs / Dupont housings (F5 preview only)
 show_text       = true;   // engraved labels on/off
@@ -105,7 +105,7 @@ oled_glass_dy  = 0;
 // its screenshot: 3.0 mm holes centred 2.0 mm from both edges. The builder says the corners match this board.
 oled_hole_inset_x = 2.0;
 oled_hole_inset_y = 2.0;
-oled_hole_d    = 3.0;
+oled_hole_d    = 2.5;    // MEASURED, about (builder, 11 Oct); the reference model had 3.0
 oled_pins      = true;   // a locating pin on top of each tray post, into the corner holes
 oled_pin_d     = 2.0;    // 0.5 per side in the hole: the hole positions are not measured on this board
 oled_pin_h     = 2.4;    // above the post top; the tip passes through the PCB into a relief in the lid
@@ -214,7 +214,7 @@ uno_hole_d   = 3.2;    // DATASHEET (4x R1.6)
 uno_peg_d    = 2.6;    // 0.3 per side in the holes
 uno_peg_h    = 3.0;    // above the standoff top (PCB 1.6 + 1.4)
 uno_pad_d    = 5.0;    // standoff; the nearest header pin is 3.6 mm from a hole centre
-uno_standoff = 5.0;    // floor to the PCB underside (through-hole tails need about 3)
+uno_standoff = 4.0;    // floor to the PCB underside (through-hole tails need about 3). v3.2: 5 -> 4, headroom for jumper plugs in the headers
 uno_usb_gap  = 3.5;    // PCB USB edge to the inner end wall (the DC jack overhangs about 2.2)
 uno_back_gap = 5.0;    // PCB edge to the inner back wall (the lid hooks need 2.9)
 uno_usb_v    = 37.86;  // DATASHEET USB-C centre (53.34 - 0.73 - 6.4 - 3.88 - 8.94/2)
@@ -227,7 +227,9 @@ uno_hdr_dig  = [17.29, 65.02, 50.8];   // DATASHEET [u0, u1, v] digital header
 uno_hdr_ana  = [26.42, 65.02, 2.54];   // DATASHEET power + analog header
 uno_jack     = [-2.2, 12.0, 4.1, 13.2, 11.0];  // SCALED/ASSUMED DC jack [u0, u1, v0, v1, height]
 uno_qwiic_v  = 14.1;   // SCALED Qwiic socket centre; it opens past the far end of the board
-uno_post_u   = 35;     // lid posts land on both header tops here (inside the 10-pin and 8-pin strips)
+uno_post_u   = 35;     // lid post on the digital header (inside the 10-pin strip, clear of its GND pin at u 26.4)
+uno_post_u2  = 57;     // lid post on the analog-in strip. v3.2: moved off the power strip, where the amp's 5V and GND jumpers plug in
+uno_plugs    = [[38.1, 2.54], [40.64, 2.54], [43.18, 2.54], [26.42, 50.8]];  // [u, v] of 5V, GND, GND and the digital-side GND: jumper plugs may stand here
 uno_post_d   = 5.0;    // at the tip
 uno_post_base = 9.0;   // at the lid: the posts are cones, not 16 mm rods
 uno_post_gap = 0.5;    // post end above the header top
@@ -242,12 +244,26 @@ imu_pad_d    = 34.0;
 imu_pad_h    = 3.0;    // pad top above the floor
 imu_wall_gap = 3.5;    // pad to the left inner wall
 imu_plug_room = 6.0;   // pad to the UNO's far end (Qwiic plug and cable bend)
-imu_pegs     = false;  // 4 pegs in the corner holes; off until the hole spacing is measured
-imu_hole_dx  = 14.0;   // ESTIMATED hole spacing along X
-imu_hole_dy  = 21.0;   // ESTIMATED hole spacing along Y
+imu_pegs     = true;   // 4 pegs in the corner holes. On since the fit_imu coupon: the board drops onto all four (builder, 11 Oct)
+imu_hole_dx  = 14.0;   // hole spacing along X: estimated, then confirmed by the fit_imu coupon (11 Oct)
+imu_hole_dy  = 21.0;   // hole spacing along Y: as above
 imu_hole_d   = 3.2;    // ESTIMATED (M3)
 imu_peg_d    = 2.6;
 imu_peg_h    = 2.6;
+
+/* [Speaker "3128" 4-8 ohm 3 W: body from the builder's STEP file, ears and wire exit not used for holding] */
+spk_enable   = true;
+spk_w        = 31.0;   // STEP: body along X (the wires leave the +X end)
+spk_d        = 28.0;   // STEP: body along Y (the two mounting ears stick out of these faces, to 44 overall)
+spk_t        = 14.92;  // STEP: front (cone) face to the back
+spk_clear    = 0.4;    // per side between the body and the holder walls
+spk_wall     = 2.0;
+spk_pad      = 1.0;    // air gap in front of the cone: the body rests on four corner pads
+spk_seg      = 8.0;    // length of each corner wall segment (ears and wires pass between them)
+spk_lip      = 1.0;    // 45 deg catch ramps behind the body: fixed on the wire side, on a flexing tongue on the other
+spk_tongue_w = 10.0;
+spk_tongue_t = 2.0;
+spk_grille_r = 10.5;   // lid holes over the cone (same hole and pitch as the mic grille)
 
 /* [USB-C slot, right end wall] */
 usb_slot_mode = "uart"; // [uart, both, two]
@@ -373,7 +389,13 @@ uno_y_f   = uno_y_b - uno_w;                                       // PCB front 
 uno_usb_y = uno_y_b - uno_usb_v;
 uno_usb_z = uno_top + uno_usb_h/2;
 uno_post_z = uno_top + uno_hdr_h + uno_post_gap;
-uno_posts = [uno_xy(uno_post_u, uno_hdr_dig[2]), uno_xy(uno_post_u, uno_hdr_ana[2])];
+uno_posts = [uno_xy(uno_post_u, uno_hdr_dig[2]), uno_xy(uno_post_u2, uno_hdr_ana[2])];
+
+// Speaker: under the lid over the back-left bay, 1.5 mm clear of the left-wall hook when the tongue is pushed back
+spk_cx = -(beam_fx - hook_t) + 1.5 + spk_tongue_t + spk_clear + spk_w/2;
+spk_cy = uno_y_f + 24;
+spk_zb = spk_pad + spk_t;                // speaker back, measured down from the lid underside
+spk_hw = spk_zb + 1.55;                  // holder wall and tongue length
 
 // IMU pad: back-left bay, front edge level with the UNO's front edge
 imu_cx  = -in_hx + imu_wall_gap + imu_pad_w/2;
@@ -420,7 +442,7 @@ rhook_led_gap = (hy_r - hook_half) - (led_xy[1] + led_boss_r);
 rhook_uno_gap = uno_y_f - (hy_r + hook_half);
 imu_bay_gap   = uno_x_far - (imu_cx + imu_pad_w/2);
 
-echo(str("SLAB v3.1: outer L x W x H = ", L, " x ", W, " x ", H, " mm (L_req ", L_req, ", L_uno ", L_uno, ", W_req ", W_req, ")"));
+echo(str("SLAB v3.3: outer L x W x H = ", L, " x ", W, " x ", H, " mm (L_req ", L_req, ", L_uno ", L_uno, ", W_req ", W_req, ")"));
 echo(str("  height budget: floor ", floor_t, " + clearance ", floor_clear, " + wire bend ", wire_bend,
          " + Dupont ", jumper_h, " + header spacer ", header_spacer, " = PCB bottom ", pcb_z0,
          "; + PCB ", dev_pcb_t, " = ", pcb_top));
@@ -639,6 +661,39 @@ module pry_slot(side, along) {
     else                      translate([-in_hx - wall - 0.9, along - pry_w/2, tray_h - pry_d]) cube([wall + 1, pry_w, pry_d + 1]);
 }
 
+// Speaker holder, modelled as printed: z = 0 is the lid underside, +z points into the housing, origin at the
+// speaker centre. Four corner pads, corner walls, two fixed catch ramps on the +X (wire) side and one flexing
+// tongue on the -X side. Tilt the speaker in under the fixed ramps, then press the other side past the tongue.
+module spk_catch_2d(sx)   // in (x, z): the wall face is at x = sx*a; a 45 deg ramp toward the body, 45 deg lead-in back
+    // the wedge runs 0.5 mm into the wall, so its faces cross the wall face instead of lying on it
+    let (a = spk_w/2 + spk_clear)
+    polygon([[sx*(a + 0.5), spk_zb - 0.75], [sx*(a - spk_lip), spk_zb + 0.75], [sx*(a - 0.4), spk_zb + 1.35],
+             [sx*(a + 0.5), spk_zb + 1.35]]);
+
+module speaker_holder_up() {
+    a = spk_w/2 + spk_clear;  b = spk_d/2 + spk_clear;  t = spk_wall;
+    // corner pads
+    for (sx = [-1, 1], sy = [-1, 1])
+        translate([sx*(spk_w/2 - 2) - 2, sy*(spk_d/2 - 2) - 2, -0.01]) cube([4, 4, spk_pad + 0.01]);
+    // corner walls along the two ear faces
+    for (sx = [-1, 1], sy = [-1, 1])
+        translate([sx > 0 ? a + t - spk_seg : -a - t, sy > 0 ? b : -b - t, -0.01]) cube([spk_seg, t, spk_hw + 0.01]);
+    // +X side: two wall segments with fixed catch ramps, the wires leave between them
+    for (sy = [-1, 1]) {
+        translate([a, sy > 0 ? b + t - spk_seg : -b - t, -0.01]) cube([t, spk_seg, spk_hw + 0.01]);
+        translate([0, sy > 0 ? b + 0.5 : -b + spk_seg - t - 0.5, 0]) rotate([90, 0, 0])
+            linear_extrude(spk_seg - t) spk_catch_2d(1);   // from 0.5 inside the corner wall to 0.5 short of the free end
+    }
+    // -X side: short corner stubs, and the tongue between them
+    for (sy = [-1, 1])
+        translate([-a - t, sy > 0 ? b + t - 5 : -b - t, -0.01]) cube([t, 5, spk_hw + 0.01]);
+    translate([-a - spk_tongue_t, -spk_tongue_w/2, -0.01]) cube([spk_tongue_t, spk_tongue_w, spk_hw + 0.01]);
+    translate([0, spk_tongue_w/2 - 0.5, 0]) rotate([90, 0, 0]) linear_extrude(spk_tongue_w - 1) spk_catch_2d(-1);
+}
+
+// grille hole centres over the cone, relative to the speaker centre
+spk_grille = [for (i = [-6 : 6], j = [-6 : 6]) if (norm([i, j])*grille_pitch <= spk_grille_r) [i*grille_pitch, j*grille_pitch]];
+
 // =====================================================================
 // Top plate
 // =====================================================================
@@ -670,6 +725,8 @@ module top_add() {
     for (p = posts)
         translate([p[0], p[1], pcb_top + dev_usb_h + tol_fit])
             cylinder(d = post_d, h = tray_h - (pcb_top + dev_usb_h + tol_fit) + 0.01);
+    // speaker holder
+    if (spk_enable) translate([spk_cx, spk_cy, tray_h + 0.01]) mirror([0, 0, 1]) speaker_holder_up();
     // hold-down posts onto the UNO's two header rows
     for (p = uno_posts)
         translate([p[0], p[1], uno_post_z]) cylinder(d1 = uno_post_d, d2 = uno_post_base, h = tray_h - uno_post_z + 0.01);
@@ -711,6 +768,9 @@ module top_cuts() {
     for (i = [0 : grille_cols - 1], j = [0 : grille_rows - 1])
         translate([gx + (i - (grille_cols - 1)/2)*grille_pitch, gy + (j - (grille_rows - 1)/2)*grille_pitch, tray_h - 0.01])
             cylinder(d = grille_hole_d, h = plate_t + 1, $fn = 20);
+    // speaker grille
+    if (spk_enable) for (q = spk_grille)
+        translate([spk_cx + q[0], spk_cy + q[1], tray_h - 0.01]) cylinder(d = grille_hole_d, h = plate_t + 1, $fn = 20);
     // mic pocket inside the ring
     translate([mic_xy[0], mic_xy[1], tray_h - mic_ring_h - 1]) cylinder(d = mic_pocket_dia, h = mic_ring_h + 1);
     // LED socket bore + window
@@ -905,6 +965,16 @@ module uno_proxy() {
     uno_box(62.3, 67.5, 24.1, 31.8, uno_top, uno_hdr_h);                                             // ICSP pins
     uno_box(63.7, uno_len, uno_qwiic_v - 3, uno_qwiic_v + 3, uno_top, 3);                            // Qwiic socket
     uno_box(uno_len, uno_len + 5, uno_qwiic_v - 2.5, uno_qwiic_v + 2.5, uno_top, 3);                 // Qwiic plug
+    // jumper plugs standing in the power and ground sockets (the amp is powered from the UNO), with their wire bend
+    for (q = uno_plugs) housing_at(uno_xy(q[0], q[1]), uno_top + uno_hdr_h, jumper_h + wire_bend);
+}
+
+// speaker in its holder: cone face up against the pads; ears and wire exit as in the STEP
+module speaker_proxy() if (spk_enable) {
+    zc = tray_h - spk_pad - spk_t/2;
+    translate([spk_cx - spk_w/2, spk_cy - spk_d/2, zc - spk_t/2]) cube([spk_w, spk_d, spk_t]);
+    translate([spk_cx - 5, spk_cy - 22, zc - 1.4]) cube([10, 44, 2.9]);
+    translate([spk_cx + spk_w/2, spk_cy - 2, zc - 5.5]) cube([3, 4, 2]);
 }
 
 module uno_plug_proxy()
@@ -913,7 +983,7 @@ module uno_plug_proxy()
 
 module components() {
     dev_board_proxy(); oled_proxy(); mic_proxy(); led_proxy(); usb_plug_proxy();
-    uno_proxy(); uno_plug_proxy(); imu_proxy();
+    uno_proxy(); uno_plug_proxy(); imu_proxy(); speaker_proxy();
 }
 
 module assembly() {
@@ -1030,6 +1100,15 @@ module fit_imu() {
     for (q = imu_peg_pos) translate([q[0], q[1], t0 - 0.01]) pcb_peg(imu_peg_d, imu_peg_h);
 }
 
+// speaker holder on a piece of lid, with its grille (printed as modelled, like the lid face-down)
+module fit_speaker() {
+    difference() {
+        ef_extrude(plate_t) square([spk_w + 16, spk_d + 12], center = true);
+        for (q = spk_grille) translate([q[0], q[1], -1]) cylinder(d = grille_hole_d, h = plate_t + 2, $fn = 20);
+    }
+    translate([0, 0, plate_t]) speaker_holder_up();
+}
+
 // OLED corner holes: a frame with four short posts and the tray's locating pins
 module fit_oled_pins() {
     t0 = 1.2;  bar = 6;
@@ -1072,6 +1151,7 @@ module fit_tests() {
     translate([52, -50, 0]) fit_imu();
     translate([20, -62, 0]) fit_uno();
     translate([-45, -118, 0]) fit_oled_pins();
+    translate([70, -110, 0]) fit_speaker();
 }
 
 // =====================================================================
@@ -1108,6 +1188,8 @@ if (part == "assembly") {
     fit_snap();
 } else if (part == "fit_imu") {
     fit_imu();
+} else if (part == "fit_speaker") {
+    fit_speaker();
 } else if (part == "fit_oled_pins") {
     fit_oled_pins();
 } else if (part == "fit_uno") {

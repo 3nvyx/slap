@@ -28,6 +28,10 @@ On its own the page has no app behind it, so the "Demo" and "Open the app" butto
 | `img/` | Pictures of the device (copies of `hardware/housing/preview/assembled_black.png` and `exploded.png`). |
 | `vendor/qrcode.js` | Third-party QR code maker (MIT licence). Do not edit. |
 
+## The logo
+
+The drawing in the top bar and the footer (the mascot being slapped) is traced from the last frame of the device's switch-on animation, `screen/splash/6` in `screen-lab/sprites.js`, keeping only the mascot and the hand. It sits once near the top of `index.html` as `<symbol id="logo-art">`, one square per pixel. If the animation is redrawn, ask an AI helper to "retrace the website logo from the splash frame".
+
 ## Buttons into the app
 
 "Demo" (next to "How it works") opens `/demo`: every device that is recording right now. "Open the app" in the top bar and "Classes" in the footer open `/classes`. Any link with `data-app="/some/page"` works the same way, and `data-app-block` hides an element until the app is found.

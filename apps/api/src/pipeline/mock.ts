@@ -458,12 +458,24 @@ export function mockStudyPlan(p: StudyPlanPayload): StudyPlanOut {
     else if (exam && i === exam.daysLeft - 1) { chosen = weakest; reason = `Day before ${exam.name}: retrieval practice on the weakest flagged concepts.`; }
     else if (beforeDeadline) { chosen = ranked.slice((i * 2) % Math.max(1, ranked.length)).slice(0, 1); reason = "A deadline tomorrow: one concept and the due cards, nothing more."; }
     else { chosen = ranked.length ? [0, 1, 2].map(j => ranked[(i * 3 + j) % ranked.length]!).filter((c, j, a) => a.indexOf(c) === j) : []; reason = exam ? `${exam.daysLeft - i} days to ${exam.name}: three concepts mixed across lectures.` : "No exam date yet: steady practice on the highest-emphasis concepts."; }
+    const covered = new Set(exam?.concepts ?? []);
+    const forExam = (names: string[]) => (exam && i <= exam.daysLeft && names.some(n => covered.has(n)) ? exam.name : null);
+    const task = (kind: StudyPlanOut["days"][number]["tasks"][number]["kind"], title: string, minutes: number, concepts: string[], extra: { lecture?: string; material?: string } = {}) =>
+      ({ kind, title, minutes, concepts, lecture: extra.lecture ?? null, material: extra.material ?? null, exam: forExam(concepts) });
+    // Each lecture: recall on the first day, practice again 2, 5 and 9 days after it.
+    const fresh = i === 0 ? p.lectures.at(-1) : undefined;
+    const again = p.lectures.find(l => [2, 5, 9].includes(l.daysAgo + i));
+    const third = chosen[2];
+    const book = third ? p.materials.find(m => m.kind === "book" && m.concepts.includes(third.name)) : undefined;
     const tasks = [
-      ...(due ? [`Review ${due} card${due === 1 ? "" : "s"}`] : []),
-      ...chosen.slice(0, 2).map(c => `Practice: 3 questions on ${c.name}`),
-      ...(chosen[2] ? [`Re-read the notes on ${chosen[2].name}`] : []),
+      ...(due ? [task("cards", `Review ${due} due card${due === 1 ? "" : "s"}`, Math.max(5, Math.ceil(due / 3)), [])] : []),
+      ...(fresh ? [task("recall", `Recall ${fresh.title} from memory`, 5, fresh.concepts.slice(0, 3), { lecture: fresh.key })] : []),
+      ...(chosen.length ? [task("practice", `Practice ${chosen.slice(0, 2).map(c => c.name).join(" and ")}`, 12, chosen.slice(0, 2).map(c => c.name))] : []),
+      ...(again && again !== fresh ? [task("practice", `Practice ${again.title} again`, 8, again.concepts.slice(0, 3), { lecture: again.key })] : []),
+      ...(third && book ? [task("material", `Work through ${book.title} on ${third.name}`, 10, [third.name], { material: book.key })]
+        : third?.lectures[0] ? [task("notes", `Repair ${third.name} from the notes`, 6, [third.name], { lecture: third.lectures[0] })] : []),
     ];
-    days.push({ date, focus: chosen[0]?.name ?? "Review", concepts: chosen.map(c => c.name), tasks, minutes: 20 + 15 * chosen.length + Math.min(30, due), reason });
+    days.push({ date, focus: chosen[0]?.name ?? "Review", tasks, reason });
   }
   const pace = p.pace.lecturesHeld
     ? `${p.pace.lecturesHeld} lecture${p.pace.lecturesHeld === 1 ? "" : "s"} so far${p.pace.lecturesPerWeek ? `, about ${p.pace.lecturesPerWeek} a week` : ""}${p.pace.currentWeek ? `; the syllabus is in week ${p.pace.currentWeek} of ${p.pace.totalWeeks}` : ""}.`
@@ -471,5 +483,6 @@ export function mockStudyPlan(p: StudyPlanPayload): StudyPlanOut {
   const overview = exam
     ? `${exam.daysLeft} days to ${exam.name}: cover its topics first, interleaved across lectures, and finish new material 2 days early.`
     : "Steady interleaved practice on the highest-emphasis concepts, previewing each week's syllabus topics before the lecture.";
-  return { overview, pace, keyDates, days };
+  const exams = p.exams.map(e => ({ name: e.name, strategy: e.kind === "quiz" ? `Practise its ${e.concepts.length || "few"} concepts on the two days before; nothing else moves.` : `Every concept practised on two separate days, a mixed rehearsal in the last three, the weakest the day before.` }));
+  return { overview, pace, exams, keyDates, days };
 }
