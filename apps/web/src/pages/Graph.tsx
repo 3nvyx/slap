@@ -3,11 +3,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ForceGraph2D, { type ForceGraphMethods, type LinkObject, type NodeObject } from 'react-force-graph-2d'
 import { Link, useNavigate } from 'react-router-dom'
 import { useClass } from '../components/ClassLayout'
-import { Async, Empty, ExamBadge, inputCls, Label, MasteryBar, PageTitle } from '../components/ui'
-import { api } from '../lib/api'
+import { Async, Button, Empty, ErrorBox, ExamBadge, inputCls, Label, MasteryBar, PageTitle } from '../components/ui'
+import { api, exportVault } from '../lib/api'
 import { masteryColor, pct } from '../lib/format'
 import type { Graph } from '../lib/types'
 import { useApi } from '../lib/useApi'
+import { MOCK } from '../lib/env'
 
 type GNode = NodeObject<Concept>
 type GLink = LinkObject<Concept, { relation: string }>
@@ -44,12 +45,43 @@ function useSize<T extends HTMLElement>() {
 
 const radius = (c: Concept) => 3.5 + Math.sqrt(Math.max(1, c.mentionCount)) * 2.1
 
+/** The notes are already markdown with [[links]]; this saves them as a folder Obsidian opens as a vault. */
+function ExportButton({ classId, code }: { classId: string; code: string }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  if (MOCK) return null
+  return (
+    <div className="flex flex-col items-end gap-2">
+      <Button
+        disabled={busy}
+        title="Download every concept and lecture note as markdown with [[links]]"
+        onClick={async () => {
+          setBusy(true)
+          setError(null)
+          try {
+            await exportVault(classId, code)
+          } catch (e) {
+            setError(e)
+          } finally {
+            setBusy(false)
+          }
+        }}
+      >
+        {busy ? 'Preparing…' : 'Export as Obsidian vault'}
+      </Button>
+      {error != null && <ErrorBox error={error} />}
+    </div>
+  )
+}
+
 export function GraphPage() {
-  const { classId } = useClass()
+  const { classId, detail } = useClass()
   const graph = useApi(() => api.graph(classId), [classId])
   return (
     <div>
-      <PageTitle kicker="Knowledge graph" title="Concept map" />
+      <PageTitle kicker="Knowledge graph" title="Concept map">
+        {graph.data && graph.data.nodes.length > 0 && <ExportButton classId={classId} code={detail.class.code} />}
+      </PageTitle>
       <Async state={graph} label="Loading graph">
         {(data) => (data.nodes.length === 0 ? <Empty>No concepts yet. They appear after the first lecture’s study bundle runs.</Empty> : <GraphView data={data} classId={classId} />)}
       </Async>

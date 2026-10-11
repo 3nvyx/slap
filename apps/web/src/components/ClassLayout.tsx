@@ -16,7 +16,7 @@ export function useClass() {
   return useOutletContext<ClassContext>()
 }
 
-const NAV = [
+const NAV: Array<{ to: string; label: string; key: string; end?: boolean }> = [
   { to: '', label: 'Lectures', key: '01', end: true },
   { to: 'graph', label: 'Graph', key: '02' },
   { to: 'review', label: 'Review', key: '03' },
@@ -24,6 +24,8 @@ const NAV = [
   { to: 'partner', label: 'Partner', key: '05' },
   { to: 'exam-topics', label: 'Exam topics', key: '06' },
   { to: 'today', label: 'Today', key: '07' },
+  { to: 'pretest', label: 'Pretest', key: '08' },
+  { to: 'lecturer', label: 'Lecturer', key: '09' },
 ]
 
 export function DeviceChip({ device }: { device: ClassDetail['device'] }) {
@@ -44,7 +46,7 @@ export function ClassLayout() {
   const { classId = '' } = useParams()
   const navigate = useNavigate()
   const detail = useApi(() => api.classDetail(classId), [classId])
-  const me = useApi(() => api.me(), [])
+  const classes = useApi(() => api.classes(), [])
 
   // Keep the device chip and live status fresh.
   const reloadDetail = detail.reload
@@ -66,8 +68,12 @@ export function ClassLayout() {
           value={classId}
           onChange={(e) => (e.target.value === '__all' ? navigate('/classes') : navigate(`/c/${e.target.value}`))}
         >
-          {!me.data && <option value={classId}>{detail.data?.class.name ?? 'Loading…'}</option>}
-          {me.data?.classes.map((c) => (
+          {(!classes.data || !classes.data.some((c) => c.id === classId)) && (
+            <option value={classId}>
+              {detail.data ? `${detail.data.class.code} · ${detail.data.class.name}` : 'Loading…'}
+            </option>
+          )}
+          {classes.data?.map((c) => (
             <option key={c.id} value={c.id}>
               {c.code} · {c.name}
             </option>
@@ -86,10 +92,7 @@ export function ClassLayout() {
                 to={n.to ? `/c/${classId}/${n.to}` : `/c/${classId}`}
                 end={n.end}
                 className={({ isActive }) =>
-                  cx(
-                    'flex shrink-0 items-center gap-3 rounded-md px-3 py-2 text-sm transition',
-                    isActive ? 'bg-ink text-bg' : 'text-ink-2 hover:bg-panel-2',
-                  )
+                  cx('flex shrink-0 items-center gap-3 rounded-md px-3 py-2 text-sm transition', isActive ? 'bg-ink text-bg' : 'text-ink-2 hover:bg-panel-2')
                 }
               >
                 <span className="hidden font-mono text-[10px] opacity-60 md:inline">{n.key}</span>

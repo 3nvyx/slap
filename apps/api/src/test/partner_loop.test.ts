@@ -28,7 +28,6 @@ before(async () => {
   const { schema } = db;
   const [cls] = await db.db.insert(schema.classes).values({ name: "Partner test (throwaway)", code: `PT${Date.now().toString(36).toUpperCase()}`, ownerUserId: user.id }).returning();
   classId = cls!.id;
-  await db.db.insert(schema.enrollments).values({ userId: user.id, classId, role: "owner" });
   const [lec] = await db.db.insert(schema.lectures).values({ classId, title: "CS229: Gaussians", date: "2026-10-06", status: "ended", source: "import" }).returning();
   lectureId = lec!.id;
   const segs = util.segmentsFromText(readFileSync(new URL("../../fixtures/lecture_sample.txt", import.meta.url), "utf8"), 300);

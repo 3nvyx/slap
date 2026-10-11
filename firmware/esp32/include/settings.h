@@ -50,7 +50,7 @@
 #define PIN_IMU_INT 7
 #endif
 #ifndef PIN_LED
-#define PIN_LED 2
+#define PIN_LED 10
 #endif
 #ifndef PIN_BUTTON
 #define PIN_BUTTON 0

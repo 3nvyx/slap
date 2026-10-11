@@ -35,14 +35,11 @@ export interface PublicFinal {
 export interface PublicLecture {
   title: string
   className: string
+  classId: string
   status: LectureSummary['status']
+  /** A saved lecture being played back, not live audio. */
+  replay?: boolean
   finals: PublicFinal[]
-}
-
-export interface Me {
-  userId: string
-  email: string
-  classes: ClassSummary[]
 }
 
 export interface ClassDocument {
@@ -51,19 +48,43 @@ export interface ClassDocument {
   title: string
 }
 
-/** `GET /api/classes/:id` device: one whose active class is this class (the caller's first). `paired: false` if none. */
+/** `GET /api/classes/:id` device: one whose active class is this class (a connected one first). `paired: false` if none. */
 export interface ClassDevice {
   paired: boolean
   state: DeviceState | 'offline' | null
   name?: string | null
 }
 
+/** Who is watching the live lecture (or replay) right now; null when nothing is live. */
+export interface ClassLive {
+  lectureId: string
+  title: string
+  replay: boolean
+  viewers: number
+  languages: string[]
+}
+
+/** Replay window and rate for `POST /api/lectures/:id/replay`. */
+export interface ReplayOpts {
+  from?: number
+  to?: number
+  speed?: number
+}
+
 export interface ClassDetail {
   class: ClassSummary
   lectures: LectureSummary[]
   device: ClassDevice
+  live?: ClassLive | null
   nextExam: NextExam
   documents: ClassDocument[]
+}
+
+/** One announcement with the lecture it was made in (`GET /api/classes/:id/announcements`, dated ones first). */
+export interface ClassAnnouncement extends Announcement {
+  lectureId: string
+  lectureTitle: string
+  lectureDate: string
 }
 
 export interface LectureDetail {

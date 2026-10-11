@@ -44,7 +44,7 @@ export type CaptionEvent =
   | { type: "interim"; seq: number; text: string; words: CaptionWord[]; start: number; end: number }
   | { type: "final";   seq: number; segmentId: number; text: string; words: CaptionWord[]; start: number; end: number; speaker?: number }
   | { type: "translation"; seq: number; segmentId: number; lang: string; text: string }
-  | { type: "status"; state: DeviceState | "ended"; viewers: number; languages: string[]; latencyMs?: number; message?: string }
+  | { type: "status"; state: DeviceState | "ended"; viewers: number; languages: string[]; latencyMs?: number; message?: string; replay?: boolean }   // replay: a saved lecture played back, not live audio
   | { type: "snapshot"; seq: number; finals: Array<{ segmentId: number; text: string; start: number; end: number; translation?: string }> };
 
 export type LiveClientMessage =
@@ -52,7 +52,7 @@ export type LiveClientMessage =
   | { type: "ping" };
 
 // ---------- API DTOs ----------
-export interface ClassSummary { id: string; name: string; code: string; role: "owner" | "student" | "guest"; lectureCount: number; nextExam?: string | null }
+export interface ClassSummary { id: string; name: string; code: string; lectureCount: number; nextExam?: string | null }
 export interface LectureSummary { id: string; classId: string; title: string; date: string; status: "live" | "ended" | "processing" | "ready"; durationS?: number }
 
 export interface Segment { id: number; idx: number; start: number; end: number; text: string; words?: CaptionWord[]; speaker?: number | null }
@@ -77,6 +77,45 @@ export interface Attempt { questionId: string; answer: string; correct: boolean;
 export interface RecallResult { got: string[]; missed: string[]; wrong: string[]; score: number }
 export interface ExamTopic { conceptId: string; name: string; emphasis: number; examFlag: boolean; mastery: number | null; score: number }
 export interface StudyPlanDay { date: string; cardsDue: number; concepts: string[]; questions: string[]; reason: string }
+
+// "Ask the lecture": a question answered from the transcript, with the segments it rests on.
+export interface LectureAnswer {
+  answer: string;
+  citations: Array<{ segmentId: number; start: number; excerpt: string }>;
+  /** True when the transcript does not cover the question (the answer says so). */
+  notInLecture: boolean;
+}
+
+// Pretest before the next lecture: a few questions on what the syllabus says is coming (generated per class
+// per day, kept in memory, not tied to concept notes). Answers are graded but not stored.
+export interface PretestQuestion { id: string; topic: string; kind: "mcq" | "short"; prompt: string; options?: string[] | null }
+export interface Pretest {
+  week: { week: number; topics: string[]; date?: string | null } | null;   // null: no syllabus, or nothing left on it
+  questions: PretestQuestion[];
+}
+export interface PretestAttempt { questionId: string; answer: string; correct: boolean; feedback: string }
+
+// Study plan written by the model from the syllabus dates, lecture notes, concept notes and the class's pace
+// (generated per student per class per day, kept in memory). `concepts[].id` is null when a name did not match a note.
+export interface StudyPlanKeyDate { date: string; daysLeft: number; name: string; kind: "exam" | "deadline" | "lecture" | "other"; note: string }
+export interface StudyPlanDayDetail {
+  date: string; focus: string; concepts: Array<{ id: string | null; name: string }>; tasks: string[]; minutes: number; cardsDue: number; reason: string;
+}
+export interface StudyPlanPace {
+  lecturesHeld: number; lecturesPerWeek: number | null; currentWeek: number | null; totalWeeks: number;
+  lastLectureDate: string | null;
+}
+export interface StudyPlan {
+  date: string;                 // the day it was written for
+  generatedAt: string;
+  horizonDays: number;
+  overview: string;
+  pace: string;                 // the model's one-liner on the class pace
+  paceData: StudyPlanPace;      // the numbers it was given
+  nextExam: { name: string; date: string; daysLeft: number } | null;
+  keyDates: StudyPlanKeyDate[];
+  days: StudyPlanDayDetail[];
+}
 
 export type JobStatus = "queued" | "running" | "done" | "failed";
 export interface StudyBundleStatus { lectureId: string; status: JobStatus; steps: Record<string, JobStatus>; error?: string | null }

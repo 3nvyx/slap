@@ -73,23 +73,8 @@ function ReviewSession({ cards, names, classId, onMore }: { cards: Card[]; names
     return () => window.removeEventListener('keydown', onKey)
   }, [flipped, rate])
 
-  if (cards.length === 0 || !card) {
-    const total = Object.values(counts).reduce((a, b) => a + b, 0)
-    return (
-      <div className="dotgrid rounded-md border border-line bg-panel p-10 text-center">
-        <div className="font-mono text-5xl font-bold">{total}</div>
-        <h2 className="mt-2 text-2xl font-bold tracking-tight">{total ? 'Done for now' : 'Nothing due'}</h2>
-        <p className="mt-2 text-ink-2">{total ? `Again ${counts[1]} · Hard ${counts[2]} · Good ${counts[3]} · Easy ${counts[4]}` : 'No cards are due. Come back later, or practise questions.'}</p>
-        <div className="mt-6 flex justify-center gap-2">
-          <Button onClick={() => void onMore()}>Check for more</Button>
-          <ButtonLink variant="ink" to={`/c/${classId}/practice`}>
-            Practice questions
-          </ButtonLink>
-          <ButtonLink to={`/c/${classId}/today`}>Today</ButtonLink>
-        </div>
-      </div>
-    )
-  }
+  if (cards.length === 0 || !card) return <Finished counts={counts} classId={classId} onMore={onMore} />
+
 
   return (
     <div>
@@ -137,6 +122,38 @@ function ReviewSession({ cards, names, classId, onMore }: { cards: Card[]; names
         ))}
       </div>
       <p className="mt-3 text-center text-xs text-muted">Space flips · 1–4 rates</p>
+    </div>
+  )
+}
+
+/** End of a batch: looks ahead for more due cards ("Again" cards come straight back) so continuing is one click. */
+function Finished({ counts, classId, onMore }: { counts: Record<Rating, number>; classId: string; onMore: () => Promise<void> }) {
+  const total = Object.values(counts).reduce((a, b) => a + b, 0)
+  const more = useApi(() => api.due(classId, 20), [classId, total])
+  const n = more.data?.length ?? 0
+  return (
+    <div className="dotgrid rounded-md border border-line bg-panel p-10 text-center">
+      <div className="font-mono text-5xl font-bold">{total}</div>
+      <h2 className="mt-2 text-2xl font-bold tracking-tight">{total ? 'Done for now' : 'Nothing due'}</h2>
+      <p className="mt-2 text-ink-2">
+        {total ? `Again ${counts[1]} · Hard ${counts[2]} · Good ${counts[3]} · Easy ${counts[4]}` : 'No cards are due. Come back later, or practise questions.'}
+        {n > 0 && <> · {n} more due now</>}
+      </p>
+      <div className="mt-6 flex flex-wrap justify-center gap-2">
+        {n > 0 ? (
+          <Button variant="accent" onClick={() => void onMore()}>
+            Continue · {n} card{n === 1 ? '' : 's'}
+          </Button>
+        ) : (
+          <Button onClick={() => void onMore()} disabled={more.loading}>
+            {more.loading ? 'Checking…' : 'Check for more'}
+          </Button>
+        )}
+        <ButtonLink variant="ink" to={`/c/${classId}/practice`}>
+          Practice questions
+        </ButtonLink>
+        <ButtonLink to={`/c/${classId}/today`}>Today</ButtonLink>
+      </div>
     </div>
   )
 }

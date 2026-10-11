@@ -29,7 +29,7 @@
 #define PIN_I2C_SDA    8     // OLED + MPU6050
 #define PIN_I2C_SCL    9
 #define PIN_IMU_INT    7     // MPU6050 INT, RTC-capable: deep-sleep wake source
-#define PIN_LED        2     // recording LED via 220 ohm
+#define PIN_LED        10    // recording LED via 220 ohm (right-hand pin column, next to 9)
 #define PIN_BUTTON     0     // BOOT button, active low
 
 // ---------- Audio ----------

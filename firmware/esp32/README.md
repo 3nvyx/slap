@@ -9,7 +9,7 @@ Captures lecture audio from an INMP441 and streams it to the server over one Web
 | INMP441 SCK / WS / SD | GPIO 5 / 4 / 6; L/R to GND (left slot); VDD 3V3 |
 | OLED SDA / SCL | GPIO 8 / 9, I2C address 0x3C |
 | MPU6050 SDA / SCL / INT | GPIO 8 / 9 (shared bus, 0x68) / GPIO 7 |
-| REC LED | GPIO 2 through 220 Ω to the anode, cathode to GND |
+| REC LED | GPIO 10 through 220 Ω to the anode, cathode to GND (was GPIO 2; moved so every used pin is on the 3V3 column) |
 | REC (start/stop) | BOOT button (GPIO 0), under the housing's REC cap; nothing to wire |
 
 These pins match `firmware/wokwi/diagram.json` (OLED 8/9, LED 2, button 0), so the Wokwi wiring still applies (see "Wokwi" below).

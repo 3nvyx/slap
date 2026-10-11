@@ -1,6 +1,7 @@
 /**
  * LLM provider switch for the study pipeline (settings.llm.backend):
  *   claude  Anthropic Messages API via @anthropic-ai/sdk, model settings.llm.anthropicModel
+ *   openai  OpenAI Responses API over fetch (OPENAI_API_KEY, OPENAI_MODEL, OPENAI_REASONING via settings)
  *   gemini  Gemini REST generateContent (GEMINI_API_KEY via settings)
  *   mock    deterministic heuristics in mock.ts, so the product works with no keys
  *
@@ -21,7 +22,7 @@ import { extractPdfText } from "./pdfText.ts";
 import { capText } from "./util.ts";
 
 export interface CompleteOpts { system?: string; json?: true; maxTokens?: number }
-export type LlmBackend = "claude" | "gemini" | "mock";
+export type LlmBackend = "claude" | "openai" | "gemini" | "mock";
 
 /** Gemini model id; settings.ts has no knob for it yet. */
 const GEMINI_MODEL = "gemini-2.5-flash";
@@ -84,6 +85,7 @@ async function run(task: string, prompt: string, opts: CompleteOpts, doc: DocInp
       return mockComplete(task, prompt, docText);
     }
     if (backend === "claude") return await claude(prompt, system, maxTokens, doc);
+    if (backend === "openai") return await openai(prompt, system, maxTokens, doc, opts.json === true);
     return await gemini(prompt, system, maxTokens, doc, opts.json === true);
   } finally {
     if (backend !== "mock") console.info(`[llm] ${task} via ${backend} in ${Date.now() - t0} ms`);
@@ -123,6 +125,82 @@ async function claude(prompt: string, system: string | undefined, maxTokens: num
   const text = doc?.text !== undefined ? withDocText(prompt, doc.text) : prompt;
   return send([{ type: "text", text }]);
 }
+
+// ---------- OpenAI (Responses API) ----------
+
+const OPENAI_URL = "https://api.openai.com/v1/responses";
+const OPENAI_TIMEOUT_MS = 180_000;
+
+interface OpenAiResponse {
+  status?: string;
+  incomplete_details?: { reason?: string };
+  error?: { message?: string } | null;
+  output?: Array<{ type: string; content?: Array<{ type: string; text?: string; refusal?: string }> }>;
+}
+type OpenAiPart = { type: "input_text"; text: string } | { type: "input_file"; filename: string; file_data: string };
+
+class OpenAiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) { super(message); this.name = "OpenAiError"; this.status = status; }
+}
+
+async function openaiCall(parts: OpenAiPart[], system: string | undefined, maxTokens: number, json: boolean, withReasoning: boolean): Promise<string> {
+  const key = settings.llm.openaiKey;
+  if (!key) throw new Error("LLM_BACKEND=openai but OPENAI_API_KEY is not set");
+  const effort = settings.llm.openaiReasoning.trim();
+  const body: Record<string, unknown> = {
+    model: settings.llm.openaiModel,
+    input: [{ role: "user", content: parts }],
+    max_output_tokens: maxTokens,
+    ...(system ? { instructions: system } : {}),
+    ...(json ? { text: { format: { type: "json_object" } } } : {}),
+    ...(withReasoning && effort ? { reasoning: { effort } } : {}),
+  };
+  const res = await fetch(OPENAI_URL, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
+  });
+  const data = await res.json().catch(() => ({})) as OpenAiResponse;
+  if (!res.ok) throw new OpenAiError(`OpenAI ${res.status}: ${data.error?.message ?? res.statusText}`, res.status);
+  if (data.error) throw new OpenAiError(`OpenAI: ${data.error.message ?? "error"}`, 0);
+  const content = (data.output ?? []).filter(o => o.type === "message").flatMap(o => o.content ?? []);
+  const refusal = content.find(c => c.type === "refusal");
+  if (refusal) throw new Error(`model declined the request (refusal): ${refusal.refusal ?? ""}`.trim());
+  if (data.status === "incomplete") console.warn(`[llm] reply incomplete (${data.incomplete_details?.reason ?? "unknown"}; max_output_tokens ${maxTokens}); output may be truncated`);
+  const text = content.flatMap(c => (c.type === "output_text" && c.text ? [c.text] : [])).join("");
+  if (!text) throw new Error(`OpenAI returned no text (status ${data.status ?? "unknown"})`);
+  return text;
+}
+
+async function openai(prompt: string, system: string | undefined, maxTokens: number, doc: DocInput, json: boolean): Promise<string> {
+  const send = async (parts: OpenAiPart[]) => {
+    try {
+      return await openaiCall(parts, system, maxTokens, json, true);
+    } catch (e) {
+      // Models without a reasoning knob reject the parameter: retry once without it.
+      if (e instanceof OpenAiError && e.status === 400 && /reasoning/i.test(e.message)) return openaiCall(parts, system, maxTokens, json, false);
+      throw e;
+    }
+  };
+  if (doc?.pdf) {
+    try {
+      return await send([
+        { type: "input_file", filename: "document.pdf", file_data: `data:application/pdf;base64,${doc.pdf.toString("base64")}` },
+        { type: "input_text", text: prompt },
+      ]);
+    } catch (e) {
+      if (!(e instanceof OpenAiError) || e.status !== 400) throw e;
+      console.warn(`[llm] OpenAI rejected the PDF (${e.message}); falling back to extracted text`);
+      return send([{ type: "input_text", text: withDocText(prompt, extractPdfText(doc.pdf)) }]);
+    }
+  }
+  const text = doc?.text !== undefined ? withDocText(prompt, doc.text) : prompt;
+  return send([{ type: "input_text", text }]);
+}
+
+// ---------- Gemini ----------
 
 interface GeminiResponse { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>; error?: { message?: string } }
 

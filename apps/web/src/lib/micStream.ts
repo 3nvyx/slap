@@ -2,7 +2,6 @@
 // 16 kHz mono int16 LE and send 3,200-byte (100 ms) binary frames to /ws/lecture/:id/audio, like the device does.
 import { AUDIO_FRAME_BYTES, AUDIO_SAMPLE_RATE } from '@slap/contracts'
 import { useEffect, useState } from 'react'
-import { getToken } from './auth'
 import { MOCK, wsUrl } from './env'
 
 export type MicState = 'off' | 'starting' | 'live' | 'reconnecting' | 'error'
@@ -81,9 +80,7 @@ export function useMicStreamer(lectureId: string | null, enabled: boolean) {
         setState('live') // mock: pretend the socket is open
         return
       }
-      const token = await getToken()
-      if (disposed) return
-      const sock = new WebSocket(wsUrl(`/ws/lecture/${encodeURIComponent(lectureId)}/audio?token=${encodeURIComponent(token ?? '')}`))
+      const sock = new WebSocket(wsUrl(`/ws/lecture/${encodeURIComponent(lectureId)}/audio`))
       sock.binaryType = 'arraybuffer'
       ws = sock
       sock.onopen = () => {
