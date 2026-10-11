@@ -16,9 +16,10 @@ WebSocketsClient ws;
 
 char g_path[192];     // SERVER_PATH?key=DEVICE_KEY
 char g_hello[224];    // prebuilt hello JSON
-char g_helloId[24], g_helloMac[18], g_helloWake[8];
+char g_helloId[24], g_helloMac[18], g_helloWake[12], g_helloLang[4] = "en";
 
 void buildHello(const char* lang) {
+  if (lang != g_helloLang) snprintf(g_helloLang, sizeof g_helloLang, "%s", lang);
   snprintf(g_hello, sizeof g_hello, "{\"type\":\"hello\",\"deviceId\":\"%s\",\"fw\":\"%s\",\"mac\":\"%s\",\"lang\":\"%s\",\"wake\":\"%s\"}",
            g_helloId, FW_VERSION, g_helloMac, lang, g_helloWake);
 }
@@ -87,6 +88,9 @@ void onEvent(WStype_t type, uint8_t* payload, size_t len) {
       ws.setReconnectInterval(g_backoff);
       Serial.printf("[ws] connected %s:%d%s\n", SERVER_HOST, SERVER_PORT, SERVER_PATH);
       ws.sendTXT(g_hello);
+      // What switched the device on is said once; every later hello of this boot is a link that came back.
+      snprintf(g_helloWake, sizeof g_helloWake, "reconnect");
+      buildHello(g_helloLang);
       app_onLinkUp();
       break;
     case WStype_DISCONNECTED:

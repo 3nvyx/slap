@@ -614,17 +614,18 @@ const startingDevice = new Map<string, Promise<LectureSummary | null>>();
 const goneTimers = new Map<string, NodeJS.Timeout>();
 
 /** Starts recording for a connected device: it carries on in its own live lecture after a short drop, otherwise
- *  a new lecture is made in the inbox. Null if the device went away meanwhile. */
-export function startDeviceSession(d: DeviceLink): Promise<LectureSummary | null> {
+ *  (unless `create` is false) a new lecture is made in the inbox. Null if there was nothing to carry on, or the
+ *  device went away meanwhile. */
+export function startDeviceSession(d: DeviceLink, create = true): Promise<LectureSummary | null> {
   let p = startingDevice.get(d.id);
   if (!p) {
-    p = doStartDevice(d).finally(() => startingDevice.delete(d.id));
+    p = doStartDevice(d, create).finally(() => startingDevice.delete(d.id));
     startingDevice.set(d.id, p);
   }
   return p;
 }
 
-async function doStartDevice(d: DeviceLink): Promise<LectureSummary | null> {
+async function doStartDevice(d: DeviceLink, create: boolean): Promise<LectureSummary | null> {
   const cur = d.lectureId ? lectures.get(d.lectureId) : undefined;
   if (cur?.status === "live") return toSummary(cur);
   const resume = async (l: LiveLecture) => {
@@ -651,6 +652,7 @@ async function doStartDevice(d: DeviceLink): Promise<LectureSummary | null> {
   }
   if (devices.get(d.id) !== d) return null;
   if (recent) return resume(recent);
+  if (!create) return null;
   const [row] = await db.insert(schema.lectures).values({
     classId: await inboxClassId(), title: recordingTitle(), date: today(), status: "live", deviceId: d.id, source: "device",
   }).returning();
@@ -663,14 +665,21 @@ async function doStartDevice(d: DeviceLink): Promise<LectureSummary | null> {
   return toSummary(l);
 }
 
-/** Registers a connected device and, unless `start` is false (it was only powered up and waits for a shake),
- *  starts recording for it. A recording it left a moment ago carries on either way. */
-export async function attachDevice(d: DeviceLink, start = true): Promise<void> {
+/** Registers a connected device. `how`: "start" records at once (it was switched on by a shake or its button);
+ *  "wait" is a device that was only powered up or reset, which cannot be in the middle of a recording, so any
+ *  lecture it left live is ended and saved and it waits for a shake; "resume" is a link that dropped and came
+ *  back, which carries on recording if it was, and otherwise keeps waiting. */
+export async function attachDevice(d: DeviceLink, how: "start" | "wait" | "resume" = "start"): Promise<void> {
   devices.set(d.id, d);
-  const left = goneTimers.has(d.id);
   clearTimeout(goneTimers.get(d.id));
   goneTimers.delete(d.id);
-  if (start || left) await startDeviceSession(d);
+  if (how === "wait") {
+    const left = await db.select({ id: schema.lectures.id }).from(schema.lectures)
+      .where(and(eq(schema.lectures.deviceId, d.id), eq(schema.lectures.status, "live")));
+    for (const row of left) await stopSession(row.id).catch(logErr("stop left-over lecture"));
+  } else {
+    await startDeviceSession(d, how === "start");
+  }
   d.refresh();
 }
 

@@ -243,8 +243,34 @@ test("a device that was only powered up waits; a shake starts it, and a shake wh
   assert.equal(await m.dev.triggerUsbSlap(id), true);
   await sleep(300);
   assert.deepEqual({ state: d.last()!.state, sessionId: d.last()!.sessionId }, { state: "recording", sessionId: rec.sessionId }, "still the same recording");
-  await sleep(900);
-  d.press();
-  await d.until(st => st.state === "idle", "idle after the stop");
+  // Reset in the middle of the recording: it comes back powered up, and the recording it left is ended, not kept live.
   d.close();
+  const again = fakeDevice(KEY2, id);
+  await again.hello("power");
+  await again.until(st => st.state === "idle", "idle after the reset");
+  for (let i = 0; i < 40; i++) {
+    const [row] = await m.db.db.select().from(m.db.schema.lectures).where(m.dz.eq(m.db.schema.lectures.id, rec.sessionId!));
+    if (!row || row.status !== "live") break;
+    await sleep(100);
+  }
+  const [row] = await m.db.db.select().from(m.db.schema.lectures).where(m.dz.eq(m.db.schema.lectures.id, rec.sessionId!));
+  assert.ok(!row || row.status !== "live", "the recording it left is closed");
+
+  // A link that drops and comes back: recording carries on in the same lecture; waiting stays waiting.
+  again.close();
+  const back = fakeDevice(KEY2, id);
+  await back.hello("reconnect");
+  await back.until(st => st.state === "idle", "still waiting after a reconnect");
+  assert.equal(await m.dev.triggerUsbSlap(id), true);
+  const second = await back.until(st => st.state === "recording" && !!st.sessionId, "recording");
+  recordings.push(second.sessionId!);
+  back.close();
+  const resumed = fakeDevice(KEY2, id);
+  await resumed.hello("reconnect");
+  const cont = await resumed.until(st => st.state === "recording", "recording again after the drop");
+  assert.equal(cont.sessionId, second.sessionId);
+  await sleep(1100);
+  resumed.press();
+  await resumed.until(st => st.state === "idle", "idle after the stop");
+  resumed.close();
 });

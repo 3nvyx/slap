@@ -6,7 +6,8 @@
 #include <stdint.h>
 
 // lang: caption language for this device's screen ("en" | "vi" | "ja"); wake: what switched the device on
-// ("shake" | "button" | "power": the server starts a session at once for the first two). Both go in every hello.
+// ("shake" | "button" | "power": the server starts a session at once for the first two), said in the first
+// hello; later hellos of the same boot say "reconnect". lang goes in every hello.
 void link_begin(const char* deviceId, const char* mac, const char* lang, const char* wake);
 // Call every loop(): socket I/O, reconnect backoff, audio drain, level messages.
 // streaming = the device is RECORDING (audio frames are sent only then).

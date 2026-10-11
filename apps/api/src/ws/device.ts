@@ -205,9 +205,9 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
     if (ws.readyState !== WebSocket.OPEN) return;
     link = makeLink(row, isLang(m.lang) ? m.lang : "en");
     // Switched on by a shake or the button: it records. Only powered up or reset: it waits for a shake.
-    const start = m.wake !== "power";
+    // The link came back: it carries on with what it was doing.
     log(`hello ${m.deviceId} fw=${m.fw} -> ${row.id} online (${m.wake ?? "on"}), captions in ${link.lang}`);
-    await attachDevice(link, start);
+    await attachDevice(link, m.wake === "power" ? "wait" : m.wake === "reconnect" ? "resume" : "start");
     firmwareDeviceId = m.deviceId;
     usbTargets.set(m.deviceId, { socket: ws, shake: onShake });
     touchSeen(true);

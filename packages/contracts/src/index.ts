@@ -26,7 +26,8 @@ export type DeviceLang = (typeof DEVICE_LANGS)[number];
 // A device that was switched on by a shake or its button records: the server starts a session as soon as it has
 // the hello, and a `button` (REC held for 2 s on the device) ends it. There is nothing to pick on the device first.
 // `wake` says what switched it on; a device that was only powered up or reset ("power") waits, dark, for a shake.
-export type DeviceWake = "shake" | "button" | "power";
+// Every later hello of the same boot says "reconnect": the link dropped and came back, and whatever it was doing carries on.
+export type DeviceWake = "shake" | "button" | "power" | "reconnect";
 export type DeviceToServer =
   | { type: "hello"; deviceId: string; fw: string; mac?: string; lang?: DeviceLang; wake?: DeviceWake }
   | { type: "button"; button: DeviceButton }
