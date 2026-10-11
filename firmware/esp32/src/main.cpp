@@ -46,6 +46,39 @@ uint32_t g_lastTilt = 0;
 uint32_t g_savedAt = 0;        // when the server ended the session (0 = it has not)
 const char* g_wake = "power";  // what switched the device on: "shake" | "button" | "power"
 bool g_bootSession = false;    // the first session follows the switch-on animation, so it does not play again
+
+// A reset in the middle of an OLED frame leaves the panel holding SDA low (a stuck I2C slave): every
+// transaction then fails with ESP_ERR_INVALID_STATE, the display init among them, and the screen stays
+// dark even once the bus frees itself. Clock SCL by hand until the slave lets go, send a STOP, and wait
+// (up to 3 s) for both lines to read high before the I2C driver starts. Instant when the bus is free.
+void i2cRecover() {
+  pinMode(PIN_I2C_SDA, INPUT_PULLUP);
+  pinMode(PIN_I2C_SCL, INPUT_PULLUP);
+  delayMicroseconds(20);
+  bool sdaLow = !digitalRead(PIN_I2C_SDA), sclLow = !digitalRead(PIN_I2C_SCL);
+  if (!sdaLow && !sclLow) return;
+  uint32_t t0 = millis();
+  while (millis() - t0 < 3000) {
+    if (!digitalRead(PIN_I2C_SDA)) {
+      pinMode(PIN_I2C_SCL, OUTPUT_OPEN_DRAIN);
+      for (int i = 0; i < 9 && !digitalRead(PIN_I2C_SDA); i++) {
+        digitalWrite(PIN_I2C_SCL, LOW);  delayMicroseconds(5);
+        digitalWrite(PIN_I2C_SCL, HIGH); delayMicroseconds(5);
+      }
+      pinMode(PIN_I2C_SCL, INPUT_PULLUP);
+      // STOP: SDA low -> high while SCL is high.
+      pinMode(PIN_I2C_SDA, OUTPUT_OPEN_DRAIN);
+      digitalWrite(PIN_I2C_SDA, LOW);  delayMicroseconds(5);
+      pinMode(PIN_I2C_SDA, INPUT_PULLUP); delayMicroseconds(5);
+    }
+    if (digitalRead(PIN_I2C_SDA) && digitalRead(PIN_I2C_SCL)) break;
+    delay(20);
+  }
+  bool ok = digitalRead(PIN_I2C_SDA) && digitalRead(PIN_I2C_SCL);
+  Serial.printf("[i2c] bus held low at boot (sda %s, scl %s): %s after %lu ms\n",
+                sdaLow ? "LOW" : "high", sclLow ? "LOW" : "high", ok ? "freed" : "STILL STUCK (check the OLED wires)",
+                (unsigned long)(millis() - t0));
+}
 uint32_t g_idleSince = 0;      // for the standby screen timeout
 
 AppState g_state = AppState::BOOTING;
@@ -286,6 +319,7 @@ void setup() {
 
   // I2C first: the IMU is configured before anything slow so the second half of a wake
   // slap is not missed. U8g2 later calls Wire.begin() again on the same pins (harmless).
+  i2cRecover();
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, 400000);
   slap_begin(wokeImu);
 

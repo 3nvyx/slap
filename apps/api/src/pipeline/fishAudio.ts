@@ -47,12 +47,18 @@ export function fishMode(): "live" | "mock" {
 
 // ---------- voices ----------
 
-/** The partner voices on offer, the default first. All are Fish Audio's own library voices. */
+/** The partner voices on offer, the default first: four of Fish Audio's own library voices, then community-made
+ *  voices of famous people from the public Fish library (those can be withdrawn by their uploader). */
 export const PARTNER_VOICES: readonly PartnerVoice[] = Object.freeze([
   { id: "536d3a5e000945adb7038665781a4aca", name: "Ethan", style: "calm explainer", default: true },
   { id: "e3cd384158934cc9a01029cd7d278634", name: "Laura", style: "warm and steady" },
   { id: "9a9cf47702da476aa4629e2506d4a857", name: "Hannah", style: "bright and friendly" },
   { id: "79d0bd3e4e5444b18f7b6d89b5927bf1", name: "Jordan", style: "upbeat coach" },
+  { id: "03397b4c4be74759b72533b663fbd001", name: "Elon Musk", style: "calm and measured" },
+  { id: "c39a76f685cf4f8fb41cd5d3d66b497d", name: "David Attenborough", style: "documentary narrator" },
+  { id: "4ce7e917cedd4bc2bb2e6ff3a46acaa1", name: "Barack Obama", style: "steady and presidential" },
+  { id: "cfc33da8775c47afacccf4eebabe44dc", name: "Taylor Swift", style: "soft and sincere" },
+  { id: "cc1d2d26fddf487496c74a7f40c7c871", name: "MrBeast", style: "fast and hyped" },
 ]);
 export function defaultVoiceId(): string { return PARTNER_VOICES[0]!.id; }
 export function isKnownVoice(id: string): boolean { return PARTNER_VOICES.some(v => v.id === id); }

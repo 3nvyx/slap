@@ -122,7 +122,7 @@ test("voices: presets, default first", () => {
   assert.deepEqual(f.PARTNER_VOICES.map(v => !!v.default), f.PARTNER_VOICES.map((_, i) => i === 0));
   assert.equal(new Set(f.PARTNER_VOICES.map(v => v.id)).size, f.PARTNER_VOICES.length);
   assert.ok(f.isKnownVoice(f.defaultVoiceId()));
-  assert.ok(!f.isKnownVoice("03397b4c4be74759b72533b663fbd001"));
+  assert.ok(!f.isKnownVoice("not-a-preset"));
 });
 
 test("WAV header round-trips and readWav walks LIST chunks", () => {

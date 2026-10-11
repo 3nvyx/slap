@@ -384,6 +384,11 @@ const VOICES: PartnerVoice[] = [
   { id: 'fish-laura', name: 'Laura', style: 'warm and steady' },
   { id: 'fish-hannah', name: 'Hannah', style: 'bright and friendly' },
   { id: 'fish-jordan', name: 'Jordan', style: 'upbeat coach' },
+  { id: 'fish-elon', name: 'Elon Musk', style: 'calm and measured' },
+  { id: 'fish-attenborough', name: 'David Attenborough', style: 'documentary narrator' },
+  { id: 'fish-obama', name: 'Barack Obama', style: 'steady and presidential' },
+  { id: 'fish-swift', name: 'Taylor Swift', style: 'soft and sincere' },
+  { id: 'fish-mrbeast', name: 'MrBeast', style: 'fast and hyped' },
 ]
 
 /** A short "babble" of sine blips as a 16 kHz mono WAV data URL, so the audio player path runs without TTS. */

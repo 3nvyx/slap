@@ -61,7 +61,7 @@ Base: same origin as the web app. JSON bodies. Types in `packages/contracts`.
 `{ error: string }` with 400/404/409 (413 and 415 on uploads and partner audio, 502 when Fish fails). No route answers 401 or 403.
 
 ## Learning partner (spoken practice, Fish Audio)
-- `GET /api/partner/voices` → `PartnerVoice[]` (four presets fixed in `pipeline/fishAudio.ts`; the default first).
+- `GET /api/partner/voices` → `PartnerVoice[]` (presets fixed in `pipeline/fishAudio.ts`: four neutral voices and five famous-person voices; the default first).
 - `POST /api/classes/:classId/partner/session` `{ lectureId?, voiceId?, lang? }` → `PartnerSession` with an opening question already rendered to audio.
 - `POST /api/partner/:sessionId/turn` multipart `{ audio? (webm/opus, wav or mp3 ≤ 60 s), text? }` → `PartnerTurn`. The server transcribes with Fish ASR (`transcribe-1-pro`), decides the intent (answer to the open question → grade via the practice pipeline and reschedule the card; "explain X" → explanation from the concept note and its lecture excerpts; "skip"/"next" → new question; a bare greeting such as "hi, how are you?" → a short hello and the open question again, ungraded), and renders the reply with Fish TTS (`s2.1-pro`, the session's voice).
 - `GET /api/partner/audio/:id` (unguessable id) → `audio/mpeg`, cached in memory for ~10 minutes.
