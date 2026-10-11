@@ -193,9 +193,10 @@ function onConnection(ws: WebSocket, auth: DeviceAuth) {
       if (!row) throw new Error("device row could not be created");
       log(`registered device ${row.id} (${m.deviceId})`);
     }
-    // The row belongs to the key, so it is listed under the id of whichever device is using the key now.
+    // The row belongs to the key. Its name is what the app shows: the firmware's id when the key is first seen,
+    // and from then on whatever the row has been named (e.g. "SLAP 0"), so a later hello does not rename it.
     const name = typeof m.deviceId === "string" ? m.deviceId.trim().slice(0, 64) : "";
-    if (name && name !== row.name) {
+    if (name && !row.name) {
       await db.update(schema.devices).set({ name }).where(eq(schema.devices.id, row.id));
       row = { ...row, name };
     }
