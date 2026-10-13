@@ -10,6 +10,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { sql } from "drizzle-orm";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { db } from "./db/index.ts";
 import { resumePendingJobs } from "./pipeline/bundle.ts";
@@ -18,7 +19,7 @@ import { routes } from "./routes/index.ts";
 import { settings } from "./settings.ts";
 import { handleDeviceUpgrade } from "./ws/device.ts";
 import { handleLectureAudioUpgrade } from "./ws/audio.ts";
-import { handleLiveUpgrade } from "./ws/live.ts";
+import { handleLiveUpgrade, originAllowed } from "./ws/live.ts";
 import { startArduinoBridge } from "./arduino.ts";
 
 const apiDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -38,6 +39,15 @@ function backends(dbUp: boolean): Health["backends"] {
 }
 
 export const app = new Hono();
+
+// The web app may be served from another origin (WEB_ORIGINS, e.g. Vercel; docs/architecture.md). Browsers there
+// need these headers to call /api; same-origin requests are unaffected. The socket paths check the origin themselves.
+app.use("/api/*", cors({
+  origin: (origin, c) => (originAllowed(origin, c.req.header("host")) ? origin : null),
+  allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+  allowHeaders: ["Accept", "Content-Type", "X-Slap-User"],
+  maxAge: 86_400,
+}));
 
 app.get("/api/health", c => c.json({ ok: true }));
 app.get("/api/health/ready", async (c) => {

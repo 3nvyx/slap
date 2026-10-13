@@ -19,3 +19,7 @@ hardware/housing/print/sliced*/
 # React Router: generated route types and the built app
 apps/web/.react-router/
 apps/web/build/
+
+# Vercel: the CLI's project link and the build output the preset writes
+.vercel/
+apps/web/.vercel/

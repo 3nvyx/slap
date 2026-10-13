@@ -85,6 +85,24 @@ Caddy replaces cloudflared on a host with a public IP. The firmware's fixed addr
 
 The cloud profile is the API container plus external AI APIs plus Neon (Postgres), and nothing else: no local Whisper, LLM or database on a 1 GiB box. Neon's other services are not used (see `PLAN.md`, Context).
 
+## Web app on Vercel
+
+Vercel runs serverless functions, so it cannot host the API: `/ws/device`, `/ws/lecture/:id/audio` and `/ws/live` are long-lived WebSockets, and `sessions.ts` keeps live state in one process. What it can host is `apps/web`: static files on its CDN and the page renderer (`build/server`) as a function. The API then runs on one of the hosts above and the browser talks to it across origins.
+
+What is in the repo for it:
+- `apps/web/react-router.config.ts` adds `vercelPreset()` from `@vercel/react-router` only when `VERCEL=1` (Vercel sets it). The preset splits the server build per runtime (`build/server/nodejs_*/`) and writes `.vercel/react-router-build-result.json`, which Vercel's builder turns into the function and static output. Without `VERCEL` the build is the usual `build/server/index.js` the API serves, so Docker and `pnpm dev` are unchanged.
+- `apps/web/vercel.json` sets the build command to `pnpm build` (route types, `tsc -b`, then `react-router build`), so a type error fails the deploy. `apps/web/package.json` pins `engines.node` to 22.x.
+- The API reads `WEB_ORIGINS` (comma-separated origins). Browsers on those origins pass the CORS middleware on `/api/*` (`server.ts`; headers `X-Slap-User` and `Content-Type`, methods GET, POST, DELETE) and the origin check on the live caption socket (`ws/live.ts`, `originAllowed`). Other origins get no CORS headers and a 403 at the socket, as before.
+- `.vercel/` is git-ignored (the CLI's project link and the build result).
+
+Setting it up:
+1. Deploy the API first (Compose + Caddy above, or Railway) and note its public origin, e.g. `https://api.slap.example`. Add `WEB_ORIGINS=https://<project>.vercel.app` to its `.env` (every Vercel domain the site will answer on, including a custom one, comma-separated) and restart it.
+2. In Vercel, import the GitHub repo. Root Directory: `apps/web`; leave "Include source files outside of the Root Directory" on (the workspace's `packages/contracts` and the root lockfile are needed). Framework is detected as React Router.
+3. Environment variables: `VITE_API_BASE=https://api.slap.example` (build time; `src/lib/env.ts` turns it into the fetch and `wss://` base) and `ENABLE_EXPERIMENTAL_COREPACK=1` (so the install uses the pnpm pinned in the root `package.json`; without it Vercel picks pnpm from the lockfile version, which may not accept `allowBuilds` in `pnpm-workspace.yaml`). `VITE_MOCK=1` instead of `VITE_API_BASE` deploys the fixture-only preview with no API at all.
+4. Deploy. The landing page and every study page render on Vercel; captions, devices and the study pipeline go through the API. Join links and QR codes are built from the page's own address (`window.location`), so they point at the Vercel site, and the device keeps talking to the API host directly (its address is in the firmware's `config.h`).
+
+The API still serves the web app from its own origin, so `https://api.slap.example/` works too; keep `PUBLIC_URL` pointing at whichever address the join QR should show if that ever moves server-side.
+
 ## CI (after the event)
 
 The first deploy is manual. Once it works, add one GitHub Actions workflow on push to `main`:

@@ -5,6 +5,9 @@ export const settings = {
   mode: (env("MODE", "demo") as "demo" | "local" | "cloud"),
   port: Number(env("PORT", "8787")),
   publicUrl: env("PUBLIC_URL", "http://localhost:8787")!,       // fixed tunnel hostname in demo
+  // Other origins the web app is served from (comma-separated, e.g. the Vercel site): allowed through CORS on
+  // /api and at the live caption socket. Empty when the API serves the web app itself.
+  webOrigins: (env("WEB_ORIGINS", "") ?? "").split(",").map(s => s.trim().replace(/\/$/, "")).filter(Boolean),
   databaseUrl: env("DATABASE_URL"),
   stt: {
     // deepgram = Nova-3 (the default); fast = Deepgram Flux; accurate = Soniox. The mode can also be switched at runtime (sessions.ts setSttBackend).

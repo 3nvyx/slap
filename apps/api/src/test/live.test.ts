@@ -5,6 +5,7 @@ import type { CaptionEvent } from "@slap/contracts";
 
 process.env.DATABASE_URL ??= "postgresql://test:test@localhost/test";
 process.env.TRANSLATE_BACKEND = "mock";
+process.env.WEB_ORIGINS = "https://slap-web.vercel.app/, https://slap.example";
 const s = await import("../sessions.ts");
 
 function loudPcm(ms: number): Buffer {
@@ -119,10 +120,12 @@ test("a translation of an unfinished sentence is dropped once that sentence is f
   await s.stopSession(l.id);
 });
 
-test("/ws/live accepts same-origin, public URL and local dev origins only", async () => {
+test("/ws/live accepts same-origin, public URL, WEB_ORIGINS and local dev origins only", async () => {
   const { originAllowed } = await import("../ws/live.ts");
   assert.equal(originAllowed(undefined, "x"), true);
   assert.equal(originAllowed("https://slap.example:443", "slap.example"), true);
   assert.equal(originAllowed("http://localhost:5173", "localhost:8787"), true);   // vite proxy rewrites Host
+  assert.equal(originAllowed("https://slap-web.vercel.app", "api.slap.example"), true);   // WEB_ORIGINS (trailing slash trimmed)
+  assert.equal(originAllowed("https://slap-web.vercel.app:8443", "api.slap.example"), false);
   assert.equal(originAllowed("https://evil.example", "slap.example"), false);
 });

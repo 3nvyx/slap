@@ -26,14 +26,16 @@ setInterval(() => {
 
 const PRIVATE_HOST = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|[\w-]+\.local)$/;
 
-/** Same-origin only: the page's own host, the public URL, or (outside cloud mode) a local/LAN dev origin
- *  such as the Vite dev server, whose proxy rewrites Host. Clients without an Origin (scripts) are allowed. */
+/** The page's own host, the public URL, a WEB_ORIGINS entry (the web app hosted elsewhere, e.g. Vercel), or
+ *  (outside cloud mode) a local/LAN dev origin such as the Vite dev server, whose proxy rewrites Host.
+ *  Clients without an Origin (scripts) are allowed. server.ts uses the same rule for CORS on /api. */
 export function originAllowed(origin: string | undefined, host: string | undefined): boolean {
   if (!origin) return true;
   let o: URL;
   try { o = new URL(origin); } catch { return false; }
   if (host && o.host === host) return true;
   try { if (o.origin === new URL(settings.publicUrl).origin) return true; } catch { /* bad PUBLIC_URL */ }
+  if (settings.webOrigins.includes(o.origin)) return true;
   return settings.mode !== "cloud" && PRIVATE_HOST.test(o.hostname);
 }
 

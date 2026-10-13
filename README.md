@@ -25,7 +25,10 @@ Environment (read only in `apps/api/src/settings.ts`): `DATABASE_URL`, `DEEPGRAM
 
 ## Deploy (after the event)
 
-`docker compose up -d --build` on a small VPS with `SLAP_HOST` set for Caddy; see `docs/architecture.md`.
+Two parts, because the API keeps WebSockets open (device audio, live captions) and one instance's state in memory, which serverless hosting cannot do:
+
+- The API: `docker compose up -d --build` on a small VPS with `SLAP_HOST` set for Caddy (see `docs/architecture.md`). It serves the web app itself, so this alone is a complete deployment.
+- Optionally the web app on Vercel, with the API elsewhere: import the repo into Vercel with Root Directory `apps/web`, set `VITE_API_BASE=https://<api host>` (and `ENABLE_EXPERIMENTAL_COREPACK=1` so Vercel uses the pnpm version from `package.json`), and set `WEB_ORIGINS=https://<project>.vercel.app` on the API so its CORS and socket origin checks admit the site. Details in `docs/architecture.md`, "Web app on Vercel".
 
 ## Demo run
 

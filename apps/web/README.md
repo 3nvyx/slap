@@ -11,7 +11,7 @@ From the repo root:
 - `pnpm --filter @slap/web build`: `build/` (`client/`: the files a browser downloads; `server/`: the code that renders pages). The API serves and renders it on :8787 through `server.ts` (rebuild after web changes; the API needs no restart).
 - `pnpm --filter @slap/web typecheck` (also regenerates the route types in `.react-router/`), `lint` (oxlint).
 
-Env (Vite, build time): `VITE_API_BASE` (empty = same origin), `VITE_MOCK`.
+Env (Vite, build time): `VITE_API_BASE` (empty = same origin; the API's origin when the app is hosted elsewhere, e.g. on Vercel, which also needs that origin in the API's `WEB_ORIGINS`), `VITE_MOCK`. `VERCEL=1` (set by Vercel) switches on the `@vercel/react-router` preset in `react-router.config.ts`; `vercel.json` is the project's build command. See `docs/architecture.md`, "Web app on Vercel".
 
 ## Pages
 
